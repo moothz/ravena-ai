@@ -1139,7 +1139,7 @@ async function main() {
 			);
 			const v = readAll(
 				dbPath,
-				dashboardSql("Veredito por moeda (últimos 7 dias)", { from: 0, to: clock })
+				dashboardSql("Situação por moeda (últimos 7 dias)", { from: 0, to: clock })
 			);
 			const pet = v.find((x) => x.Moeda === "Petalitas");
 			assert.match(pet["Situação"], /sem extrato/);
@@ -1750,7 +1750,7 @@ async function main() {
 			assert.match(resumo.fieldConfig.defaults.noValue, /Nenhuma mudança registrada ainda/);
 		});
 
-		await test("veredito por moeda: situação pelo pior critério, dobra em N semanas, % do criado", () => {
+		await test("situação por moeda: pior critério, dobra em N semanas, % do criado, conhecido, atrasado", () => {
 			const { file, db } = freshDb("veredito.db");
 			const insL = db.prepare(
 				"INSERT INTO reason_labels (currency, reason, label, kind) VALUES (?, ?, ?, ?)"
@@ -1778,6 +1778,11 @@ async function main() {
 			// Petalitas: sem extrato, massa estável → ok · sem extrato
 			db.prepare("INSERT INTO ledger_status VALUES ('petalitas', 0, 0)").run();
 			for (let d = 0; d <= 8; d++) bal.run(DAY0 + d * D, "petalitas", 7000);
+			// Carga em dia (1 h atrás) nas três fontes
+			const lr = db.prepare(
+				"INSERT INTO load_runs (ts, source, ok, window_from, window_to, rows) VALUES (1, ?, 1, 0, ?, 1)"
+			);
+			for (const c of ["zinthos", "petalitas", "runas"]) lr.run(c, Date.now() - 3600000);
 			db.close();
 			// Variante: Zinthos só com 3 dias de retrato (sem base de 7 a 9 dias) e um motivo sem mapear
 			fs.copyFileSync(file, path.join(tmpRoot, "veredito2.db"));
@@ -1787,7 +1792,7 @@ async function main() {
 				.prepare("INSERT INTO flows_hourly VALUES (?, 'zinthos', 'NOVO', 'unknown', 3, 0, 1, 1)")
 				.run(DAY0 + 6 * D);
 			db2.close();
-			const v = readAll(file, dashboardSql("Veredito por moeda (últimos 7 dias)", { from: 0, to }));
+			const v = readAll(file, dashboardSql("Situação por moeda (últimos 7 dias)", { from: 0, to }));
 			const by = Object.fromEntries(v.map((x) => [x.Moeda, x]));
 			assert.deepStrictEqual(
 				v.map((x) => x.Moeda),
@@ -1805,16 +1810,16 @@ async function main() {
 			assert.strictEqual(by.Runas["Sem origem (% do criado)"], 6);
 			assert.strictEqual(by.Runas["Sem origem (% da massa)"], 0.012);
 			assert.strictEqual(by.Runas["Sem origem"], "6.00% do criado"); // o critério pior (% do criado)
-			assert.strictEqual(by.Runas["Dobra em (semanas)"], 5776.6);
+			assert.strictEqual(by.Runas["Dobra em (semanas)"], null); // crescimento < 0,5%/semana: sem "dobra em"
 			assert.strictEqual(by.Runas["Maior fonte"], "Venda de peixe");
 			assert.strictEqual(by.Petalitas["Situação"], "ok · sem extrato");
 			assert.strictEqual(by.Petalitas["Sem origem (% do criado)"], null);
-			assert.strictEqual(by.Petalitas["Dados até"], (DAY0 + 8 * D) / 1000);
+			assert.match(by.Petalitas["Dados até · atraso"], /^\d\d\/\d\d \d\d:\d\d · 1\.0 h$/);
 			assert.strictEqual(by.Petalitas["Por quê"], "—");
 			// Sem retrato de 7 a 9 dias atrás: crescimento "sem dados", sem "dobra em"; motivo sem mapear → atenção
 			const v2 = readAll(
 				path.join(tmpRoot, "veredito2.db"),
-				dashboardSql("Veredito por moeda (últimos 7 dias)", { from: 0, to })
+				dashboardSql("Situação por moeda (últimos 7 dias)", { from: 0, to })
 			);
 			const z2 = v2.find((x) => x.Moeda === "Zinthos");
 			assert.strictEqual(z2["Crescimento (%)"], null);
@@ -1827,6 +1832,97 @@ async function main() {
 			);
 			assert.strictEqual(conf.find((x) => x.Fonte === "Zinthos")["Motivos sem mapear (7 dias)"], 2); // NOVO_Z e NOVO
 			assert.strictEqual(conf.find((x) => x.Fonte === "Runas")["Motivos sem mapear (7 dias)"], 0);
+		});
+
+		await test("situação por moeda: buraco conhecido fica em atenção; acima da própria base, agir; carga velha, atrasado", () => {
+			// Runas: 10 semanas de retrato diário; cada dia a massa sobe 11 e o extrato só explica 10 → sem origem = 10% do
+			// criado, todo dia (buraco conhecido). Variante: na última semana sobe 12 (20%, acima da própria base).
+			const build = (name, ultima) => {
+				const { file, db } = freshDb(name);
+				const bal = db.prepare("INSERT INTO balances (ts, currency, total) VALUES (?, 'runas', ?)");
+				const fl = db.prepare(
+					"INSERT INTO flows_hourly VALUES (?, 'runas', 'DEPOSIT:pesca', 'creation', 10, 0, 1, 1)"
+				);
+				let total = 1000000;
+				db.transaction(() => {
+					for (let d = 0; d <= 70; d++) {
+						bal.run(DAY0 + d * D, total);
+						fl.run(DAY0 + d * D + H);
+						total += 10 + (d >= 63 ? ultima : 1);
+					}
+				})();
+				db.prepare(
+					"INSERT INTO load_runs (ts, source, ok, window_from, window_to, rows) VALUES (1, 'runas', 1, 0, ?, 1)"
+				).run(Date.now() - (name.includes("velha") ? 5 : 1) * 3600000);
+				db.close();
+				const v = readAll(
+					file,
+					dashboardSql("Situação por moeda (últimos 7 dias)", { from: 0, to: DAY0 + 70 * D })
+				);
+				return v.find((x) => x.Moeda === "Runas");
+			};
+			const conhecido = build("conhecido.db", 1);
+			assert.strictEqual(conhecido["Sem origem (% do criado)"], 10);
+			assert.strictEqual(conhecido["Situação"], "atenção · conhecido");
+			assert.strictEqual(conhecido["Por quê"], "sem origem (na faixa das 8 semanas)");
+			const acima = build("acima.db", 2);
+			assert.strictEqual(acima["Situação"], "agir");
+			assert.strictEqual(acima["Por quê"], "sem origem");
+			assert.strictEqual(conhecido.Carga, "ativa a cada 1 h");
+			const velha = build("velha.db", 1);
+			assert.strictEqual(velha["Situação"], "dados atrasados");
+			assert.match(velha["Por quê"], /carga atrasada$/);
+			// Carga a cada 6 h: 5 h de atraso ainda é normal; pausada: nunca atrasada
+			const db6 = new BetterSQLite(path.join(tmpRoot, "velha.db"));
+			db6.prepare("INSERT INTO meta VALUES ('schedule.every_hours', '6')").run();
+			db6.close();
+			const sit = (f) =>
+				readAll(
+					path.join(tmpRoot, f),
+					dashboardSql("Situação por moeda (últimos 7 dias)", { from: 0, to: DAY0 + 70 * D })
+				).find((x) => x.Moeda === "Runas");
+			assert.strictEqual(sit("velha.db")["Situação"], "atenção · conhecido");
+			assert.strictEqual(sit("velha.db").Carga, "ativa a cada 6 h");
+			const dbp = new BetterSQLite(path.join(tmpRoot, "velha.db"));
+			dbp.prepare("UPDATE meta SET value = '1' WHERE key = 'schedule.every_hours'").run();
+			dbp.prepare("INSERT INTO meta VALUES ('schedule.paused', '1')").run();
+			dbp
+				.prepare("INSERT INTO meta VALUES ('schedule.updated_at', ?)")
+				.run(String(Date.parse("2026-11-19T15:30:00Z")));
+			dbp.close();
+			assert.strictEqual(sit("velha.db")["Situação"], "atenção · conhecido");
+			assert.strictEqual(sit("velha.db").Carga, "pausada desde 19/11 12:30");
+		});
+
+		await test("alerta de carga atrasada: só fontes das últimas 48 h, intervalo + 2 h, pausada não dispara", () => {
+			const rules = JSON.parse(
+				fs
+					.readFileSync(
+						path.join(REPO_ROOT, "observability/grafana/provisioning/alerting/economia.yaml"),
+						"utf8"
+					)
+					.replace(/^#.*$/gm, "")
+			).groups[0].rules;
+			const r = rules.find((x) => x.uid === "economia-carga-atrasada");
+			assert.strictEqual(r.data[2].model.conditions[0].evaluator.params[0], 0);
+			const { file, db } = freshDb("alerta-carga.db");
+			const lr = db.prepare(
+				"INSERT INTO load_runs (ts, source, ok, window_from, window_to, rows) VALUES (1, ?, 1, 0, ?, 1)"
+			);
+			lr.run("zinthos", Date.now() - 5 * 3600000);
+			lr.run("petalitas", Date.now() - 5 * 86400000); // desligada há dias: fora
+			lr.run("runas", Date.now() - 3600000);
+			db.close();
+			const v = () => Object.values(readAll(file, r.data[0].model.queryText)[0])[0];
+			assert.ok(Math.abs(v() - 2) < 0.05, `5 h de atraso − 3 h de limite: ${v()}`);
+			const db2 = new BetterSQLite(file);
+			db2.prepare("INSERT INTO meta VALUES ('schedule.every_hours', '6')").run();
+			db2.close();
+			assert.ok(v() < 0);
+			const db3 = new BetterSQLite(file);
+			db3.prepare("INSERT INTO meta VALUES ('schedule.paused', '1')").run();
+			db3.close();
+			assert.strictEqual(v(), 0);
 		});
 
 		await test("de onde vem e para onde vai: top 8 por |líquido| + Outros, sem mapear sempre aparece", () => {
@@ -2010,17 +2106,18 @@ async function main() {
 			const resumo = layout[0].sections[0].elements.map((n) => byName.get(n));
 			assert.deepStrictEqual(
 				resumo.filter((p) => p.type !== "text").map((p) => p.type),
-				["table", "table", "timeseries", "alertlist", "table"],
-				"Resumo: confiança, veredito, massa, alertas, mudanças"
+				["table", "alertlist", "timeseries", "table"],
+				"Resumo: situação por moeda, alertas, massa, mudanças"
 			);
-			// Resumo cabe numa tela (~1080 px; linha do grid = 30 px)
+			// Resumo cabe em 1920×1080: cada linha da grade ocupa ~38 px reais (30 + espaço), ~22 linhas abaixo do topo
+			// (variáveis e abas)
 			const resumoH = JSON.parse(
 				fs.readFileSync(DASHBOARD, "utf8")
 			).spec.layout.spec.tabs[0].spec.layout.spec.items.reduce(
 				(m, i) => Math.max(m, i.spec.y + i.spec.height),
 				0
 			);
-			assert.ok(resumoH <= 32, `Resumo com ${resumoH} linhas de grade`);
+			assert.ok(resumoH <= 22, `Resumo com ${resumoH} linhas de grade`);
 			const alma = layout[1].sections.find((s) => s.title === "Ciclo da alma gêmea");
 			assert.deepStrictEqual(alma.conditional.spec.items[0].spec, {
 				variable: "moeda",
@@ -2104,6 +2201,19 @@ async function main() {
 							"motivos",
 							"t0",
 							"n",
+							// situação por moeda (histórico de 8 semanas, carga)
+							...[
+								"so_k",
+								"cri_k",
+								"massa_k",
+								"max_sc",
+								"max_sm",
+								"carga",
+								"atraso",
+								"conh",
+								"late"
+							],
+							...["lv_so_bruto", "ev", "pz", "desde", "wq", "k"],
 							// ranking da aba Jogadores (CTE internas)
 							...[
 								"cambio",

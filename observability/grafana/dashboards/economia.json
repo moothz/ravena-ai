@@ -222,7 +222,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "**Está tudo bem, e os dados são de agora?** Confiança primeiro: um veredito só vale para moeda com dados atuais e que fecha com o extrato."
+        "content": "**Está tudo bem, e os dados são de agora?** Situação de cada moeda, alertas, massa e as últimas mudanças."
        },
        "fieldConfig": {
         "defaults": {},
@@ -233,261 +233,12 @@
      "transparent": true
     }
    },
-   "panel-1": {
-    "kind": "Panel",
-    "spec": {
-     "id": 1,
-     "title": "Confiança: de quando são os dados (agora)",
-     "description": "Até que hora cheia cada fonte está carregada. A carga roda no minuto 5, então o atraso normal fica entre ~0,1 e ~1,1 h; acima de 2 h a carga está falhando (ver Último erro, vazio quando a última carga deu certo). Motivos sem mapear: motivos do extrato que a ravena ainda não sabe classificar (Diagnóstico mostra quais). Petalitas: o Jardim ainda não tem extrato, só o saldo. Limites de cor PROVISÓRIOS, ponto de partida para calibrar.",
-     "links": [],
-     "data": {
-      "kind": "QueryGroup",
-      "spec": {
-       "queries": [
-        {
-         "kind": "PanelQuery",
-         "spec": {
-          "query": {
-           "kind": "DataQuery",
-           "group": "frser-sqlite-datasource",
-           "version": "v0",
-           "datasource": {
-            "name": "economia-sqlite"
-           },
-           "spec": {
-            "queryType": "table",
-            "queryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Fonte\",\n  (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) / 1000 AS \"Dados até\",\n  ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000\n         - (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1)) / 3600000.0, 1) AS \"Atraso (h)\",\n  CASE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), -1)\n    WHEN 1 THEN 'com extrato' WHEN 0 THEN 'sem extrato' ELSE 'sem dados' END AS \"Extrato\",\n  (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS \"Motivos sem mapear (7 dias)\",\n  COALESCE((SELECT CASE WHEN ok = 0 THEN error END FROM load_runs l WHERE l.source = cur.currency ORDER BY ts DESC LIMIT 1), '') AS \"Último erro\"\nFROM cur ORDER BY cur.ordem",
-            "rawQueryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Fonte\",\n  (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) / 1000 AS \"Dados até\",\n  ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000\n         - (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1)) / 3600000.0, 1) AS \"Atraso (h)\",\n  CASE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), -1)\n    WHEN 1 THEN 'com extrato' WHEN 0 THEN 'sem extrato' ELSE 'sem dados' END AS \"Extrato\",\n  (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS \"Motivos sem mapear (7 dias)\",\n  COALESCE((SELECT CASE WHEN ok = 0 THEN error END FROM load_runs l WHERE l.source = cur.currency ORDER BY ts DESC LIMIT 1), '') AS \"Último erro\"\nFROM cur ORDER BY cur.ordem",
-            "timeColumns": [
-             "Dados até"
-            ]
-           }
-          },
-          "refId": "A",
-          "hidden": false
-         }
-        }
-       ],
-       "transformations": [],
-       "queryOptions": {}
-      }
-     },
-     "vizConfig": {
-      "kind": "VizConfig",
-      "group": "table",
-      "version": "",
-      "spec": {
-       "options": {
-        "cellHeight": "sm",
-        "showHeader": true
-       },
-       "fieldConfig": {
-        "defaults": {
-         "noValue": "—"
-        },
-        "overrides": [
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Dados até"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "time:DD/MM HH:mm"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Dados até"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "nunca"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Atraso (h)"
-          },
-          "properties": [
-           {
-            "id": "decimals",
-            "value": 1
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Atraso (h)"
-          },
-          "properties": [
-           {
-            "id": "thresholds",
-            "value": {
-             "mode": "absolute",
-             "steps": [
-              {
-               "color": "green",
-               "value": null
-              },
-              {
-               "color": "yellow",
-               "value": 2
-              },
-              {
-               "color": "red",
-               "value": 6
-              }
-             ]
-            }
-           },
-           {
-            "id": "custom.cellOptions",
-            "value": {
-             "type": "color-text"
-            }
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Motivos sem mapear (7 dias)"
-          },
-          "properties": [
-           {
-            "id": "thresholds",
-            "value": {
-             "mode": "absolute",
-             "steps": [
-              {
-               "color": "green",
-               "value": null
-              },
-              {
-               "color": "red",
-               "value": 1
-              }
-             ]
-            }
-           },
-           {
-            "id": "custom.cellOptions",
-            "value": {
-             "type": "color-text"
-            }
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Extrato"
-          },
-          "properties": [
-           {
-            "id": "mappings",
-            "value": [
-             {
-              "type": "value",
-              "options": {
-               "sem extrato": {
-                "color": "text"
-               },
-               "com extrato": {
-                "color": "green"
-               }
-              }
-             }
-            ]
-           },
-           {
-            "id": "custom.cellOptions",
-            "value": {
-             "type": "color-text"
-            }
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Fonte"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 110
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Dados até"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 110
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Atraso (h)"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 90
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Extrato"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 120
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Motivos sem mapear (7 dias)"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 240
-           }
-          ]
-         }
-        ]
-       }
-      }
-     }
-    }
-   },
    "panel-2": {
     "kind": "Panel",
     "spec": {
      "id": 2,
-     "title": "Veredito por moeda (últimos 7 dias)",
-     "description": "Situação = o pior entre: crescimento da massa na semana (ok até 1%, atenção até 3%, agir acima, nos dois sentidos; comparado com o retrato de 7 a 9 dias antes, senão 'sem dados'), moeda sem origem na semana em % da massa (0,1% / 0,5%) e em % do criado (1% / 5%), e motivo sem mapear no extrato (pelo menos atenção). 'Por quê' lista todo critério que não está ok. 'Sem origem' mostra o critério pior; os dois valores (% do criado e % da massa) ficam em colunas ocultas (Inspecionar → Dados). Dobra em = semanas para a massa dobrar no ritmo desta semana (ln 2 / ln(1+g)). Moeda sem origem = Δ massa − Σ(entradas − saídas) do extrato: positivo apareceu sem linha no extrato, negativo sumiu. Zinthos e Runas já nascem em 'agir' por buracos de extrato conhecidos (give-all, sobra do confisco, créditos de Runas sem linha); é esperado. Limites de cor PROVISÓRIOS, ponto de partida para calibrar.",
+     "title": "Situação por moeda (últimos 7 dias)",
+     "description": "Situação = o pior entre: crescimento da massa na semana (ok até 1%, atenção até 3%, agir acima, nos dois sentidos; comparado com o retrato de 7 a 9 dias antes, senão 'sem dados'), moeda sem origem na semana em % da massa (0,1% / 0,5%) e em % do criado (1% / 5%), e motivo sem mapear no extrato (pelo menos atenção). Sem origem 'conhecido' = não passa do maior valor das 8 semanas anteriores (com pelo menos 4 semanas de histórico): os buracos de extrato já sabidos (give-all, sobra do confisco, créditos de Runas sem linha) ficam em 'atenção · conhecido', e 'agir' fica para crescimento forte ou sem origem acima da própria base. Dados até = última hora cheia carregada (horário de Brasília) e o atraso até agora; a carga roda no minuto 5, então o normal é ~0,1 a ~1,1 h. Acima do intervalo da carga + 2 h (3 h no padrão, de hora em hora) a situação vira 'dados atrasados' (mesmo limite do alerta; com a carga pausada, nunca; ver Diagnóstico → Confiança). Carga = agendamento atual (a cada N h ou pausada). Dobra em = semanas para a massa dobrar no ritmo desta semana (ln 2 / ln(1+g)); só aparece com crescimento de pelo menos 0,5% por semana e até 104 semanas. Sem origem = Δ massa − Σ(entradas − saídas) do extrato: positivo apareceu sem linha no extrato, negativo sumiu; mostra o critério pior, os dois valores e a maior fonte ficam em colunas ocultas (Inspecionar → Dados). Limites de cor PROVISÓRIOS, ponto de partida para calibrar.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -505,11 +256,9 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3)), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances b\n  WHERE NOT (b.holders IS NULL AND b.ts < COALESCE((SELECT CAST(m.value AS INTEGER) FROM meta m\n                                                    WHERE m.key = 'mass_reconstructed_before:' || b.currency), 0))\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nb AS (\n  SELECT cur.currency, cur.nome, cur.ordem,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    (SELECT ts FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS ts_dados,\n    -- base do crescimento: retrato com 7 a 9 dias antes do último; sem ele, sem dados (nada de \"dobra em\" falso)\n    (SELECT total FROM balances x WHERE x.currency = cur.currency\n       AND x.ts <= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 604800000\n       AND x.ts >= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 9 * 86400000\n       ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction')\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS criado,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation'\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to GROUP BY f.reason ORDER BY SUM(f.amount_in) DESC LIMIT 1) AS maior_fonte,\n    (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS unk,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail\n  FROM cur\n),\nc AS (\n  SELECT *,\n    (massa - massa_antes) * 1.0 / NULLIF(ABS(massa_antes), 0) AS g,\n    100.0 * so7 / NULLIF(ABS(massa), 0) AS so_massa,\n    100.0 * so7 / NULLIF(criado, 0) AS so_criado\n  FROM b\n),\nn AS (\n  SELECT *,\n    CASE WHEN g IS NULL THEN NULL WHEN ABS(g) * 100 <= 1 THEN 0 WHEN ABS(g) * 100 <= 3 THEN 1 ELSE 2 END AS lv_g,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_massa IS NULL THEN NULL\n      WHEN ABS(so_massa) < 0.1 THEN 0 WHEN ABS(so_massa) < 0.5 THEN 1 ELSE 2 END AS lv_sm,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_criado IS NULL THEN NULL\n      WHEN ABS(so_criado) < 1 THEN 0 WHEN ABS(so_criado) < 5 THEN 1 ELSE 2 END AS lv_sc,\n    CASE WHEN unk > 0 THEN 1 ELSE 0 END AS lv_u\n  FROM c\n),\nv AS (\n  SELECT *, MAX(COALESCE(lv_sm, -1), COALESCE(lv_sc, -1)) AS lv_so,\n    CASE WHEN lv_g IS NULL AND lv_sm IS NULL AND lv_sc IS NULL AND lv_u = 0 THEN -1\n      ELSE MAX(COALESCE(lv_g, -1), COALESCE(lv_sm, -1), COALESCE(lv_sc, -1), lv_u) END AS lv\n  FROM n\n)\nSELECT nome AS \"Moeda\",\n  CASE lv WHEN 0 THEN 'ok' WHEN 1 THEN 'atenção' WHEN 2 THEN 'agir' ELSE 'sem dados' END\n    || CASE WHEN avail = 0 THEN ' · sem extrato' ELSE '' END AS \"Situação\",\n  CASE WHEN lv <= 0 THEN '—' ELSE\n    CASE WHEN lv_g >= 1 THEN 'crescimento' ELSE '' END\n    || CASE WHEN lv_so >= 1 THEN CASE WHEN lv_g >= 1 THEN ' + ' ELSE '' END || 'sem origem' ELSE '' END\n    || CASE WHEN lv_u >= 1 THEN CASE WHEN lv_g >= 1 OR lv_so >= 1 THEN ' + ' ELSE '' END || 'motivo sem mapear' ELSE '' END END AS \"Por quê\",\n  ROUND(100.0 * g, 2) AS \"Crescimento (%)\",\n  CASE WHEN g > 0 THEN ROUND(ln(2) / ln(1 + g), 1) END AS \"Dobra em (semanas)\",\n  CASE WHEN lv_so IS NULL OR lv_so < 0 THEN NULL\n       WHEN COALESCE(lv_sc, -1) >= COALESCE(lv_sm, -1) THEN printf('%.2f%% do criado', so_criado)\n       ELSE printf('%.3f%% da massa', so_massa) END AS \"Sem origem\",\n  ROUND(so_criado, 2) AS \"Sem origem (% do criado)\",\n  ROUND(so_massa, 3) AS \"Sem origem (% da massa)\",\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS \"Maior fonte\",\n  ts_dados / 1000 AS \"Dados até\"\nFROM v ORDER BY ordem",
-            "rawQueryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3)), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances b\n  WHERE NOT (b.holders IS NULL AND b.ts < COALESCE((SELECT CAST(m.value AS INTEGER) FROM meta m\n                                                    WHERE m.key = 'mass_reconstructed_before:' || b.currency), 0))\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n),\nb AS (\n  SELECT cur.currency, cur.nome, cur.ordem,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    (SELECT ts FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS ts_dados,\n    -- base do crescimento: retrato com 7 a 9 dias antes do último; sem ele, sem dados (nada de \"dobra em\" falso)\n    (SELECT total FROM balances x WHERE x.currency = cur.currency\n       AND x.ts <= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 604800000\n       AND x.ts >= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 9 * 86400000\n       ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction')\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS criado,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation'\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to GROUP BY f.reason ORDER BY SUM(f.amount_in) DESC LIMIT 1) AS maior_fonte,\n    (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS unk,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail\n  FROM cur\n),\nc AS (\n  SELECT *,\n    (massa - massa_antes) * 1.0 / NULLIF(ABS(massa_antes), 0) AS g,\n    100.0 * so7 / NULLIF(ABS(massa), 0) AS so_massa,\n    100.0 * so7 / NULLIF(criado, 0) AS so_criado\n  FROM b\n),\nn AS (\n  SELECT *,\n    CASE WHEN g IS NULL THEN NULL WHEN ABS(g) * 100 <= 1 THEN 0 WHEN ABS(g) * 100 <= 3 THEN 1 ELSE 2 END AS lv_g,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_massa IS NULL THEN NULL\n      WHEN ABS(so_massa) < 0.1 THEN 0 WHEN ABS(so_massa) < 0.5 THEN 1 ELSE 2 END AS lv_sm,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_criado IS NULL THEN NULL\n      WHEN ABS(so_criado) < 1 THEN 0 WHEN ABS(so_criado) < 5 THEN 1 ELSE 2 END AS lv_sc,\n    CASE WHEN unk > 0 THEN 1 ELSE 0 END AS lv_u\n  FROM c\n),\nv AS (\n  SELECT *, MAX(COALESCE(lv_sm, -1), COALESCE(lv_sc, -1)) AS lv_so,\n    CASE WHEN lv_g IS NULL AND lv_sm IS NULL AND lv_sc IS NULL AND lv_u = 0 THEN -1\n      ELSE MAX(COALESCE(lv_g, -1), COALESCE(lv_sm, -1), COALESCE(lv_sc, -1), lv_u) END AS lv\n  FROM n\n)\nSELECT nome AS \"Moeda\",\n  CASE lv WHEN 0 THEN 'ok' WHEN 1 THEN 'atenção' WHEN 2 THEN 'agir' ELSE 'sem dados' END\n    || CASE WHEN avail = 0 THEN ' · sem extrato' ELSE '' END AS \"Situação\",\n  CASE WHEN lv <= 0 THEN '—' ELSE\n    CASE WHEN lv_g >= 1 THEN 'crescimento' ELSE '' END\n    || CASE WHEN lv_so >= 1 THEN CASE WHEN lv_g >= 1 THEN ' + ' ELSE '' END || 'sem origem' ELSE '' END\n    || CASE WHEN lv_u >= 1 THEN CASE WHEN lv_g >= 1 OR lv_so >= 1 THEN ' + ' ELSE '' END || 'motivo sem mapear' ELSE '' END END AS \"Por quê\",\n  ROUND(100.0 * g, 2) AS \"Crescimento (%)\",\n  CASE WHEN g > 0 THEN ROUND(ln(2) / ln(1 + g), 1) END AS \"Dobra em (semanas)\",\n  CASE WHEN lv_so IS NULL OR lv_so < 0 THEN NULL\n       WHEN COALESCE(lv_sc, -1) >= COALESCE(lv_sm, -1) THEN printf('%.2f%% do criado', so_criado)\n       ELSE printf('%.3f%% da massa', so_massa) END AS \"Sem origem\",\n  ROUND(so_criado, 2) AS \"Sem origem (% do criado)\",\n  ROUND(so_massa, 3) AS \"Sem origem (% da massa)\",\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS \"Maior fonte\",\n  ts_dados / 1000 AS \"Dados até\"\nFROM v ORDER BY ordem",
-            "timeColumns": [
-             "Dados até"
-            ]
+            "queryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3)), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances b\n  WHERE NOT (b.holders IS NULL AND b.ts < COALESCE((SELECT CAST(m.value AS INTEGER) FROM meta m\n                                                    WHERE m.key = 'mass_reconstructed_before:' || b.currency), 0))\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n), sched AS (\n  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,\n    COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.paused'), 0) AS pz,\n    (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.updated_at') AS desde\n),\n-- semanas inteiras antes do fim do período: k = 0 é a semana atual, 1 a 8 o histórico (uma passada por tabela)\nxw AS (\n  SELECT currency, ($__to - 1 - (d * 86400000 + 25200000)) / 604800000 AS k, SUM(so) AS so_k FROM x\n  WHERE d * 86400000 + 25200000 >= $__to - 9 * 604800000 AND d * 86400000 + 25200000 < $__to GROUP BY 1, 2\n),\nfw AS (\n  SELECT currency, ($__to - 1 - hour) / 604800000 AS k, SUM(amount_in) AS cri_k FROM flows_hourly f\n  WHERE f.kind IN ('creation', 'destruction') AND hour >= $__to - 9 * 604800000 AND hour < $__to GROUP BY 1, 2\n),\nhk AS (\n  SELECT xw.currency, xw.k, xw.so_k, fw.cri_k,\n    (SELECT total FROM balances z WHERE z.currency = xw.currency AND z.ts <= $__to - xw.k * 604800000 ORDER BY z.ts DESC LIMIT 1) AS massa_k\n  FROM xw LEFT JOIN fw ON fw.currency = xw.currency AND fw.k = xw.k\n  WHERE xw.k BETWEEN 1 AND 8\n),\nh AS (\n  SELECT currency, COUNT(*) AS semanas, MAX(ABS(100.0 * so_k / NULLIF(cri_k, 0))) AS max_sc,\n    MAX(ABS(100.0 * so_k / NULLIF(ABS(massa_k), 0))) AS max_sm\n  FROM hk WHERE so_k IS NOT NULL GROUP BY currency\n),\nb AS (\n  SELECT cur.currency, cur.nome, cur.ordem,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    -- base do crescimento: retrato com 7 a 9 dias antes do último; sem ele, sem dados (nada de \"dobra em\" falso)\n    (SELECT total FROM balances x WHERE x.currency = cur.currency\n       AND x.ts <= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 604800000\n       AND x.ts >= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 9 * 86400000\n       ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction')\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS criado,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation'\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to GROUP BY f.reason ORDER BY SUM(f.amount_in) DESC LIMIT 1) AS maior_fonte,\n    (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS unk,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail,\n    (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) AS carga\n  FROM cur\n),\nc AS (\n  SELECT b.*, h.semanas, h.max_sc, h.max_sm, sched.ev, sched.pz, sched.desde,\n    (massa - massa_antes) * 1.0 / NULLIF(ABS(massa_antes), 0) AS g,\n    100.0 * so7 / NULLIF(ABS(massa), 0) AS so_massa,\n    100.0 * so7 / NULLIF(criado, 0) AS so_criado,\n    (CAST(strftime('%s', 'now') AS INTEGER) * 1000 - carga) / 3600000.0 AS atraso\n  FROM b LEFT JOIN h ON h.currency = b.currency, sched\n),\nn AS (\n  SELECT *,\n    CASE WHEN g IS NULL THEN NULL WHEN ABS(g) * 100 <= 1 THEN 0 WHEN ABS(g) * 100 <= 3 THEN 1 ELSE 2 END AS lv_g,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_massa IS NULL THEN NULL\n      WHEN ABS(so_massa) < 0.1 THEN 0 WHEN ABS(so_massa) < 0.5 THEN 1 ELSE 2 END AS lv_sm,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_criado IS NULL THEN NULL\n      WHEN ABS(so_criado) < 1 THEN 0 WHEN ABS(so_criado) < 5 THEN 1 ELSE 2 END AS lv_sc,\n    CASE WHEN unk > 0 THEN 1 ELSE 0 END AS lv_u,\n    CASE WHEN semanas >= 4 AND (so_criado IS NULL OR ABS(so_criado) <= max_sc)\n      AND (so_massa IS NULL OR ABS(so_massa) <= max_sm) THEN 1 ELSE 0 END AS conh,\n    CASE WHEN pz = 0 AND (carga IS NULL OR atraso > ev + 2) THEN 1 ELSE 0 END AS late\n  FROM c\n),\nv0 AS (SELECT *, MAX(COALESCE(lv_sm, -1), COALESCE(lv_sc, -1)) AS lv_so_bruto FROM n),\nv1 AS (SELECT *, CASE WHEN conh = 1 AND lv_so_bruto >= 1 THEN 1 ELSE lv_so_bruto END AS lv_so FROM v0),\nv AS (\n  SELECT *,\n    CASE WHEN lv_g IS NULL AND lv_sm IS NULL AND lv_sc IS NULL AND lv_u = 0 THEN -1\n      ELSE MAX(COALESCE(lv_g, -1), lv_so, lv_u) END AS lv\n  FROM v1\n)\nSELECT nome AS \"Moeda\",\n  CASE WHEN late = 1 THEN 'dados atrasados'\n    ELSE CASE lv WHEN 0 THEN 'ok' WHEN 1 THEN 'atenção' WHEN 2 THEN 'agir' ELSE 'sem dados' END\n      || CASE WHEN lv = 1 AND lv_so >= 1 AND conh = 1 AND COALESCE(lv_g, -1) < 1 AND lv_u < 1 THEN ' · conhecido' ELSE '' END END\n    || CASE WHEN avail = 0 THEN ' · sem extrato' ELSE '' END AS \"Situação\",\n  COALESCE(NULLIF(substr(\n    CASE WHEN lv_g >= 1 THEN ' + crescimento' ELSE '' END\n    || CASE WHEN lv_so >= 1 THEN ' + sem origem' || CASE WHEN conh = 1 THEN ' (na faixa das 8 semanas)' ELSE '' END ELSE '' END\n    || CASE WHEN lv_u >= 1 THEN ' + motivo sem mapear' ELSE '' END\n    || CASE WHEN late = 1 THEN ' + carga atrasada' ELSE '' END, 4), ''), '—') AS \"Por quê\",\n  CASE WHEN carga IS NULL THEN 'nunca carregou'\n    ELSE strftime('%d/%m %H:%M', carga / 1000, 'unixepoch', '-3 hours') || ' · ' || printf('%.1f h', atraso) END AS \"Dados até · atraso\",\n  CASE WHEN pz = 1 THEN 'pausada' || COALESCE(' desde ' || strftime('%d/%m %H:%M',\n         CASE WHEN desde > 100000000000 THEN desde / 1000 ELSE desde END, 'unixepoch', '-3 hours'), '')\n    ELSE 'ativa a cada ' || ev || ' h' END AS \"Carga\",\n  ROUND(100.0 * g, 2) AS \"Crescimento (%)\",\n  CASE WHEN g >= 0.005 AND ln(2) / ln(1 + g) <= 104 THEN ROUND(ln(2) / ln(1 + g), 1) END AS \"Dobra em (semanas)\",\n  CASE WHEN lv_so_bruto IS NULL OR lv_so_bruto < 0 THEN NULL\n       WHEN COALESCE(lv_sc, -1) >= COALESCE(lv_sm, -1) THEN printf('%.2f%% do criado', so_criado)\n       ELSE printf('%.3f%% da massa', so_massa) END AS \"Sem origem\",\n  ROUND(so_criado, 2) AS \"Sem origem (% do criado)\",\n  ROUND(so_massa, 3) AS \"Sem origem (% da massa)\",\n  ROUND(max_sc, 2) AS \"Maior sem origem em 8 semanas (% do criado)\",\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS \"Maior fonte\"\nFROM v ORDER BY ordem",
+            "rawQueryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3)), snap AS (\n  SELECT currency, ts, total, (ts - 25200000) / 86400000 AS d,\n         ROW_NUMBER() OVER (PARTITION BY currency, (ts - 25200000) / 86400000 ORDER BY ts) AS rn\n  FROM balances b\n  WHERE NOT (b.holders IS NULL AND b.ts < COALESCE((SELECT CAST(m.value AS INTEGER) FROM meta m\n                                                    WHERE m.key = 'mass_reconstructed_before:' || b.currency), 0))\n),\nop AS (SELECT currency, d, ts, total FROM snap WHERE rn = 1),\ndl AS (\n  SELECT currency, d, ts AS ta, total AS t0,\n         LEAD(d) OVER (PARTITION BY currency ORDER BY d) AS d_next,\n         LEAD(ts) OVER (PARTITION BY currency ORDER BY d) AS tb,\n         LEAD(total) OVER (PARTITION BY currency ORDER BY d) AS t1\n  FROM op\n),\nx AS (\n  SELECT dl.currency, dl.d, dl.d_next - dl.d AS dias, dl.t1 AS total_fim,\n         (dl.t1 - dl.t0) - COALESCE((SELECT SUM(f.amount_in - f.amount_out) FROM flows_hourly f\n                               WHERE f.currency = dl.currency AND f.kind <> 'non_monetary'\n                                 AND f.hour >= dl.ta - dl.ta % 3600000\n                                 AND f.hour <  dl.tb - dl.tb % 3600000), 0) AS so\n  FROM dl\n  WHERE dl.tb IS NOT NULL\n    AND COALESCE((SELECT available FROM ledger_status s WHERE s.currency = dl.currency), 1) = 1\n), sched AS (\n  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,\n    COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.paused'), 0) AS pz,\n    (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.updated_at') AS desde\n),\n-- semanas inteiras antes do fim do período: k = 0 é a semana atual, 1 a 8 o histórico (uma passada por tabela)\nxw AS (\n  SELECT currency, ($__to - 1 - (d * 86400000 + 25200000)) / 604800000 AS k, SUM(so) AS so_k FROM x\n  WHERE d * 86400000 + 25200000 >= $__to - 9 * 604800000 AND d * 86400000 + 25200000 < $__to GROUP BY 1, 2\n),\nfw AS (\n  SELECT currency, ($__to - 1 - hour) / 604800000 AS k, SUM(amount_in) AS cri_k FROM flows_hourly f\n  WHERE f.kind IN ('creation', 'destruction') AND hour >= $__to - 9 * 604800000 AND hour < $__to GROUP BY 1, 2\n),\nhk AS (\n  SELECT xw.currency, xw.k, xw.so_k, fw.cri_k,\n    (SELECT total FROM balances z WHERE z.currency = xw.currency AND z.ts <= $__to - xw.k * 604800000 ORDER BY z.ts DESC LIMIT 1) AS massa_k\n  FROM xw LEFT JOIN fw ON fw.currency = xw.currency AND fw.k = xw.k\n  WHERE xw.k BETWEEN 1 AND 8\n),\nh AS (\n  SELECT currency, COUNT(*) AS semanas, MAX(ABS(100.0 * so_k / NULLIF(cri_k, 0))) AS max_sc,\n    MAX(ABS(100.0 * so_k / NULLIF(ABS(massa_k), 0))) AS max_sm\n  FROM hk WHERE so_k IS NOT NULL GROUP BY currency\n),\nb AS (\n  SELECT cur.currency, cur.nome, cur.ordem,\n    (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= $__to ORDER BY ts DESC LIMIT 1) AS massa,\n    -- base do crescimento: retrato com 7 a 9 dias antes do último; sem ele, sem dados (nada de \"dobra em\" falso)\n    (SELECT total FROM balances x WHERE x.currency = cur.currency\n       AND x.ts <= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 604800000\n       AND x.ts >= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= $__to) - 9 * 86400000\n       ORDER BY ts DESC LIMIT 1) AS massa_antes,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind IN ('creation', 'destruction')\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS criado,\n    (SELECT SUM(so) FROM x WHERE x.currency = cur.currency\n       AND x.d * 86400000 + 25200000 >= $__to - 604800000 AND x.d * 86400000 + 25200000 < $__to) AS so7,\n    (SELECT COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation'\n       AND f.hour >= $__to - 604800000 AND f.hour < $__to GROUP BY f.reason ORDER BY SUM(f.amount_in) DESC LIMIT 1) AS maior_fonte,\n    (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS unk,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), 1) AS avail,\n    (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) AS carga\n  FROM cur\n),\nc AS (\n  SELECT b.*, h.semanas, h.max_sc, h.max_sm, sched.ev, sched.pz, sched.desde,\n    (massa - massa_antes) * 1.0 / NULLIF(ABS(massa_antes), 0) AS g,\n    100.0 * so7 / NULLIF(ABS(massa), 0) AS so_massa,\n    100.0 * so7 / NULLIF(criado, 0) AS so_criado,\n    (CAST(strftime('%s', 'now') AS INTEGER) * 1000 - carga) / 3600000.0 AS atraso\n  FROM b LEFT JOIN h ON h.currency = b.currency, sched\n),\nn AS (\n  SELECT *,\n    CASE WHEN g IS NULL THEN NULL WHEN ABS(g) * 100 <= 1 THEN 0 WHEN ABS(g) * 100 <= 3 THEN 1 ELSE 2 END AS lv_g,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_massa IS NULL THEN NULL\n      WHEN ABS(so_massa) < 0.1 THEN 0 WHEN ABS(so_massa) < 0.5 THEN 1 ELSE 2 END AS lv_sm,\n    CASE WHEN avail = 0 OR so7 IS NULL OR so_criado IS NULL THEN NULL\n      WHEN ABS(so_criado) < 1 THEN 0 WHEN ABS(so_criado) < 5 THEN 1 ELSE 2 END AS lv_sc,\n    CASE WHEN unk > 0 THEN 1 ELSE 0 END AS lv_u,\n    CASE WHEN semanas >= 4 AND (so_criado IS NULL OR ABS(so_criado) <= max_sc)\n      AND (so_massa IS NULL OR ABS(so_massa) <= max_sm) THEN 1 ELSE 0 END AS conh,\n    CASE WHEN pz = 0 AND (carga IS NULL OR atraso > ev + 2) THEN 1 ELSE 0 END AS late\n  FROM c\n),\nv0 AS (SELECT *, MAX(COALESCE(lv_sm, -1), COALESCE(lv_sc, -1)) AS lv_so_bruto FROM n),\nv1 AS (SELECT *, CASE WHEN conh = 1 AND lv_so_bruto >= 1 THEN 1 ELSE lv_so_bruto END AS lv_so FROM v0),\nv AS (\n  SELECT *,\n    CASE WHEN lv_g IS NULL AND lv_sm IS NULL AND lv_sc IS NULL AND lv_u = 0 THEN -1\n      ELSE MAX(COALESCE(lv_g, -1), lv_so, lv_u) END AS lv\n  FROM v1\n)\nSELECT nome AS \"Moeda\",\n  CASE WHEN late = 1 THEN 'dados atrasados'\n    ELSE CASE lv WHEN 0 THEN 'ok' WHEN 1 THEN 'atenção' WHEN 2 THEN 'agir' ELSE 'sem dados' END\n      || CASE WHEN lv = 1 AND lv_so >= 1 AND conh = 1 AND COALESCE(lv_g, -1) < 1 AND lv_u < 1 THEN ' · conhecido' ELSE '' END END\n    || CASE WHEN avail = 0 THEN ' · sem extrato' ELSE '' END AS \"Situação\",\n  COALESCE(NULLIF(substr(\n    CASE WHEN lv_g >= 1 THEN ' + crescimento' ELSE '' END\n    || CASE WHEN lv_so >= 1 THEN ' + sem origem' || CASE WHEN conh = 1 THEN ' (na faixa das 8 semanas)' ELSE '' END ELSE '' END\n    || CASE WHEN lv_u >= 1 THEN ' + motivo sem mapear' ELSE '' END\n    || CASE WHEN late = 1 THEN ' + carga atrasada' ELSE '' END, 4), ''), '—') AS \"Por quê\",\n  CASE WHEN carga IS NULL THEN 'nunca carregou'\n    ELSE strftime('%d/%m %H:%M', carga / 1000, 'unixepoch', '-3 hours') || ' · ' || printf('%.1f h', atraso) END AS \"Dados até · atraso\",\n  CASE WHEN pz = 1 THEN 'pausada' || COALESCE(' desde ' || strftime('%d/%m %H:%M',\n         CASE WHEN desde > 100000000000 THEN desde / 1000 ELSE desde END, 'unixepoch', '-3 hours'), '')\n    ELSE 'ativa a cada ' || ev || ' h' END AS \"Carga\",\n  ROUND(100.0 * g, 2) AS \"Crescimento (%)\",\n  CASE WHEN g >= 0.005 AND ln(2) / ln(1 + g) <= 104 THEN ROUND(ln(2) / ln(1 + g), 1) END AS \"Dobra em (semanas)\",\n  CASE WHEN lv_so_bruto IS NULL OR lv_so_bruto < 0 THEN NULL\n       WHEN COALESCE(lv_sc, -1) >= COALESCE(lv_sm, -1) THEN printf('%.2f%% do criado', so_criado)\n       ELSE printf('%.3f%% da massa', so_massa) END AS \"Sem origem\",\n  ROUND(so_criado, 2) AS \"Sem origem (% do criado)\",\n  ROUND(so_massa, 3) AS \"Sem origem (% da massa)\",\n  ROUND(max_sc, 2) AS \"Maior sem origem em 8 semanas (% do criado)\",\n  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS \"Maior fonte\"\nFROM v ORDER BY ordem",
+            "timeColumns": []
            }
           },
           "refId": "A",
@@ -535,18 +284,6 @@
          "noValue": "—"
         },
         "overrides": [
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Dados até"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "time:DD/MM HH:mm"
-           }
-          ]
-         },
          {
           "matcher": {
            "id": "byName",
@@ -581,6 +318,17 @@
              {
               "type": "regex",
               "options": {
+               "pattern": "^(dados atrasados.*)",
+               "result": {
+                "color": "#e5a650",
+                "text": "▲ $1",
+                "index": 4
+               }
+              }
+             },
+             {
+              "type": "regex",
+              "options": {
                "pattern": "^(agir.*)",
                "result": {
                 "color": "#e0645c",
@@ -609,7 +357,7 @@
            },
            {
             "id": "custom.width",
-            "value": 200
+            "value": 230
            }
           ]
          },
@@ -628,12 +376,24 @@
          {
           "matcher": {
            "id": "byName",
-           "options": "Por quê"
+           "options": "Dados até · atraso"
           },
           "properties": [
            {
             "id": "custom.width",
-            "value": 300
+            "value": 170
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Carga"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 190
            }
           ]
          },
@@ -649,23 +409,23 @@
              "mode": "absolute",
              "steps": [
               {
-               "color": "red",
+               "color": "#e0645c",
                "value": null
               },
               {
-               "color": "yellow",
+               "color": "#e5a650",
                "value": -3
               },
               {
-               "color": "green",
+               "color": "#6fb98a",
                "value": -1
               },
               {
-               "color": "yellow",
+               "color": "#e5a650",
                "value": 1
               },
               {
-               "color": "red",
+               "color": "#e0645c",
                "value": 3
               }
              ]
@@ -686,8 +446,20 @@
           },
           "properties": [
            {
-            "id": "noValue",
-            "value": "sem dados"
+            "id": "mappings",
+            "value": [
+             {
+              "type": "special",
+              "options": {
+               "match": "null",
+               "result": {
+                "text": "sem dados",
+                "color": "text",
+                "index": 0
+               }
+              }
+             }
+            ]
            },
            {
             "id": "custom.width",
@@ -746,16 +518,75 @@
          {
           "matcher": {
            "id": "byName",
-           "options": "Dados até"
+           "options": "Maior sem origem em 8 semanas (% do criado)"
           },
           "properties": [
            {
-            "id": "custom.width",
-            "value": 110
+            "id": "custom.hidden",
+            "value": true
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Maior fonte"
+          },
+          "properties": [
+           {
+            "id": "custom.hidden",
+            "value": true
            }
           ]
          }
         ]
+       }
+      }
+     }
+    }
+   },
+   "panel-31": {
+    "kind": "Panel",
+    "spec": {
+     "id": 31,
+     "title": "Alertas disparados",
+     "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point. Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "alertlist",
+      "version": "",
+      "spec": {
+       "options": {
+        "viewMode": "list",
+        "groupMode": "default",
+        "groupBy": [],
+        "maxItems": 20,
+        "sortOrder": 1,
+        "dashboardAlerts": false,
+        "alertName": "",
+        "alertInstanceLabelFilter": "{area=\"economia\"}",
+        "folder": null,
+        "stateFilter": {
+         "firing": true,
+         "pending": true,
+         "noData": false,
+         "normal": false,
+         "error": true
+        },
+        "noValue": "nenhum alerta disparado"
+       },
+       "fieldConfig": {
+        "defaults": {},
+        "overrides": []
        }
       }
      }
@@ -882,53 +713,6 @@
      }
     }
    },
-   "panel-31": {
-    "kind": "Panel",
-    "spec": {
-     "id": 31,
-     "title": "Alertas disparados",
-     "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada, motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point. Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
-     "links": [],
-     "data": {
-      "kind": "QueryGroup",
-      "spec": {
-       "queries": [],
-       "transformations": [],
-       "queryOptions": {}
-      }
-     },
-     "vizConfig": {
-      "kind": "VizConfig",
-      "group": "alertlist",
-      "version": "",
-      "spec": {
-       "options": {
-        "viewMode": "list",
-        "groupMode": "default",
-        "groupBy": [],
-        "maxItems": 20,
-        "sortOrder": 1,
-        "dashboardAlerts": false,
-        "alertName": "",
-        "alertInstanceLabelFilter": "{area=\"economia\"}",
-        "folder": null,
-        "stateFilter": {
-         "firing": true,
-         "pending": true,
-         "noData": false,
-         "normal": false,
-         "error": true
-        },
-        "noValue": "nenhum alerta disparado"
-       },
-       "fieldConfig": {
-        "defaults": {},
-        "overrides": []
-       }
-      }
-     }
-    }
-   },
    "panel-4": {
     "kind": "Panel",
     "spec": {
@@ -979,10 +763,7 @@
        },
        "fieldConfig": {
         "defaults": {
-         "noValue": "Nenhuma mudança registrada ainda. Para registrar: docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" zinthos",
-         "custom": {
-          "wrapText": true
-         }
+         "noValue": "Nenhuma mudança registrada ainda. Para registrar: docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" zinthos"
         },
         "overrides": [
          {
@@ -1139,7 +920,7 @@
            },
            {
             "id": "custom.width",
-            "value": 220
+            "value": 330
            }
           ]
          }
@@ -4768,7 +4549,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "**Dá para confiar nos números?** Alertas, conferência de estoque × fluxos, motivos sem mapear, cargas e o que depende da fase 2."
+        "content": "**Dá para confiar nos números?** Alertas, de quando são os dados, conferência estoque × fluxos e cargas."
        },
        "fieldConfig": {
         "defaults": {},
@@ -4784,7 +4565,7 @@
     "spec": {
      "id": 34,
      "title": "Alertas da economia",
-     "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada, motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point.",
+     "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -4820,6 +4601,251 @@
        "fieldConfig": {
         "defaults": {},
         "overrides": []
+       }
+      }
+     }
+    }
+   },
+   "panel-1": {
+    "kind": "Panel",
+    "spec": {
+     "id": 1,
+     "title": "Confiança: de quando são os dados (agora)",
+     "description": "Até que hora cheia cada fonte está carregada. A carga roda no minuto 5, então o atraso normal fica entre ~0,1 e ~1,1 h; acima de 3 h a carga está falhando (ver Último erro, vazio quando a última carga deu certo). Motivos sem mapear: motivos do extrato que a ravena ainda não sabe classificar (Diagnóstico mostra quais). Petalitas: o Jardim ainda não tem extrato, só o saldo. Limites de cor PROVISÓRIOS, ponto de partida para calibrar.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Fonte\",\n  (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) / 1000 AS \"Dados até\",\n  ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000\n         - (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1)) / 3600000.0, 1) AS \"Atraso (h)\",\n  CASE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), -1)\n    WHEN 1 THEN 'com extrato' WHEN 0 THEN 'sem extrato' ELSE 'sem dados' END AS \"Extrato\",\n  (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS \"Motivos sem mapear (7 dias)\",\n  COALESCE((SELECT CASE WHEN ok = 0 THEN error END FROM load_runs l WHERE l.source = cur.currency ORDER BY ts DESC LIMIT 1), '') AS \"Último erro\"\nFROM cur ORDER BY cur.ordem",
+            "rawQueryText": "WITH cur(currency, nome, ordem) AS (VALUES ('zinthos', 'Zinthos', 1), ('petalitas', 'Petalitas', 2), ('runas', 'Runas', 3))\nSELECT cur.nome AS \"Fonte\",\n  (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) / 1000 AS \"Dados até\",\n  ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000\n         - (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1)) / 3600000.0, 1) AS \"Atraso (h)\",\n  CASE COALESCE((SELECT available FROM ledger_status s WHERE s.currency = cur.currency), -1)\n    WHEN 1 THEN 'com extrato' WHEN 0 THEN 'sem extrato' ELSE 'sem dados' END AS \"Extrato\",\n  (SELECT COUNT(DISTINCT f.reason) FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'unknown' AND f.hour >= $__to - 604800000 AND f.hour < $__to) AS \"Motivos sem mapear (7 dias)\",\n  COALESCE((SELECT CASE WHEN ok = 0 THEN error END FROM load_runs l WHERE l.source = cur.currency ORDER BY ts DESC LIMIT 1), '') AS \"Último erro\"\nFROM cur ORDER BY cur.ordem",
+            "timeColumns": [
+             "Dados até"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "table",
+      "version": "",
+      "spec": {
+       "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "—"
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Dados até"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "time:DD/MM HH:mm"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Dados até"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "nunca"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Atraso (h)"
+          },
+          "properties": [
+           {
+            "id": "decimals",
+            "value": 1
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Atraso (h)"
+          },
+          "properties": [
+           {
+            "id": "thresholds",
+            "value": {
+             "mode": "absolute",
+             "steps": [
+              {
+               "color": "#6fb98a",
+               "value": null
+              },
+              {
+               "color": "#e0645c",
+               "value": 3
+              }
+             ]
+            }
+           },
+           {
+            "id": "custom.cellOptions",
+            "value": {
+             "type": "color-text"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Motivos sem mapear (7 dias)"
+          },
+          "properties": [
+           {
+            "id": "thresholds",
+            "value": {
+             "mode": "absolute",
+             "steps": [
+              {
+               "color": "green",
+               "value": null
+              },
+              {
+               "color": "red",
+               "value": 1
+              }
+             ]
+            }
+           },
+           {
+            "id": "custom.cellOptions",
+            "value": {
+             "type": "color-text"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Extrato"
+          },
+          "properties": [
+           {
+            "id": "mappings",
+            "value": [
+             {
+              "type": "value",
+              "options": {
+               "sem extrato": {
+                "color": "text"
+               },
+               "com extrato": {
+                "color": "green"
+               }
+              }
+             }
+            ]
+           },
+           {
+            "id": "custom.cellOptions",
+            "value": {
+             "type": "color-text"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Fonte"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 110
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Dados até"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 110
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Atraso (h)"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 90
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Extrato"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 120
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Motivos sem mapear (7 dias)"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 240
+           }
+          ]
+         }
+        ]
        }
       }
      }
@@ -5509,7 +5535,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "- **Criado / destruído**: motivos que põem ou tiram moeda da economia (recompensa, prêmio, taxa, compra no sistema). Câmbio e transferência entre jogadores ficam à parte.\n- **Líquido**: criado − destruído (ou entrou − saiu, por motivo).\n- **Massa**: soma dos saldos. **Conferência / sem origem**: Δ massa − Σ(entradas − saídas); fora de zero = moeda que mudou sem linha no extrato.\n- **Fatia dos 10% maiores**: parte da massa nas mãos dos 10% com mais saldo (entre quem tem saldo > 0).\n- **Dia econômico**: começa às 04:00 BRT. **Dados até**: última hora cheia carregada de cada fonte.\n- **Veredito**: o pior entre crescimento da massa na semana, moeda sem origem e motivo sem mapear. Limites provisórios."
+        "content": "- **Criado / destruído**: motivos que põem ou tiram moeda da economia (recompensa, prêmio, taxa, compra no sistema). Câmbio e transferência entre jogadores ficam à parte.\n- **Líquido**: criado − destruído (ou entrou − saiu, por motivo).\n- **Massa**: soma dos saldos. **Conferência / sem origem**: Δ massa − Σ(entradas − saídas); fora de zero = moeda que mudou sem linha no extrato.\n- **Fatia dos 10% maiores**: parte da massa nas mãos dos 10% com mais saldo (entre quem tem saldo > 0).\n- **Dia econômico**: começa às 04:00 BRT. **Dados até**: última hora cheia carregada de cada fonte.\n- **Situação (veredito)**: o pior entre crescimento da massa na semana, moeda sem origem e motivo sem mapear. Limites provisórios."
        },
        "fieldConfig": {
         "defaults": {},
@@ -5538,7 +5564,7 @@
             "x": 0,
             "y": 0,
             "width": 24,
-            "height": 1,
+            "height": 2,
             "element": {
              "kind": "ElementReference",
              "name": "panel-32"
@@ -5549,20 +5575,7 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 1,
-            "width": 24,
-            "height": 5,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-1"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 0,
-            "y": 6,
+            "y": 2,
             "width": 24,
             "height": 5,
             "element": {
@@ -5575,22 +5588,9 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 11,
+            "y": 7,
             "width": 24,
-            "height": 7,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-30"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 0,
-            "y": 18,
-            "width": 24,
-            "height": 3,
+            "height": 4,
             "element": {
              "kind": "ElementReference",
              "name": "panel-31"
@@ -5601,7 +5601,20 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 21,
+            "y": 11,
+            "width": 24,
+            "height": 6,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-30"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 17,
             "width": 24,
             "height": 5,
             "element": {
@@ -5638,7 +5651,7 @@
                  "x": 0,
                  "y": 0,
                  "width": 24,
-                 "height": 1,
+                 "height": 2,
                  "element": {
                   "kind": "ElementReference",
                   "name": "panel-33"
@@ -5923,7 +5936,7 @@
             "x": 0,
             "y": 0,
             "width": 24,
-            "height": 1,
+            "height": 2,
             "element": {
              "kind": "ElementReference",
              "name": "panel-49"
@@ -6001,7 +6014,7 @@
             "x": 0,
             "y": 0,
             "width": 24,
-            "height": 1,
+            "height": 2,
             "element": {
              "kind": "ElementReference",
              "name": "panel-36"
@@ -6079,7 +6092,7 @@
             "x": 0,
             "y": 0,
             "width": 24,
-            "height": 1,
+            "height": 2,
             "element": {
              "kind": "ElementReference",
              "name": "panel-37"
@@ -6140,7 +6153,7 @@
                  "x": 0,
                  "y": 0,
                  "width": 24,
-                 "height": 1,
+                 "height": 2,
                  "element": {
                   "kind": "ElementReference",
                   "name": "panel-38"
@@ -6151,7 +6164,7 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 0,
-                 "y": 1,
+                 "y": 2,
                  "width": 24,
                  "height": 5,
                  "element": {
@@ -6164,7 +6177,20 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 0,
-                 "y": 6,
+                 "y": 7,
+                 "width": 24,
+                 "height": 5,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-1"
+                 }
+                }
+               },
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 12,
                  "width": 24,
                  "height": 7,
                  "element": {
@@ -6177,7 +6203,7 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 0,
-                 "y": 13,
+                 "y": 19,
                  "width": 10,
                  "height": 7,
                  "element": {
@@ -6190,7 +6216,7 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 10,
-                 "y": 13,
+                 "y": 19,
                  "width": 14,
                  "height": 7,
                  "element": {

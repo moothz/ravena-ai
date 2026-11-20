@@ -22,6 +22,13 @@ TO = "$__to"
 FROM = "$__from"
 WEEK = 604800000
 M = "'${moeda}'"
+LATE_H = 3  # "dados atrasados" no padrão (carga de hora em hora): every_hours + 2; tabela, descrições e alerta
+# Agendamento da carga (meta, gravado pela ravena): a cada N horas e pausa. Sem as chaves: 1 h, ativa.
+SCHED_CTE = """sched AS (
+  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,
+    COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.paused'), 0) AS pz,
+    (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.updated_at') AS desde
+)"""
 PROV = " Limites de cor PROVISÓRIOS, ponto de partida para calibrar."
 TIME_NOTE = ("O analytics.db guarda epoch em ms; o frser-sqlite-datasource lê colunas de tempo em segundos, "
              "por isso o / 1000 nos SELECT.")
@@ -123,6 +130,7 @@ def cell(col, thr, mode="color-background"):
 
 SIT_MAP = [{"type": "regex", "options": {"pattern": "^(ok.*)", "result": {"color": "#6fb98a", "text": "● $1", "index": 0}}},
            {"type": "regex", "options": {"pattern": "^(atenção.*)", "result": {"color": "#e5a650", "text": "▲ $1", "index": 1}}},
+           {"type": "regex", "options": {"pattern": "^(dados atrasados.*)", "result": {"color": "#e5a650", "text": "▲ $1", "index": 4}}},
            {"type": "regex", "options": {"pattern": "^(agir.*)", "result": {"color": "#e0645c", "text": "■ $1", "index": 2}}},
            {"type": "regex", "options": {"pattern": "^sem .*", "result": {"color": "text", "index": 3}}}]
 KIND_MAP = [{"type": "value", "options": {"Sem mapeamento": {"color": "red", "index": 0},
@@ -151,12 +159,12 @@ SELECT cur.nome AS "Fonte",
 FROM cur ORDER BY cur.ordem
 """, 0, 1, 24, 6,
     desc="Até que hora cheia cada fonte está carregada. A carga roda no minuto 5, então o atraso normal fica entre ~0,1 e ~1,1 h; "
-         "acima de 2 h a carga está falhando (ver Último erro, vazio quando a última carga deu certo). "
+         f"acima de {LATE_H} h a carga está falhando (ver Último erro, vazio quando a última carga deu certo). "
          "Motivos sem mapear: motivos do extrato que a ravena ainda não sabe classificar (Diagnóstico mostra quais). "
          "Petalitas: o Jardim ainda não tem extrato, só o saldo." + PROV,
     time_cols=["Dados até"], defaults={"noValue": "—"},
     overrides=when("Dados até") + [by_name("Dados até", ("noValue", "nunca")), by_name("Atraso (h)", ("decimals", 1)),
-               cell("Atraso (h)", steps((None, "green"), (2, "yellow"), (6, "red")), "color-text"),
+               cell("Atraso (h)", steps((None, OKC), (LATE_H, CRIT)), "color-text"),
                cell("Motivos sem mapear (7 dias)", steps((None, "green"), (1, "red")), "color-text"),
                by_name("Extrato", ("mappings", [{"type": "value", "options": {"sem extrato": {"color": "text"}, "com extrato": {"color": "green"}}}]),
                        ("custom.cellOptions", {"type": "color-text"})),
@@ -164,12 +172,36 @@ FROM cur ORDER BY cur.ordem
                by_name("Extrato", ("custom.width", 120)), by_name("Motivos sem mapear (7 dias)", ("custom.width", 240))],
     options=TABLE_OPTS))
 
-state.append(panel("table", "Veredito por moeda (últimos 7 dias)", f"""
-WITH {CUR}, {ORPHAN_CTE},
+NOW_MS_SQL = "CAST(strftime('%s', 'now') AS INTEGER) * 1000"
+# Situação por moeda (Resumo): veredito da semana + de quando são os dados, numa tabela de 3 linhas.
+# "conhecido": a moeda sem origem da semana não passa da maior das 8 semanas anteriores (com pelo menos 4 semanas
+# de histórico), em % do criado e em % da massa. Buraco conhecido fica em "atenção · conhecido"; "agir" fica para
+# crescimento forte ou sem origem acima da própria base.
+state.append(panel("table", "Situação por moeda (últimos 7 dias)", f"""
+WITH {CUR}, {ORPHAN_CTE}, {SCHED_CTE},
+-- semanas inteiras antes do fim do período: k = 0 é a semana atual, 1 a 8 o histórico (uma passada por tabela)
+xw AS (
+  SELECT currency, ({TO} - 1 - (d * 86400000 + 25200000)) / {WEEK} AS k, SUM(so) AS so_k FROM x
+  WHERE d * 86400000 + 25200000 >= {TO} - 9 * {WEEK} AND d * 86400000 + 25200000 < {TO} GROUP BY 1, 2
+),
+fw AS (
+  SELECT currency, ({TO} - 1 - hour) / {WEEK} AS k, SUM(amount_in) AS cri_k FROM flows_hourly f
+  WHERE f.{CD} AND hour >= {TO} - 9 * {WEEK} AND hour < {TO} GROUP BY 1, 2
+),
+hk AS (
+  SELECT xw.currency, xw.k, xw.so_k, fw.cri_k,
+    (SELECT total FROM balances z WHERE z.currency = xw.currency AND z.ts <= {TO} - xw.k * {WEEK} ORDER BY z.ts DESC LIMIT 1) AS massa_k
+  FROM xw LEFT JOIN fw ON fw.currency = xw.currency AND fw.k = xw.k
+  WHERE xw.k BETWEEN 1 AND 8
+),
+h AS (
+  SELECT currency, COUNT(*) AS semanas, MAX(ABS(100.0 * so_k / NULLIF(cri_k, 0))) AS max_sc,
+    MAX(ABS(100.0 * so_k / NULLIF(ABS(massa_k), 0))) AS max_sm
+  FROM hk WHERE so_k IS NOT NULL GROUP BY currency
+),
 b AS (
   SELECT cur.currency, cur.nome, cur.ordem,
     (SELECT total FROM balances x WHERE x.currency = cur.currency AND x.ts <= {TO} ORDER BY ts DESC LIMIT 1) AS massa,
-    (SELECT ts FROM balances x WHERE x.currency = cur.currency AND x.ts <= {TO} ORDER BY ts DESC LIMIT 1) AS ts_dados,
     -- base do crescimento: retrato com 7 a 9 dias antes do último; sem ele, sem dados (nada de "dobra em" falso)
     (SELECT total FROM balances x WHERE x.currency = cur.currency
        AND x.ts <= (SELECT MAX(ts) FROM balances y WHERE y.currency = cur.currency AND y.ts <= {TO}) - {WEEK}
@@ -182,15 +214,17 @@ b AS (
     (SELECT {LABEL} FROM flows_hourly f WHERE f.currency = cur.currency AND f.kind = 'creation'
        AND f.hour >= {TO} - {WEEK} AND f.hour < {TO} GROUP BY f.reason ORDER BY SUM(f.amount_in) DESC LIMIT 1) AS maior_fonte,
     {UNK7.format(c="cur.currency", TO=TO, WEEK=WEEK)} AS unk,
-    {AVAIL.format(c="cur.currency")} AS avail
+    {AVAIL.format(c="cur.currency")} AS avail,
+    (SELECT MAX(window_to) FROM load_runs l WHERE l.source = cur.currency AND l.ok = 1) AS carga
   FROM cur
 ),
 c AS (
-  SELECT *,
+  SELECT b.*, h.semanas, h.max_sc, h.max_sm, sched.ev, sched.pz, sched.desde,
     (massa - massa_antes) * 1.0 / NULLIF(ABS(massa_antes), 0) AS g,
     100.0 * so7 / NULLIF(ABS(massa), 0) AS so_massa,
-    100.0 * so7 / NULLIF(criado, 0) AS so_criado
-  FROM b
+    100.0 * so7 / NULLIF(criado, 0) AS so_criado,
+    ({NOW_MS_SQL} - carga) / 3600000.0 AS atraso
+  FROM b LEFT JOIN h ON h.currency = b.currency, sched
 ),
 n AS (
   SELECT *,
@@ -199,49 +233,69 @@ n AS (
       WHEN ABS(so_massa) < 0.1 THEN 0 WHEN ABS(so_massa) < 0.5 THEN 1 ELSE 2 END AS lv_sm,
     CASE WHEN avail = 0 OR so7 IS NULL OR so_criado IS NULL THEN NULL
       WHEN ABS(so_criado) < 1 THEN 0 WHEN ABS(so_criado) < 5 THEN 1 ELSE 2 END AS lv_sc,
-    CASE WHEN unk > 0 THEN 1 ELSE 0 END AS lv_u
+    CASE WHEN unk > 0 THEN 1 ELSE 0 END AS lv_u,
+    CASE WHEN semanas >= 4 AND (so_criado IS NULL OR ABS(so_criado) <= max_sc)
+      AND (so_massa IS NULL OR ABS(so_massa) <= max_sm) THEN 1 ELSE 0 END AS conh,
+    CASE WHEN pz = 0 AND (carga IS NULL OR atraso > ev + 2) THEN 1 ELSE 0 END AS late
   FROM c
 ),
+v0 AS (SELECT *, MAX(COALESCE(lv_sm, -1), COALESCE(lv_sc, -1)) AS lv_so_bruto FROM n),
+v1 AS (SELECT *, CASE WHEN conh = 1 AND lv_so_bruto >= 1 THEN 1 ELSE lv_so_bruto END AS lv_so FROM v0),
 v AS (
-  SELECT *, MAX(COALESCE(lv_sm, -1), COALESCE(lv_sc, -1)) AS lv_so,
+  SELECT *,
     CASE WHEN lv_g IS NULL AND lv_sm IS NULL AND lv_sc IS NULL AND lv_u = 0 THEN -1
-      ELSE MAX(COALESCE(lv_g, -1), COALESCE(lv_sm, -1), COALESCE(lv_sc, -1), lv_u) END AS lv
-  FROM n
+      ELSE MAX(COALESCE(lv_g, -1), lv_so, lv_u) END AS lv
+  FROM v1
 )
 SELECT nome AS "Moeda",
-  CASE lv WHEN 0 THEN 'ok' WHEN 1 THEN 'atenção' WHEN 2 THEN 'agir' ELSE 'sem dados' END
+  CASE WHEN late = 1 THEN 'dados atrasados'
+    ELSE CASE lv WHEN 0 THEN 'ok' WHEN 1 THEN 'atenção' WHEN 2 THEN 'agir' ELSE 'sem dados' END
+      || CASE WHEN lv = 1 AND lv_so >= 1 AND conh = 1 AND COALESCE(lv_g, -1) < 1 AND lv_u < 1 THEN ' · conhecido' ELSE '' END END
     || CASE WHEN avail = 0 THEN ' · sem extrato' ELSE '' END AS "Situação",
-  CASE WHEN lv <= 0 THEN '—' ELSE
-    CASE WHEN lv_g >= 1 THEN 'crescimento' ELSE '' END
-    || CASE WHEN lv_so >= 1 THEN CASE WHEN lv_g >= 1 THEN ' + ' ELSE '' END || 'sem origem' ELSE '' END
-    || CASE WHEN lv_u >= 1 THEN CASE WHEN lv_g >= 1 OR lv_so >= 1 THEN ' + ' ELSE '' END || 'motivo sem mapear' ELSE '' END END AS "Por quê",
+  COALESCE(NULLIF(substr(
+    CASE WHEN lv_g >= 1 THEN ' + crescimento' ELSE '' END
+    || CASE WHEN lv_so >= 1 THEN ' + sem origem' || CASE WHEN conh = 1 THEN ' (na faixa das 8 semanas)' ELSE '' END ELSE '' END
+    || CASE WHEN lv_u >= 1 THEN ' + motivo sem mapear' ELSE '' END
+    || CASE WHEN late = 1 THEN ' + carga atrasada' ELSE '' END, 4), ''), '—') AS "Por quê",
+  CASE WHEN carga IS NULL THEN 'nunca carregou'
+    ELSE strftime('%d/%m %H:%M', carga / 1000, 'unixepoch', '-3 hours') || ' · ' || printf('%.1f h', atraso) END AS "Dados até · atraso",
+  CASE WHEN pz = 1 THEN 'pausada' || COALESCE(' desde ' || strftime('%d/%m %H:%M',
+         CASE WHEN desde > 100000000000 THEN desde / 1000 ELSE desde END, 'unixepoch', '-3 hours'), '')
+    ELSE 'ativa a cada ' || ev || ' h' END AS "Carga",
   ROUND(100.0 * g, 2) AS "Crescimento (%)",
-  CASE WHEN g > 0 THEN ROUND(ln(2) / ln(1 + g), 1) END AS "Dobra em (semanas)",
-  CASE WHEN lv_so IS NULL OR lv_so < 0 THEN NULL
+  CASE WHEN g >= 0.005 AND ln(2) / ln(1 + g) <= 104 THEN ROUND(ln(2) / ln(1 + g), 1) END AS "Dobra em (semanas)",
+  CASE WHEN lv_so_bruto IS NULL OR lv_so_bruto < 0 THEN NULL
        WHEN COALESCE(lv_sc, -1) >= COALESCE(lv_sm, -1) THEN printf('%.2f%% do criado', so_criado)
        ELSE printf('%.3f%% da massa', so_massa) END AS "Sem origem",
   ROUND(so_criado, 2) AS "Sem origem (% do criado)",
   ROUND(so_massa, 3) AS "Sem origem (% da massa)",
-  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS "Maior fonte",
-  ts_dados / 1000 AS "Dados até"
+  ROUND(max_sc, 2) AS "Maior sem origem em 8 semanas (% do criado)",
+  CASE WHEN avail = 0 THEN 'sem extrato' ELSE maior_fonte END AS "Maior fonte"
 FROM v ORDER BY ordem
-""", 0, 7, 24, 6,
-    desc="Situação = o pior entre: crescimento da massa na semana (ok até 1%, atenção até 3%, agir acima, nos dois sentidos; comparado com "
+""", 0, 2, 24, 5,
+    desc=f"Situação = o pior entre: crescimento da massa na semana (ok até 1%, atenção até 3%, agir acima, nos dois sentidos; comparado com "
          "o retrato de 7 a 9 dias antes, senão 'sem dados'), moeda sem origem na semana em % da massa (0,1% / 0,5%) e em % do criado "
-         "(1% / 5%), e motivo sem mapear no extrato (pelo menos atenção). 'Por quê' lista todo critério que não está ok. "
-         "'Sem origem' mostra o critério pior; os dois valores (% do criado e % da massa) ficam em colunas ocultas (Inspecionar → Dados). "
-         "Dobra em = semanas para a massa dobrar no ritmo desta semana (ln 2 / ln(1+g)). "
-         "Moeda sem origem = Δ massa − Σ(entradas − saídas) do extrato: positivo apareceu sem linha no extrato, negativo sumiu. "
-         "Zinthos e Runas já nascem em 'agir' por buracos de extrato conhecidos (give-all, sobra do confisco, créditos de Runas sem linha); é esperado." + PROV,
-    time_cols=["Dados até"], defaults={"noValue": "—"},
-    overrides=when("Dados até") + [
-        by_name("Situação", ("mappings", SIT_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 200)),
-        by_name("Moeda", ("custom.width", 100)), by_name("Por quê", ("custom.width", 300)),
-        cell("Crescimento (%)", steps((None, "red"), (-3, "yellow"), (-1, "green"), (1, "yellow"), (3, "red")), "color-text"),
-        by_name("Crescimento (%)", ("noValue", "sem dados"), ("custom.width", 130)),
+         "(1% / 5%), e motivo sem mapear no extrato (pelo menos atenção). "
+         "Sem origem 'conhecido' = não passa do maior valor das 8 semanas anteriores (com pelo menos 4 semanas de histórico): os buracos "
+         "de extrato já sabidos (give-all, sobra do confisco, créditos de Runas sem linha) ficam em 'atenção · conhecido', e 'agir' fica "
+         "para crescimento forte ou sem origem acima da própria base. "
+         f"Dados até = última hora cheia carregada (horário de Brasília) e o atraso até agora; a carga roda no minuto 5, então o normal é "
+         f"~0,1 a ~1,1 h. Acima do intervalo da carga + 2 h ({LATE_H} h no padrão, de hora em hora) a situação vira 'dados atrasados' "
+         "(mesmo limite do alerta; com a carga pausada, nunca; ver Diagnóstico → Confiança). Carga = agendamento atual (a cada N h ou pausada). "
+         "Dobra em = semanas para a massa dobrar no ritmo desta semana (ln 2 / ln(1+g)); só aparece com crescimento de pelo menos 0,5% "
+         "por semana e até 104 semanas. Sem origem = Δ massa − Σ(entradas − saídas) do extrato: positivo apareceu sem linha no extrato, "
+         "negativo sumiu; mostra o critério pior, os dois valores e a maior fonte ficam em colunas ocultas (Inspecionar → Dados)." + PROV,
+    defaults={"noValue": "—"},
+    overrides=[
+        by_name("Situação", ("mappings", SIT_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 230)),
+        by_name("Moeda", ("custom.width", 100)),
+        by_name("Dados até · atraso", ("custom.width", 170)), by_name("Carga", ("custom.width", 190)),
+        cell("Crescimento (%)", steps((None, CRIT), (-3, AMBER), (-1, OKC), (1, AMBER), (3, CRIT)), "color-text"),
+        by_name("Crescimento (%)", ("mappings", [{"type": "special", "options": {"match": "null", "result": {"text": "sem dados", "color": "text", "index": 0}}}]),
+                ("custom.width", 130)),
         by_name("Dobra em (semanas)", ("custom.width", 150)), by_name("Sem origem", ("custom.width", 160)),
         by_name("Sem origem (% do criado)", ("custom.hidden", True)), by_name("Sem origem (% da massa)", ("custom.hidden", True)),
-        by_name("Dados até", ("custom.width", 110))],
+        by_name("Maior sem origem em 8 semanas (% do criado)", ("custom.hidden", True)), by_name("Maior fonte", ("custom.hidden", True))],
     options=TABLE_OPTS))
 
 TOPN = 8
@@ -383,11 +437,11 @@ SELECT ts / 1000 AS "Quando", {ORIGIN_COL}{CUR_NAME} || CASE WHEN currency IS NU
   label AS "O que mudou", {DCRI_TXT} AS "Criado/dia: Δ", situacao AS "Situação"
 FROM rs ORDER BY ts DESC
 """, 0, 24, 24, 6, desc=MUD_DESC + " A ficha completa fica na aba Mudanças.",
-    time_cols=["Quando"], defaults={"noValue": EMPTY_MUD, "custom": {"wrapText": True}},
+    time_cols=["Quando"], defaults={"noValue": EMPTY_MUD},
     overrides=when("Quando") + [
         by_name("Quando", ("custom.width", 95)), by_name("Origem", ("custom.width", 100)), by_name("Moeda", ("custom.width", 90)),
         by_name("Criado/dia: Δ", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 260)),
-        by_name("Situação", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 220))],
+        by_name("Situação", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 330))],
     options=TABLE_OPTS))
 
 # ============================================================================ Detalhe da moeda (recolhido)
@@ -687,8 +741,10 @@ GROUP BY f.currency, f.reason ORDER BY ABS(SUM(f.amount_in - f.amount_out)) DESC
     defaults={"noValue": CAUSA_OFF}, overrides=num("Valor"), options=TABLE_OPTS))
 
 # ============================================================================ Montagem (formato v2, com abas)
+HEADER_H = 2  # com 1 linha (30 px) o texto do cabeçalho fica cortado embaixo
+
 def header(text, y=0):
-    return panel("text", "", "", 0, y, 24, 1, extra={"targets": [], "datasource": None, "transparent": True,
+    return panel("text", "", "", 0, y, 24, HEADER_H, extra={"targets": [], "datasource": None, "transparent": True,
                                                     "options": {"mode": "markdown", "content": text}})
 
 def alertlist(title, desc, states, y, h):
@@ -698,7 +754,8 @@ def alertlist(title, desc, states, y, h):
                         "alertName": "", "alertInstanceLabelFilter": "{area=\"economia\"}", "folder": None,
                         "stateFilter": {k: k in states for k in ("firing", "pending", "noData", "normal", "error")}}}
 
-ALERT_DESC = ("Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada, motivo sem mapear, "
+ALERT_DESC = ("Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, "
+              f"{LATE_H} h no padrão; pausada não conta), motivo sem mapear, "
               "moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui "
               "e em Alerting; para receber aviso, configurar um contact point.")
 
@@ -722,17 +779,23 @@ massa_multi = panel("timeseries", "Massa em circulação, por moeda (12 semanas)
               "custom": {"lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": True}},
     overrides=cur_colors(), options={"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}})
 
-# Resumo: confiança → moedas → alertas → mudanças, numa tela
-conf, verd, ondevem, ultimas = state
-for pnl, (yy_, hh) in zip((conf, verd), ((1, 5), (6, 5))):
-    pnl["gridPos"].update({"x": 0, "y": yy_, "w": 24, "h": hh})
-massa_multi["gridPos"].update({"y": 11, "h": 7})
+def stack(text, panels):
+    """Cabeçalho (uma linha de texto, mesmo estilo em toda aba) e os painéis logo abaixo dele."""
+    base = min(p["gridPos"]["y"] for p in panels)
+    for p in panels:
+        p["gridPos"]["y"] += HEADER_H - base
+    return [header(text)] + panels
+
+# Resumo (cabe em 1920×1080): situação por moeda → alertas disparados → massa → últimas mudanças
+conf, sit, ondevem, ultimas = state
+sit["gridPos"].update({"x": 0, "y": 0, "w": 24, "h": 5})
 ativos = alertlist("Alertas disparados", ALERT_DESC + " Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
-                   ("firing", "pending", "error"), 18, 3)
+                   ("firing", "pending", "error"), 5, 4)
 ativos["options"]["noValue"] = "nenhum alerta disparado"
-ultimas["gridPos"].update({"y": 21, "h": 5})
-resumo = [header("**Está tudo bem, e os dados são de agora?** Confiança primeiro: um veredito só vale para moeda com dados atuais e que fecha com o extrato."),
-          conf, verd, massa_multi, ativos, ultimas]
+massa_multi["gridPos"].update({"y": 9, "h": 6})
+ultimas["gridPos"].update({"y": 15, "h": 5})
+resumo = stack("**Está tudo bem, e os dados são de agora?** Situação de cada moeda, alertas, massa e as últimas mudanças.",
+               [sit, ativos, massa_multi, ultimas])
 
 # Moeda: seções
 fluxos = [header("**Como a moeda escolhida está se comportando?** Escolha a moeda no topo. Petalitas ainda não tem extrato: os painéis de fluxo mostram o aviso no lugar.")]
@@ -747,18 +810,20 @@ moeda_p[3]["gridPos"].update({"x": 0, "y": 0}); moeda_p[4]["gridPos"].update({"x
 for pnl in quem_p:
     pnl["gridPos"]["y"] += 5
 
-# Diagnóstico: alertas completos, conferência, mapeamento, cargas, disponibilidade e fase 2, glossário
-# (o cabeçalho ocupa a linha 0: os alertas começam na 1 e o resto desce 5)
-diag_p.insert(0, alertlist("Alertas da economia", ALERT_DESC, ("firing", "pending", "noData", "normal", "error"), 1, 5))
-for c in diag_p[1:]:
-    c["gridPos"]["y"] += 4
+# Diagnóstico: alertas completos, confiança (de quando são os dados), conferência, mapeamento, cargas,
+# disponibilidade e fase 2, glossário
+diag_p.insert(0, alertlist("Alertas da economia", ALERT_DESC, ("firing", "pending", "noData", "normal", "error"), 0, 5))
+conf["gridPos"].update({"x": 0, "y": 5, "w": 24, "h": 5})
+diag_p.insert(1, conf)
+for c in diag_p[2:]:
+    c["gridPos"]["y"] += 8
 glossario = panel("text", "Glossário", "", 0, 0, 24, 7, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
     "- **Criado / destruído**: motivos que põem ou tiram moeda da economia (recompensa, prêmio, taxa, compra no sistema). Câmbio e transferência entre jogadores ficam à parte.\n"
     "- **Líquido**: criado − destruído (ou entrou − saiu, por motivo).\n"
     "- **Massa**: soma dos saldos. **Conferência / sem origem**: Δ massa − Σ(entradas − saídas); fora de zero = moeda que mudou sem linha no extrato.\n"
     "- **Fatia dos 10% maiores**: parte da massa nas mãos dos 10% com mais saldo (entre quem tem saldo > 0).\n"
     "- **Dia econômico**: começa às 04:00 BRT. **Dados até**: última hora cheia carregada de cada fonte.\n"
-    "- **Veredito**: o pior entre crescimento da massa na semana, moeda sem origem e motivo sem mapear. Limites provisórios.")}})
+    "- **Situação (veredito)**: o pior entre crescimento da massa na semana, moeda sem origem e motivo sem mapear. Limites provisórios.")}})
 
 tabs = [
     v2.Tab("Resumo", [v2.Section(None, resumo)]),
@@ -770,7 +835,7 @@ tabs = [
     v2.Tab("Atividade", [v2.Section(None, [header("**Quanta gente está jogando?** Pessoas distintas (LID e telefone unidos) e jogadores com movimento em cada moeda.")]
                                           + [dict(p_, gridPos={**p_["gridPos"], "y": p_["gridPos"]["y"]}) for p_ in ativ_p])]),
     v2.Tab("Mudanças", [v2.Section(None, [header("**O que mudou depois de cada ajuste?** Uma linha por mudança de balanceamento" + (": automática, possível ou manual." if AUTO else ".") + "")] + mud_p)]),
-    v2.Tab("Diagnóstico", [v2.Section(None, [header("**Dá para confiar nos números?** Alertas, conferência de estoque × fluxos, motivos sem mapear, cargas e o que depende da fase 2.")] + diag_p),
+    v2.Tab("Diagnóstico", [v2.Section(None, stack("**Dá para confiar nos números?** Alertas, de quando são os dados, conferência estoque × fluxos e cargas.", diag_p)),
                            v2.Section("Em preparação: painéis que dependem da fase 2", prep_p),
                            v2.Section("Glossário", [glossario], collapse=True)]),
 ]
@@ -1060,10 +1125,18 @@ def rule(uid, title, sql, op, thr, summary, nodata="NoData"):
         ],
     }
 rules = [
+    # Só fontes que carregaram nas últimas 48 h (fonte desligada não dispara para sempre); limite = intervalo da carga
+    # + 2 h (3 h no padrão); com a carga pausada, 0. Sem nenhuma fonte nas 48 h: sem dados → dispara (noDataState).
     rule("economia-carga-atrasada", "Economia: carga atrasada", f"""
-SELECT ROUND(({NOW_MS} - MIN(t)) / 3600000.0, 2) AS atraso_h
-FROM (SELECT source, MAX(window_to) AS t FROM load_runs WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source)
-""", "gt", 3, "Alguma fonte do painel da economia não carrega há mais de 3 h (ver Confiança / Histórico de cargas).", nodata="Alerting"),
+WITH {SCHED_CTE},
+s AS (
+  SELECT source, MAX(window_to) AS t FROM load_runs
+  WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source HAVING MAX(window_to) >= {NOW_MS} - 48 * 3600000
+)
+SELECT CASE WHEN sched.pz = 1 THEN 0 ELSE ROUND(({NOW_MS} - MIN(s.t)) / 3600000.0 - (sched.ev + 2), 2) END AS atraso_alem_do_limite_h
+FROM sched LEFT JOIN s ON 1 = 1
+""", "gt", 0, f"Alguma fonte do painel da economia (das que carregaram nas últimas 48 h) não carrega há mais que o intervalo da "
+              f"carga + 2 h ({LATE_H} h no padrão). Pausada não dispara. Ver Diagnóstico → Confiança / Histórico de cargas.", nodata="Alerting"),
     rule("economia-motivo-sem-mapear", "Economia: motivo sem mapear", f"""
 SELECT COUNT(DISTINCT currency || ':' || reason) AS motivos FROM flows_hourly
 WHERE kind = 'unknown' AND hour >= {NOW_MS} - {WEEK}

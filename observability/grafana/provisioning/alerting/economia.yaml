@@ -20,7 +20,7 @@
       "area": "economia"
      },
      "annotations": {
-      "summary": "Alguma fonte do painel da economia não carrega há mais de 3 h (ver Confiança / Histórico de cargas)."
+      "summary": "Alguma fonte do painel da economia (das que carregaram nas últimas 48 h) não carrega há mais que o intervalo da carga + 2 h (3 h no padrão). Pausada não dispara. Ver Diagnóstico → Confiança / Histórico de cargas."
      },
      "data": [
       {
@@ -33,8 +33,8 @@
        "model": {
         "refId": "A",
         "queryType": "table",
-        "queryText": "SELECT ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000 - MIN(t)) / 3600000.0, 2) AS atraso_h\nFROM (SELECT source, MAX(window_to) AS t FROM load_runs WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source)",
-        "rawQueryText": "SELECT ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000 - MIN(t)) / 3600000.0, 2) AS atraso_h\nFROM (SELECT source, MAX(window_to) AS t FROM load_runs WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source)",
+        "queryText": "WITH sched AS (\n  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,\n    COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.paused'), 0) AS pz,\n    (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.updated_at') AS desde\n),\ns AS (\n  SELECT source, MAX(window_to) AS t FROM load_runs\n  WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source HAVING MAX(window_to) >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 48 * 3600000\n)\nSELECT CASE WHEN sched.pz = 1 THEN 0 ELSE ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000 - MIN(s.t)) / 3600000.0 - (sched.ev + 2), 2) END AS atraso_alem_do_limite_h\nFROM sched LEFT JOIN s ON 1 = 1",
+        "rawQueryText": "WITH sched AS (\n  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,\n    COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.paused'), 0) AS pz,\n    (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.updated_at') AS desde\n),\ns AS (\n  SELECT source, MAX(window_to) AS t FROM load_runs\n  WHERE ok = 1 AND source IN ('zinthos', 'petalitas', 'runas') GROUP BY source HAVING MAX(window_to) >= CAST(strftime('%s', 'now') AS INTEGER) * 1000 - 48 * 3600000\n)\nSELECT CASE WHEN sched.pz = 1 THEN 0 ELSE ROUND((CAST(strftime('%s', 'now') AS INTEGER) * 1000 - MIN(s.t)) / 3600000.0 - (sched.ev + 2), 2) END AS atraso_alem_do_limite_h\nFROM sched LEFT JOIN s ON 1 = 1",
         "timeColumns": []
        }
       },
@@ -63,7 +63,7 @@
           "evaluator": {
            "type": "gt",
            "params": [
-            3
+            0
            ]
           }
          }
