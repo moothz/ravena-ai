@@ -6,7 +6,7 @@
  * (cron e rodada da subida) e atende pedidos da thread principal por mensagens:
  *   { id, op, args } → { id, ok, result } | { id, ok: false, error }
  * op "stop" para o serviço (aborta a rodada, espera no máximo stopWaitMs), esvazia a fila de spans (até
- * 1 s) e encerra a thread. Logs vão pelo Logger (mesmo arquivo do bot, modo append); spans, pelo bootstrap do
+ * 500 ms) e encerra a thread. Logs vão pelo Logger (mesmo arquivo do bot, modo append); spans, pelo bootstrap do
  * OpenTelemetry que o worker herda do --require do bot (só traces no worker; ver telemetry/otel.js).
  */
 "use strict";
@@ -40,11 +40,12 @@ async function stop(id) {
 	} catch (err) {
 		logger.warn(`[economy] Falha ao parar a carga: ${err.message}`);
 	}
-	// Esvazia a fila de spans do worker (no máximo 1 s; a thread principal espera 3 s ao todo)
+	// Esvazia a fila de spans do worker (no máximo 500 ms: com os 2 s do stop do serviço, cabe nos 3 s
+	// que a thread principal espera antes do terminate())
 	if (typeof globalThis.__RAVENA_OTEL_SHUTDOWN === "function") {
 		await Promise.race([
 			globalThis.__RAVENA_OTEL_SHUTDOWN(),
-			new Promise((r) => setTimeout(r, 1000).unref())
+			new Promise((r) => setTimeout(r, 500).unref())
 		]).catch(() => {});
 	}
 	parentPort.postMessage({ id, ok: true, result: finished });

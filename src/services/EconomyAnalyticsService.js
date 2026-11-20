@@ -376,9 +376,36 @@ class EconomyAnalyticsService {
 			}, this.startDelayMs);
 			if (this._startTimer.unref) this._startTimer.unref();
 		}
+		this._publishIfSchemaChanged();
 		logger.info(
 			`[economy] Carga horária do painel ligada (fontes: ${this.sources.map((s) => s.name).join(", ")}; mapeamento v${MAPPING_VERSION}).`
 		);
+	}
+
+	/**
+	 * Banco antigo que ganhou tabela ou coluna ao abrir (store.schemaChanged): publica uma vez já, para o
+	 * retrato do Grafana ter o schema novo sem esperar a próxima rodada. Falha só vai para o log.
+	 */
+	_publishIfSchemaChanged() {
+		let store;
+		try {
+			store = this._getStore();
+		} catch (err) {
+			logger.error(`[economy] Falha ao abrir o banco da carga: ${err.message}`);
+			return;
+		}
+		if (!store.schemaChanged) return;
+		store.schemaChanged = false;
+		// stop() espera esta publicação como espera a rodada (não fecha o banco no meio do backup)
+		this._schemaPublish = store
+			.publish()
+			.then(() => logger.info("[economy] Schema do banco atualizado; retrato republicado."))
+			.catch((err) =>
+				logger.warn(`[economy] Falha ao publicar o retrato com o schema novo: ${err.message}`)
+			)
+			.finally(() => {
+				this._schemaPublish = null;
+			});
 	}
 
 	/**
@@ -398,24 +425,23 @@ class EconomyAnalyticsService {
 		this._stopping = true;
 		if (this._abort) this._abort.abort(new Error("encerrando"));
 		let finished = true;
-		if (this._running) {
+		const pending = [this._running, this._schemaPublish].filter(Boolean);
+		if (pending.length) {
 			let timer;
 			const timeout = new Promise((resolve) => {
 				timer = setTimeout(() => resolve("timeout"), this.stopWaitMs);
 			});
-			const r = await Promise.race([
-				this._running.then(
-					() => "ok",
-					() => "ok"
-				),
-				timeout
-			]);
+			const r = await Promise.race([Promise.allSettled(pending).then(() => "ok"), timeout]);
 			clearTimeout(timer);
 			finished = r === "ok";
 		}
 		if (finished && this.store) {
 			this.store.close();
 			this.store = null;
+		} else if (this.store) {
+			// A rodada pode estar no meio da publicação e o processo vai sair: libera a própria trava, para
+			// a próxima subida (no Docker, com o mesmo PID) não esperar ela envelhecer
+			this.store.releasePublishLock();
 		}
 		return finished;
 	}

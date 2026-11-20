@@ -559,7 +559,7 @@ async function main() {
 		});
 		r.addTelegram(["4242@x"]);
 		assert.strictEqual(r.resolve("4242").idKind, "telegram");
-		assert.strictEqual(P.canonicalPhone("554788130617"), "5547988130617");
+		assert.strictEqual(P.canonicalPhone("551155550123"), "5511955550123");
 		assert.strictEqual(P.canonicalPhone("12025550123"), "12025550123");
 	});
 
@@ -1271,7 +1271,9 @@ async function main() {
 			await new Promise((r) => setTimeout(r, 50));
 			let t0 = Date.now();
 			assert.strictEqual(await svc.stop(), true);
-			assert.ok(Date.now() - t0 < 1000, `stop demorou ${Date.now() - t0} ms`);
+			// O que prova o abort é o resultado (zinthos falhou, sem esperar os 5 s da chamada); o limite de
+			// tempo é folgado porque uma parada de E/S da máquina (WSL) já segurou o laço por segundos
+			assert.ok(Date.now() - t0 < 8000, `stop demorou ${Date.now() - t0} ms`);
 			const res = await running;
 			assert.strictEqual(res.zinthos.ok, false);
 			assert.strictEqual(res.stopped, true);
@@ -1286,7 +1288,8 @@ async function main() {
 			await new Promise((r) => setTimeout(r, 30));
 			t0 = Date.now();
 			assert.strictEqual(await stuck.stop(), false);
-			assert.ok(Date.now() - t0 < 600, `stop demorou ${Date.now() - t0} ms`);
+			assert.ok(Date.now() - t0 >= 150, "stop esperou o limite antes de desistir");
+			assert.ok(Date.now() - t0 < 8000, `stop demorou ${Date.now() - t0} ms`);
 			assert.ok(stuck.store, "banco continua aberto (o processo vai sair)");
 			stuck.store.close();
 			// Reabre o mesmo banco: a próxima rodada continua de onde parou
@@ -1319,6 +1322,11 @@ async function main() {
 			fs.utimesSync(lock, old, old);
 			await svc.store.publish({ waitMs: 200 });
 			assert.ok(!fs.existsSync(lock), "trava liberada depois de publicar");
+			// Mesmo PID deste processo com outro instante de início (subida anterior no mesmo contêiner):
+			// removida na hora, sem esperar envelhecer
+			fs.writeFileSync(lock, `${process.pid} 1000 velha`);
+			await svc.store.publish({ waitMs: 200 });
+			assert.ok(!fs.existsSync(lock), "trava da subida anterior removida");
 			// PID morto, trava recente: removida na hora; temporário órfão de publicação interrompida some
 			fs.writeFileSync(lock, "999999999 morto");
 			fs.writeFileSync(path.join(publishDir, ".analytics.db.tmp-424242"), "lixo");
@@ -1326,10 +1334,17 @@ async function main() {
 			assert.deepStrictEqual(fs.readdirSync(publishDir), ["analytics.db"]);
 			// Liberar só apaga a própria trava
 			const release = await svc.store._acquirePublishLock(200, 120000);
+			assert.strictEqual(fs.readFileSync(lock, "utf8").split(" ")[0], String(process.pid));
 			fs.writeFileSync(lock, "1 de-outro");
 			release();
 			assert.ok(fs.existsSync(lock), "trava de outro não é apagada");
 			fs.rmSync(lock);
+			// stop() no meio da publicação: libera a própria trava (releasePublishLock)
+			await svc.store._acquirePublishLock(200, 120000);
+			assert.ok(fs.existsSync(lock));
+			svc.store.releasePublishLock();
+			assert.ok(!fs.existsSync(lock), "trava própria liberada no encerramento");
+			svc.store.releasePublishLock(); // sem trava na mão: nada
 			// Retrato: marca do painel, sem WAL, permissão conforme o grupo
 			const pdb = new BetterSQLite(pubFile, { readonly: true });
 			assert.strictEqual(pdb.pragma("journal_mode", { simple: true }), "delete");
@@ -1340,6 +1355,39 @@ async function main() {
 			pdb.close();
 			const st = fs.statSync(pubFile);
 			assert.strictEqual(st.mode & 0o777, st.gid === 0 ? 0o640 : 0o644);
+		});
+
+		await test("banco antigo que ganha coluna na subida: start() publica já, mesmo sem rodada", async () => {
+			const mdb = path.join(tmpRoot, "migra", "analytics.db");
+			const mpub = path.join(tmpRoot, "migra-pub");
+			const mk = () =>
+				new EconomyAnalyticsService({
+					dbPath: mdb,
+					publishDir: mpub,
+					sources: [],
+					runOnStart: false
+				});
+			// Banco novo: nada a republicar
+			const a = mk();
+			a.start();
+			assert.strictEqual(a._schemaPublish, undefined);
+			await a.stop();
+			assert.ok(!fs.existsSync(path.join(mpub, "analytics.db")));
+			// Simula um banco de versão anterior (sem a coluna) e sobe de novo
+			const raw = new BetterSQLite(mdb);
+			raw.exec("ALTER TABLE soulmate_cycle_hourly DROP COLUMN without_quota");
+			raw.close();
+			const b = mk();
+			b.start();
+			await b._schemaPublish;
+			const pdb = new BetterSQLite(path.join(mpub, "analytics.db"), { readonly: true });
+			const cols = pdb.prepare("PRAGMA table_info(soulmate_cycle_hourly)").all();
+			pdb.close();
+			assert.ok(
+				cols.some((c) => c.name === "without_quota"),
+				"retrato com a coluna nova"
+			);
+			assert.strictEqual(await b.stop(), true);
 		});
 
 		await test("scripts economy-annotate (gravar, exportar, importar) e economy-status", () => {

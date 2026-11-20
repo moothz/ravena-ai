@@ -230,6 +230,15 @@ function assertSafePaths(dbPath, publishDir) {
 
 const TMP_PREFIX = `.${PUBLISHED_NAME}.tmp-`;
 
+/**
+ * Instante de início deste processo (ms, arredondado ao segundo), igual em todas as threads. Vai na
+ * trava junto do PID: no Docker o PID se repete a cada subida (o bot costuma ser o PID 1), então PID
+ * igual ao nosso com outro início é trava de uma subida anterior, morta.
+ */
+const PROCESS_START = Math.round(Date.now() / 1000 - process.uptime()) * 1000;
+// Folga para o arredondamento de PROCESS_START (o cálculo pode cair em segundos vizinhos)
+const PROCESS_START_TOLERANCE_MS = 2000;
+
 /** O processo com esse PID existe? (EPERM = existe, de outro usuário) */
 function pidAlive(pid) {
 	if (!Number.isInteger(pid) || pid <= 0) return false;
@@ -242,9 +251,25 @@ function pidAlive(pid) {
 }
 
 /**
- * Remove a trava de publicação se ela for de processo morto (PID gravado não existe) ou tiver mais de
- * staleMs (PID de outro namespace, arquivo sem PID). Confere o inode antes de apagar para não remover
- * uma trava nova criada entre a leitura e a remoção. @returns {boolean} removeu (ou já tinha sumido)
+ * A trava "<pid> <início> <aleatório>" é de processo morto? PID que não existe mais, ou PID igual ao
+ * deste processo com outro instante de início (subida anterior no mesmo contêiner).
+ */
+function lockOwnerDead(content) {
+	const [pidStr, startStr] = String(content || "").split(" ");
+	const pid = Number(pidStr);
+	if (!content || !Number.isInteger(pid) || pid <= 0) return false;
+	if (!pidAlive(pid)) return true;
+	if (pid !== process.pid) return false;
+	const started = Number(startStr);
+	return (
+		!Number.isFinite(started) || Math.abs(started - PROCESS_START) > PROCESS_START_TOLERANCE_MS
+	);
+}
+
+/**
+ * Remove a trava de publicação se ela for de processo morto (lockOwnerDead) ou tiver mais de staleMs
+ * (PID de outro namespace, arquivo sem PID). Confere o inode antes de apagar para não remover uma trava
+ * nova criada entre a leitura e a remoção. @returns {boolean} removeu (ou já tinha sumido)
  */
 function removeStaleLock(lock, staleMs) {
 	let st;
@@ -255,8 +280,7 @@ function removeStaleLock(lock, staleMs) {
 	} catch (_) {
 		return true; // sumiu entre o open e a leitura
 	}
-	const pid = Number(String(content).split(" ")[0]);
-	const dead = content && Number.isInteger(pid) && pid > 0 && !pidAlive(pid);
+	const dead = lockOwnerDead(content);
 	if (!dead && Date.now() - st.mtimeMs <= staleMs) return false;
 	try {
 		if (fs.statSync(lock).ino === st.ino) fs.rmSync(lock, { force: true });
@@ -296,8 +320,13 @@ class EconomyAnalyticsStore {
 		this.db.pragma("journal_mode = WAL");
 		this.db.pragma("synchronous = NORMAL");
 		this.db.pragma("busy_timeout = 5000");
+		const schemaBefore = this.db.pragma("schema_version", { simple: true });
 		this.db.exec(SCHEMA);
 		this._migrate();
+		// Banco que já existia e ganhou tabela ou coluna nesta subida: o serviço publica logo no start(),
+		// para o retrato do Grafana ter o schema novo antes da próxima rodada
+		this.schemaChanged =
+			schemaBefore !== 0 && this.db.pragma("schema_version", { simple: true }) !== schemaBefore;
 		// Marca o banco como do painel (novo ou criado antes da marca; a guarda acima já conferiu)
 		if (this.db.pragma("application_id", { simple: true }) !== APP_ID) {
 			this.db.pragma(`application_id = ${APP_ID}`);
@@ -776,14 +805,16 @@ class EconomyAnalyticsStore {
 
 	/**
 	 * Trava de publicação entre processos (a carga, no worker do bot, e os scripts): arquivo criado com
-	 * O_EXCL ao lado do banco de trabalho, com "<pid> <aleatório>". A trava é de processo morto (removida)
-	 * se o PID gravado não existe mais (process.kill(pid, 0)) ou se tem mais de staleMs. Espera sem
+	 * O_EXCL ao lado do banco de trabalho, com "<pid> <início do processo> <aleatório>". A trava é de
+	 * processo morto (removida) se o PID gravado não existe mais (process.kill(pid, 0)), se é o nosso PID
+	 * com outro início (subida anterior no mesmo contêiner) ou se tem mais de staleMs. Espera sem
 	 * bloquear a thread (tentativas a cada 100 ms) no máximo waitMs. Devolve a função que libera, que só
-	 * apaga a trava se ela ainda for a própria.
+	 * apaga a trava se ela ainda for a própria; enquanto a trava está na mão, a mesma função fica em
+	 * this._releaseLock para o stop() do serviço liberar se a publicação não terminar a tempo.
 	 */
 	async _acquirePublishLock(waitMs, staleMs) {
 		const lock = `${this.dbPath}.publish.lock`;
-		const token = `${process.pid} ${Math.random().toString(36).slice(2)}`;
+		const token = `${process.pid} ${PROCESS_START} ${Math.random().toString(36).slice(2)}`;
 		const start = Date.now();
 		for (;;) {
 			try {
@@ -793,11 +824,14 @@ class EconomyAnalyticsStore {
 				} finally {
 					fs.closeSync(fd);
 				}
-				return () => {
+				const release = () => {
+					if (this._releaseLock === release) this._releaseLock = null;
 					try {
 						if (fs.readFileSync(lock, "utf8") === token) fs.rmSync(lock, { force: true });
 					} catch (_) {}
 				};
+				this._releaseLock = release;
+				return release;
 			} catch (err) {
 				if (err.code !== "EEXIST") throw err;
 			}
@@ -847,6 +881,11 @@ class EconomyAnalyticsStore {
 
 	listAnnotations() {
 		return this.db.prepare("SELECT ts, currency, label FROM annotations ORDER BY ts").all();
+	}
+
+	/** Libera a trava de publicação se ela estiver com este store (encerramento no meio da publicação). */
+	releasePublishLock() {
+		if (this._releaseLock) this._releaseLock();
 	}
 
 	close() {
