@@ -156,6 +156,8 @@ function startMockServer(state) {
 		if (state.override[svc]) Object.assign(body, state.override[svc](body));
 		res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(body));
 	});
+	// Testes de SQL entre duas cargas podem passar dos 5 s padrão: o fetch reusaria um socket já fechado (ECONNRESET)
+	server.keepAliveTimeout = 120000;
 	return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve(server)));
 }
 
@@ -1892,6 +1894,37 @@ async function main() {
 			dbp.close();
 			assert.strictEqual(sit("velha.db")["Situação"], "atenção · conhecido");
 			assert.strictEqual(sit("velha.db").Carga, "pausada desde 19/11 12:30");
+		});
+
+		await test("ciclo da alma gêmea: sem cotas à parte e % sobre os com cotas, com e sem a coluna withoutQuota", () => {
+			const { file, db } = freshDb("alma.db");
+			db.prepare(
+				"INSERT INTO features (key, title, available, ts) VALUES ('ciclo_alma_gemea', 'Ciclo', 1, 0)"
+			).run();
+			db.prepare(
+				"INSERT INTO soulmate_cycle_hourly (hour, divorces, paid, quota_cost, above_cost, max_return) VALUES (?, 5, 100, 50, 2, 2)"
+			).run(DAY0 + H);
+			db.close();
+			const range = { from: DAY0 - D, to: DAY0 + D };
+			const dia = () =>
+				readAll(file, dashboardSql("Ciclo da alma gêmea por dia (período selecionado)", range))[0];
+			const semCotas = () =>
+				readAll(file, dashboardSql("Divórcios de alma gêmea sem cotas (últimos 7 dias)", range))[0][
+					"Sem cotas"
+				];
+			// Sem a coluna (dados antigos): sem cotas = 0, % sobre os 5
+			assert.strictEqual(dia()["Sem cotas"], 0);
+			assert.strictEqual(dia()["% dos com cotas"], 40);
+			assert.strictEqual(dia()["Pagou mais que as cotas"], 2);
+			assert.strictEqual(semCotas(), 0);
+			// Com a coluna (ADD COLUMN): 1 dos 5 sem cotas → 2 de 4
+			const db2 = new BetterSQLite(file);
+			db2.exec("ALTER TABLE soulmate_cycle_hourly ADD COLUMN withoutQuota INTEGER");
+			db2.prepare("UPDATE soulmate_cycle_hourly SET withoutQuota = 1").run();
+			db2.close();
+			assert.strictEqual(dia()["Sem cotas"], 1);
+			assert.strictEqual(dia()["% dos com cotas"], 50);
+			assert.strictEqual(semCotas(), 1);
 		});
 
 		await test("alerta de carga atrasada: só fontes das últimas 48 h, intervalo + 2 h, pausada não dispara", () => {

@@ -205,10 +205,10 @@
    }
   ],
   "elements": {
-   "panel-34": {
+   "panel-35": {
     "kind": "Panel",
     "spec": {
-     "id": 34,
+     "id": 35,
      "title": "",
      "description": "",
      "links": [],
@@ -550,10 +550,10 @@
      }
     }
    },
-   "panel-33": {
+   "panel-34": {
     "kind": "Panel",
     "spec": {
-     "id": 33,
+     "id": 34,
      "title": "Alertas disparados",
      "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point. Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
      "links": [],
@@ -597,10 +597,10 @@
      }
     }
    },
-   "panel-30": {
+   "panel-31": {
     "kind": "Panel",
     "spec": {
-     "id": 30,
+     "id": 31,
      "title": "Massa em circulação, por moeda — índice, escala log (12 semanas)",
      "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
@@ -721,10 +721,10 @@
      }
     }
    },
-   "panel-31": {
+   "panel-32": {
     "kind": "Panel",
     "spec": {
-     "id": 31,
+     "id": 32,
      "title": "Massa em circulação, por moeda — valor (12 semanas)",
      "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
@@ -841,10 +841,10 @@
      }
     }
    },
-   "panel-32": {
+   "panel-33": {
     "kind": "Panel",
     "spec": {
-     "id": 32,
+     "id": 33,
      "title": "Massa — ${moedas:text} (12 semanas)",
      "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
@@ -1178,10 +1178,10 @@
      }
     }
    },
-   "panel-35": {
+   "panel-36": {
     "kind": "Panel",
     "spec": {
-     "id": 35,
+     "id": 36,
      "title": "",
      "description": "",
      "links": [],
@@ -2286,7 +2286,7 @@
     "spec": {
      "id": 20,
      "title": "Divórcios de alma gêmea que pagaram mais que as cotas (últimos 7 dias)",
-     "description": "Regressão do ciclo cotas → alma gêmea → divórcio (fechado no 148d21d: retorno 0,09×). Conta divórcios de alma gêmea cujo pagamento foi maior ou igual ao que o jogador gastou em cotas daquele personagem desde o divórcio anterior. Deve ficar em 0; qualquer valor acima é o ciclo voltando a imprimir moeda (também vira alerta).",
+     "description": "Regressão do ciclo cotas → alma gêmea → divórcio (fechado no 148d21d: retorno 0,09×). Conta divórcios de alma gêmea em que o pagamento foi estritamente maior que o que o jogador gastou em cotas daquele personagem (custo > 0) desde o divórcio anterior; divórcio sem cotas fica de fora (painel ao lado). Deve ficar em 0; qualquer valor acima é o ciclo voltando a imprimir moeda (também vira alerta).",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -2304,8 +2304,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT COALESCE(SUM(above_cost), 0) AS \"Acima do custo\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
-            "rawQueryText": "SELECT COALESCE(SUM(above_cost), 0) AS \"Acima do custo\" FROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+            "queryText": "WITH sc AS (\n  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,\n    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq\n  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x\n)\nSELECT COALESCE(SUM(above_cost), 0) AS \"Pagou mais que as cotas\" FROM sc\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+            "rawQueryText": "WITH sc AS (\n  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,\n    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq\n  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x\n)\nSELECT COALESCE(SUM(above_cost), 0) AS \"Pagou mais que as cotas\" FROM sc\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
             "timeColumns": []
            }
           },
@@ -2324,16 +2324,16 @@
       "version": "",
       "spec": {
        "options": {
-        "colorMode": "background",
         "graphMode": "none",
-        "textMode": "value",
         "reduceOptions": {
          "calcs": [
           "lastNotNull"
          ],
          "fields": "",
          "values": false
-        }
+        },
+        "colorMode": "background",
+        "textMode": "value"
        },
        "fieldConfig": {
         "defaults": {
@@ -2405,7 +2405,6 @@
       "version": "",
       "spec": {
        "options": {
-        "colorMode": "value",
         "graphMode": "none",
         "reduceOptions": {
          "calcs": [
@@ -2413,7 +2412,8 @@
          ],
          "fields": "",
          "values": false
-        }
+        },
+        "colorMode": "value"
        },
        "fieldConfig": {
         "defaults": {
@@ -2490,7 +2490,6 @@
       "version": "",
       "spec": {
        "options": {
-        "colorMode": "none",
         "graphMode": "none",
         "reduceOptions": {
          "calcs": [
@@ -2498,7 +2497,8 @@
          ],
          "fields": "",
          "values": false
-        }
+        },
+        "colorMode": "none"
        },
        "fieldConfig": {
         "defaults": {
@@ -2515,8 +2515,8 @@
     "kind": "Panel",
     "spec": {
      "id": 23,
-     "title": "Ciclo da alma gêmea por dia (período selecionado)",
-     "description": "Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio.",
+     "title": "Divórcios de alma gêmea sem cotas (últimos 7 dias)",
+     "description": "Divórcios de alma gêmea sem nenhuma cota comprada (não entram no 'pagou mais que as cotas' nem nos percentuais). 0 em dados antigos, de antes do waifuletes mandar esse número.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -2534,8 +2534,72 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS \"Dia\",\n  SUM(divorces) AS \"Divórcios\", SUM(paid) AS \"Pago nos divórcios\", SUM(quota_cost) AS \"Custo das cotas\",\n  ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS \"Retorno (pago ÷ custo)\",\n  SUM(above_cost) AS \"Acima do custo\", ROUND(MAX(max_return), 2) AS \"Maior retorno\"\nFROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__from AND hour < $__to\nGROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC",
-            "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS \"Dia\",\n  SUM(divorces) AS \"Divórcios\", SUM(paid) AS \"Pago nos divórcios\", SUM(quota_cost) AS \"Custo das cotas\",\n  ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS \"Retorno (pago ÷ custo)\",\n  SUM(above_cost) AS \"Acima do custo\", ROUND(MAX(max_return), 2) AS \"Maior retorno\"\nFROM soulmate_cycle_hourly\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__from AND hour < $__to\nGROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC",
+            "queryText": "WITH sc AS (\n  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,\n    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq\n  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x\n)\nSELECT COALESCE(SUM(wq), 0) AS \"Sem cotas\" FROM sc\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+            "rawQueryText": "WITH sc AS (\n  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,\n    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq\n  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x\n)\nSELECT COALESCE(SUM(wq), 0) AS \"Sem cotas\" FROM sc\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__to - 604800000 AND hour < $__to\nHAVING (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1",
+            "timeColumns": []
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "stat",
+      "version": "",
+      "spec": {
+       "options": {
+        "graphMode": "none",
+        "reduceOptions": {
+         "calcs": [
+          "lastNotNull"
+         ],
+         "fields": "",
+         "values": false
+        },
+        "colorMode": "none"
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "Indisponível — depende de: waifuletes com soulmateCycle no resumo da economia",
+         "unit": "locale"
+        },
+        "overrides": []
+       }
+      }
+     }
+    }
+   },
+   "panel-24": {
+    "kind": "Panel",
+    "spec": {
+     "id": 24,
+     "title": "Ciclo da alma gêmea por dia (período selecionado)",
+     "description": "Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio. Pagou mais que as cotas = pagamento estritamente maior que o custo das cotas (custo > 0); o % é sobre os divórcios com cotas (divórcios − sem cotas).",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "WITH sc AS (\n  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,\n    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq\n  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x\n)\nSELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS \"Dia\",\n  SUM(divorces) AS \"Divórcios\", SUM(wq) AS \"Sem cotas\", SUM(paid) AS \"Pago nos divórcios\", SUM(quota_cost) AS \"Custo das cotas\",\n  ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS \"Retorno (pago ÷ custo)\",\n  SUM(above_cost) AS \"Pagou mais que as cotas\",\n  ROUND(100.0 * SUM(above_cost) / NULLIF(SUM(divorces) - SUM(wq), 0), 1) AS \"% dos com cotas\",\n  ROUND(MAX(max_return), 2) AS \"Maior retorno\"\nFROM sc\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__from AND hour < $__to\nGROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC",
+            "rawQueryText": "WITH sc AS (\n  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,\n    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq\n  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x\n)\nSELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS \"Dia\",\n  SUM(divorces) AS \"Divórcios\", SUM(wq) AS \"Sem cotas\", SUM(paid) AS \"Pago nos divórcios\", SUM(quota_cost) AS \"Custo das cotas\",\n  ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS \"Retorno (pago ÷ custo)\",\n  SUM(above_cost) AS \"Pagou mais que as cotas\",\n  ROUND(100.0 * SUM(above_cost) / NULLIF(SUM(divorces) - SUM(wq), 0), 1) AS \"% dos com cotas\",\n  ROUND(MAX(max_return), 2) AS \"Maior retorno\"\nFROM sc\nWHERE (SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1 AND hour >= $__from AND hour < $__to\nGROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC",
             "timeColumns": [
              "Dia"
             ]
@@ -2591,6 +2655,18 @@
          {
           "matcher": {
            "id": "byName",
+           "options": "Sem cotas"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
            "options": "Pago nos divórcios"
           },
           "properties": [
@@ -2609,6 +2685,18 @@
            {
             "id": "unit",
             "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "% dos com cotas"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "percent"
            }
           ]
          },
@@ -2649,7 +2737,7 @@
          {
           "matcher": {
            "id": "byName",
-           "options": "Acima do custo"
+           "options": "Pagou mais que as cotas"
           },
           "properties": [
            {
@@ -2682,10 +2770,10 @@
      }
     }
    },
-   "panel-51": {
+   "panel-52": {
     "kind": "Panel",
     "spec": {
-     "id": 51,
+     "id": 52,
      "title": "",
      "description": "",
      "links": [],
@@ -2715,10 +2803,10 @@
      "transparent": true
     }
    },
-   "panel-41": {
+   "panel-42": {
     "kind": "Panel",
     "spec": {
-     "id": 41,
+     "id": 42,
      "title": "Quem mais ganhou — ${moeda} (período selecionado)",
      "description": "Os 25 que mais receberam de motivos de criação no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -3063,10 +3151,10 @@
      }
     }
    },
-   "panel-42": {
+   "panel-43": {
     "kind": "Panel",
     "spec": {
-     "id": 42,
+     "id": 43,
      "title": "Quem mais perdeu — ${moeda} (período selecionado)",
      "description": "Os 25 com o pior saldo líquido (entrou − saiu, sem as linhas fora do dinheiro) no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -3411,10 +3499,10 @@
      }
     }
    },
-   "panel-43": {
+   "panel-44": {
     "kind": "Panel",
     "spec": {
-     "id": 43,
+     "id": 44,
      "title": "Anomalias (pista, não prova): dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
      "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui. É pista, não prova.",
      "links": [],
@@ -3741,10 +3829,10 @@
      }
     }
    },
-   "panel-44": {
+   "panel-45": {
     "kind": "Panel",
     "spec": {
-     "id": 44,
+     "id": 45,
      "title": "Maiores saldos — ${moeda} (agora)",
      "description": "Saldo atual por pessoa (somando os IDs dela), fatia da massa e variação desde o saldo de 7 dias atrás (fim do dia econômico).",
      "links": [],
@@ -4041,10 +4129,10 @@
      }
     }
    },
-   "panel-38": {
+   "panel-39": {
     "kind": "Panel",
     "spec": {
-     "id": 38,
+     "id": 39,
      "title": "",
      "description": "",
      "links": [],
@@ -4074,10 +4162,10 @@
      "transparent": true
     }
    },
-   "panel-24": {
+   "panel-25": {
     "kind": "Panel",
     "spec": {
-     "id": 24,
+     "id": 25,
      "title": "Pessoas ativas por dia (período selecionado)",
      "description": "Pessoas distintas que usaram algum comando no dia econômico (04:00 BRT), com LID e variantes de telefone unidas. Fonte: cmd_usage.db (sem comandos automáticos nem interação passiva, como o resumo semanal). Guardado por ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90).",
      "links": [],
@@ -4134,10 +4222,10 @@
      }
     }
    },
-   "panel-25": {
+   "panel-26": {
     "kind": "Panel",
     "spec": {
-     "id": 25,
+     "id": 26,
      "title": "Jogadores com movimento por dia, por moeda (período selecionado)",
      "description": "Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato.",
      "links": [],
@@ -4242,10 +4330,10 @@
      }
     }
    },
-   "panel-26": {
+   "panel-27": {
     "kind": "Panel",
     "spec": {
-     "id": 26,
+     "id": 27,
      "title": "Comandos por hora (período selecionado)",
      "description": "",
      "links": [],
@@ -4298,10 +4386,10 @@
      }
     }
    },
-   "panel-27": {
+   "panel-28": {
     "kind": "Panel",
     "spec": {
-     "id": 27,
+     "id": 28,
      "title": "Comandos mais usados (últimos 7 dias)",
      "description": "Top 25 comandos nos 7 dias, com o maior número de pessoas distintas num dia.",
      "links": [],
@@ -4406,10 +4494,10 @@
      }
     }
    },
-   "panel-39": {
+   "panel-40": {
     "kind": "Panel",
     "spec": {
-     "id": 39,
+     "id": 40,
      "title": "",
      "description": "",
      "links": [],
@@ -4775,10 +4863,10 @@
      }
     }
    },
-   "panel-40": {
+   "panel-41": {
     "kind": "Panel",
     "spec": {
-     "id": 40,
+     "id": 41,
      "title": "",
      "description": "",
      "links": [],
@@ -4808,10 +4896,10 @@
      "transparent": true
     }
    },
-   "panel-36": {
+   "panel-37": {
     "kind": "Panel",
     "spec": {
-     "id": 36,
+     "id": 37,
      "title": "Alertas da economia",
      "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point.",
      "links": [],
@@ -5558,10 +5646,10 @@
      }
     }
    },
-   "panel-28": {
+   "panel-29": {
     "kind": "Panel",
     "spec": {
-     "id": 28,
+     "id": 29,
      "title": "Disponibilidade dos painéis",
      "description": "Painéis que dependem de dado que pode não existir ainda. Indisponível = o painel aparece com o selo 'Indisponível — depende de: …' em vez de números. A carga regrava esta tabela a cada hora.",
      "links": [],
@@ -5692,10 +5780,10 @@
      }
     }
    },
-   "panel-29": {
+   "panel-30": {
     "kind": "Panel",
     "spec": {
-     "id": 29,
+     "id": 30,
      "title": "Causa da moeda sem origem (últimos 7 dias)",
      "description": "Quanto de cada causa conhecida explica a moeda sem origem. Hoje ela aparece como um número só (Diagnóstico). Na fase 2, cada caminho sem extrato passa a gravar uma linha própria e este painel se liga sozinho.",
      "links": [],
@@ -5761,10 +5849,10 @@
      }
     }
    },
-   "panel-37": {
+   "panel-38": {
     "kind": "Panel",
     "spec": {
-     "id": 37,
+     "id": 38,
      "title": "Glossário",
      "description": "",
      "links": [],
@@ -5824,7 +5912,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-34"
+                  "name": "panel-35"
                  }
                 }
                },
@@ -5850,7 +5938,7 @@
                  "height": 4,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-33"
+                  "name": "panel-34"
                  }
                 }
                }
@@ -5878,7 +5966,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-30"
+                  "name": "panel-31"
                  }
                 }
                }
@@ -5923,7 +6011,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-31"
+                  "name": "panel-32"
                  }
                 }
                }
@@ -5968,7 +6056,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-32"
+                  "name": "panel-33"
                  },
                  "repeat": {
                   "mode": "variable",
@@ -6060,7 +6148,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-35"
+                  "name": "panel-36"
                  }
                 }
                },
@@ -6254,7 +6342,7 @@
                 "spec": {
                  "x": 0,
                  "y": 0,
-                 "width": 8,
+                 "width": 6,
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
@@ -6265,9 +6353,9 @@
                {
                 "kind": "GridLayoutItem",
                 "spec": {
-                 "x": 8,
+                 "x": 6,
                  "y": 0,
-                 "width": 8,
+                 "width": 6,
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
@@ -6278,13 +6366,26 @@
                {
                 "kind": "GridLayoutItem",
                 "spec": {
-                 "x": 16,
+                 "x": 12,
                  "y": 0,
-                 "width": 8,
+                 "width": 6,
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
                   "name": "panel-22"
+                 }
+                }
+               },
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 18,
+                 "y": 0,
+                 "width": 6,
+                 "height": 6,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-23"
                  }
                 }
                },
@@ -6297,7 +6398,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-23"
+                  "name": "panel-24"
                  }
                 }
                }
@@ -6345,7 +6446,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-51"
+             "name": "panel-52"
             }
            }
           },
@@ -6358,7 +6459,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-41"
+             "name": "panel-42"
             }
            }
           },
@@ -6371,7 +6472,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-42"
+             "name": "panel-43"
             }
            }
           },
@@ -6384,7 +6485,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-43"
+             "name": "panel-44"
             }
            }
           },
@@ -6397,7 +6498,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-44"
+             "name": "panel-45"
             }
            }
           }
@@ -6423,7 +6524,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-38"
+             "name": "panel-39"
             }
            }
           },
@@ -6431,19 +6532,6 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 2,
-            "width": 12,
-            "height": 8,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-24"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 12,
             "y": 2,
             "width": 12,
             "height": 8,
@@ -6456,13 +6544,26 @@
           {
            "kind": "GridLayoutItem",
            "spec": {
+            "x": 12,
+            "y": 2,
+            "width": 12,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-26"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
             "x": 0,
             "y": 10,
             "width": 12,
             "height": 7,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-26"
+             "name": "panel-27"
             }
            }
           },
@@ -6475,7 +6576,7 @@
             "height": 7,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-27"
+             "name": "panel-28"
             }
            }
           }
@@ -6501,7 +6602,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-39"
+             "name": "panel-40"
             }
            }
           },
@@ -6562,7 +6663,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-40"
+                  "name": "panel-41"
                  }
                 }
                },
@@ -6575,7 +6676,7 @@
                  "height": 5,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-36"
+                  "name": "panel-37"
                  }
                 }
                },
@@ -6655,7 +6756,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-28"
+                  "name": "panel-29"
                  }
                 }
                },
@@ -6668,7 +6769,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-29"
+                  "name": "panel-30"
                  }
                 }
                }
@@ -6695,7 +6796,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-37"
+                  "name": "panel-38"
                  }
                 }
                }

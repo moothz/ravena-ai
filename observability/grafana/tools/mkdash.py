@@ -631,46 +631,69 @@ mud_p.append(panel("text", "Como registrar e ler", "", 0, 14, 24, 5, extra={"tar
 # ============================================================================ Ciclo da alma gêmea (recolhido)
 SM_ON = "(SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1"
 SM_OFF = "Indisponível — depende de: waifuletes com soulmateCycle no resumo da economia"
+# withoutQuota (divórcios sem cotas) é coluna nova (ADD COLUMN, NULL em dados antigos). O SQL funciona com e sem ela:
+# a subconsulta acha a coluna em soulmate_cycle_hourly quando existe; sem ela, cai no NULL de `dflt` (escopo de fora).
+SC = """sc AS (
+  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,
+    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq
+  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x
+)"""
+STAT_OPTS = {"graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}
 alma_p = []
 alma_p.append(panel("stat", "Divórcios de alma gêmea que pagaram mais que as cotas (últimos 7 dias)", f"""
-SELECT COALESCE(SUM(above_cost), 0) AS "Acima do custo" FROM soulmate_cycle_hourly
+WITH {SC}
+SELECT COALESCE(SUM(above_cost), 0) AS "Pagou mais que as cotas" FROM sc
 WHERE {SM_ON} AND hour >= {TO} - {WEEK} AND hour < {TO}
 HAVING {SM_ON}
-""", 0, 2, 8, 6,
-    desc="Regressão do ciclo cotas → alma gêmea → divórcio (fechado no 148d21d: retorno 0,09×). Conta divórcios de alma gêmea cujo "
-         "pagamento foi maior ou igual ao que o jogador gastou em cotas daquele personagem desde o divórcio anterior. Deve ficar em 0; "
-         "qualquer valor acima é o ciclo voltando a imprimir moeda (também vira alerta).",
+""", 0, 2, 6, 6,
+    desc="Regressão do ciclo cotas → alma gêmea → divórcio (fechado no 148d21d: retorno 0,09×). Conta divórcios de alma gêmea em que "
+         "o pagamento foi estritamente maior que o que o jogador gastou em cotas daquele personagem (custo > 0) desde o divórcio "
+         "anterior; divórcio sem cotas fica de fora (painel ao lado). Deve ficar em 0; qualquer valor acima é o ciclo voltando a "
+         "imprimir moeda (também vira alerta).",
     defaults={"noValue": SM_OFF, "thresholds": steps((None, "green"), (1, "red")), "color": {"mode": "thresholds"}, "unit": "none"},
-    options={"colorMode": "background", "graphMode": "none", "textMode": "value", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}))
+    options={**STAT_OPTS, "colorMode": "background", "textMode": "value"}))
 alma_p.append(panel("stat", "Maior retorno de um divórcio de alma gêmea (últimos 7 dias)", f"""
 SELECT MAX(max_return) AS "Maior retorno" FROM soulmate_cycle_hourly
 WHERE {SM_ON} AND hour >= {TO} - {WEEK} AND hour < {TO}
 HAVING {SM_ON}
-""", 8, 2, 8, 6,
+""", 6, 2, 6, 6,
     desc="Pagamento do divórcio ÷ custo das cotas, o maior da semana. Abaixo de 1 = o ciclo dá prejuízo (fechado). Vazio = nenhum divórcio "
          "de alma gêmea com custo de cotas na semana.",
     defaults={"noValue": "nenhum divórcio de alma gêmea", "decimals": 2, "unit": "none",
               "thresholds": steps((None, "green"), (0.5, "yellow"), (1, "red")), "color": {"mode": "thresholds"}},
-    options={"colorMode": "value", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}))
+    options={**STAT_OPTS, "colorMode": "value"}))
 alma_p.append(panel("stat", "Divórcios de alma gêmea (últimos 7 dias)", f"""
 SELECT COALESCE(SUM(divorces), 0) AS "Divórcios" FROM soulmate_cycle_hourly
 WHERE {SM_ON} AND hour >= {TO} - {WEEK} AND hour < {TO}
 HAVING {SM_ON}
-""", 16, 2, 8, 6, defaults={"noValue": SM_OFF, "unit": "locale"},
-    options={"colorMode": "none", "graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}))
+""", 12, 2, 6, 6, defaults={"noValue": SM_OFF, "unit": "locale"}, options={**STAT_OPTS, "colorMode": "none"}))
+alma_p.append(panel("stat", "Divórcios de alma gêmea sem cotas (últimos 7 dias)", f"""
+WITH {SC}
+SELECT COALESCE(SUM(wq), 0) AS "Sem cotas" FROM sc
+WHERE {SM_ON} AND hour >= {TO} - {WEEK} AND hour < {TO}
+HAVING {SM_ON}
+""", 18, 2, 6, 6, desc="Divórcios de alma gêmea sem nenhuma cota comprada (não entram no 'pagou mais que as cotas' nem nos percentuais). "
+                     "0 em dados antigos, de antes do waifuletes mandar esse número.",
+    defaults={"noValue": SM_OFF, "unit": "locale"}, options={**STAT_OPTS, "colorMode": "none"}))
 alma_p.append(panel("table", "Ciclo da alma gêmea por dia (período selecionado)", f"""
+WITH {SC}
 SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS "Dia",
-  SUM(divorces) AS "Divórcios", SUM(paid) AS "Pago nos divórcios", SUM(quota_cost) AS "Custo das cotas",
+  SUM(divorces) AS "Divórcios", SUM(wq) AS "Sem cotas", SUM(paid) AS "Pago nos divórcios", SUM(quota_cost) AS "Custo das cotas",
   ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS "Retorno (pago ÷ custo)",
-  SUM(above_cost) AS "Acima do custo", ROUND(MAX(max_return), 2) AS "Maior retorno"
-FROM soulmate_cycle_hourly
+  SUM(above_cost) AS "Pagou mais que as cotas",
+  ROUND(100.0 * SUM(above_cost) / NULLIF(SUM(divorces) - SUM(wq), 0), 1) AS "% dos com cotas",
+  ROUND(MAX(max_return), 2) AS "Maior retorno"
+FROM sc
 WHERE {SM_ON} AND hour >= {FROM} AND hour < {TO}
 GROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC
-""", 0, 8, 24, 7, desc="Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio.",
+""", 0, 8, 24, 7, desc="Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio. "
+                       "Pagou mais que as cotas = pagamento estritamente maior que o custo das cotas (custo > 0); o % é sobre os divórcios "
+                       "com cotas (divórcios − sem cotas).",
     time_cols=["Dia"], defaults={"noValue": SM_OFF + " (ou nenhum divórcio de alma gêmea no período)"},
-    overrides=[by_name("Dia", ("unit", "time:DD/MM"))] + num("Divórcios", "Pago nos divórcios", "Custo das cotas") + [
+    overrides=[by_name("Dia", ("unit", "time:DD/MM"))] + num("Divórcios", "Sem cotas", "Pago nos divórcios", "Custo das cotas") + [
+        by_name("% dos com cotas", ("unit", "percent")),
         cell("Retorno (pago ÷ custo)", steps((None, "green"), (0.5, "yellow"), (1, "red")), "color-text"),
-        cell("Acima do custo", steps((None, "green"), (1, "red")), "color-text")],
+        cell("Pagou mais que as cotas", steps((None, "green"), (1, "red")), "color-text")],
     options=TABLE_OPTS))
 
 # ============================================================================ Atividade (recolhido)
@@ -1178,7 +1201,8 @@ SELECT w.currency AS moeda, ROUND(ABS(100.0 * w.so7 / c.criado), 2) AS pct FROM 
               "buracos conhecidos (fase 2)."),
     rule("economia-ciclo-alma-gemea", "Economia: divórcio de alma gêmea pagou mais que as cotas", f"""
 SELECT COALESCE(SUM(above_cost), 0) AS acima FROM soulmate_cycle_hourly WHERE hour >= {NOW_MS} - {WEEK}
-""", "gt", 0, "O ciclo cotas → alma gêmea → divórcio voltou a dar lucro (seção Ciclo da alma gêmea)."),
+""", "gt", 0, "Divórcio de alma gêmea pagou estritamente mais que as cotas compradas (custo > 0): o ciclo cotas → alma gêmea → "
+              "divórcio voltou a dar lucro (seção Ciclo da alma gêmea)."),
 ]
 alert_yaml = {"apiVersion": 1, "groups": [{"orgId": 1, "name": "economia", "folder": "Economia", "interval": "10m", "rules": rules}]}
 aout = os.path.join(OUT, "observability/grafana/provisioning/alerting/economia.yaml")
