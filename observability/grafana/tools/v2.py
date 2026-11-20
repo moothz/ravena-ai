@@ -124,9 +124,9 @@ def custom_var(name, label, options, current, multi=False, include_all=False):
         "multi": multi, "includeAll": include_all, "hide": "dontHide", "skipUrlSync": False, "allowCustomValue": False}}
 
 
-def text_var(name, label):
+def text_var(name, label, hide="dontHide"):
     return {"kind": "TextVariable", "spec": {"name": name, "label": label, "query": "", "current": {"text": "", "value": ""},
-                                              "hide": "dontHide", "skipUrlSync": False}}
+                                              "hide": hide, "skipUrlSync": False}}
 
 
 def annotation(name, ds, sql, color, *, enable=True):

@@ -105,6 +105,20 @@
      "hide": "dontHide",
      "skipUrlSync": false
     }
+   },
+   {
+    "kind": "TextVariable",
+    "spec": {
+     "name": "nome",
+     "label": "Nome",
+     "query": "",
+     "current": {
+      "text": "",
+      "value": ""
+     },
+     "hide": "hideVariable",
+     "skipUrlSync": false
+    }
    }
   ],
   "annotations": [
@@ -157,10 +171,10 @@
    }
   ],
   "elements": {
-   "panel-46": {
+   "panel-47": {
     "kind": "Panel",
     "spec": {
-     "id": 46,
+     "id": 47,
      "title": "Encontrar jogador (busca por nome, telefone ou ID)",
      "description": "Digite parte do nome, do telefone ou do ID no campo 'Buscar' no topo e clique no nome para abrir a ficha.",
      "links": [],
@@ -351,7 +365,7 @@
             "value": [
              {
               "title": "Abrir ficha do jogador",
-              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
              }
             ]
            },
@@ -439,10 +453,43 @@
      }
     }
    },
-   "panel-47": {
+   "panel-54": {
     "kind": "Panel",
     "spec": {
-     "id": 47,
+     "id": 54,
+     "title": "",
+     "description": "",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "text",
+      "version": "",
+      "spec": {
+       "options": {
+        "mode": "markdown",
+        "content": "**Nenhum jogador escolhido.** Clique num nome na tabela acima (ou nas tabelas da aba Jogadores do painel da economia), ou digite a pessoa no campo Jogador: telefone com 13 dígitos, `tg:<id>` ou `lid:<id>`."
+       },
+       "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+       }
+      }
+     },
+     "transparent": true
+    }
+   },
+   "panel-48": {
+    "kind": "Panel",
+    "spec": {
+     "id": 48,
      "title": "Ficha do jogador",
      "description": "Escolha o jogador clicando num nome (aqui ou nas tabelas da aba Jogadores) ou digitando a pessoa no campo 'Jogador': telefone com 13 dígitos, tg:<id> ou lid:<id>. Período = seletor de tempo.",
      "links": [],
@@ -583,10 +630,10 @@
      }
     }
    },
-   "panel-48": {
+   "panel-49": {
     "kind": "Panel",
     "spec": {
-     "id": 48,
+     "id": 49,
      "title": "Saldo por dia — ${moeda} — jogador escolhido",
      "description": "Saldo no fim de cada dia econômico (o dia corrente = agora). Petalitas: só desde a primeira carga.",
      "links": [],
@@ -642,10 +689,10 @@
      }
     }
    },
-   "panel-49": {
+   "panel-50": {
     "kind": "Panel",
     "spec": {
-     "id": 49,
+     "id": 50,
      "title": "Fluxo por motivo e dia — ${moeda} — jogador escolhido",
      "description": "Líquido (entrou − saiu) por motivo e dia econômico.",
      "links": [],
@@ -714,10 +761,10 @@
      }
     }
    },
-   "panel-50": {
+   "panel-51": {
     "kind": "Panel",
     "spec": {
-     "id": 50,
+     "id": 51,
      "title": "Extrato diário — ${moeda} — jogador escolhido",
      "description": "",
      "links": [],
@@ -857,10 +904,10 @@
      }
     }
    },
-   "panel-51": {
+   "panel-52": {
     "kind": "Panel",
     "spec": {
-     "id": 51,
+     "id": 52,
      "title": "Comandos por dia — jogador escolhido",
      "description": "",
      "links": [],
@@ -940,7 +987,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-46"
+             "name": "panel-47"
             }
            }
           }
@@ -952,7 +999,52 @@
      {
       "kind": "RowsLayoutRow",
       "spec": {
-       "title": "Jogador escolhido: ${jogador}",
+       "title": "",
+       "collapse": false,
+       "layout": {
+        "kind": "GridLayout",
+        "spec": {
+         "items": [
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 0,
+            "width": 24,
+            "height": 2,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-54"
+            }
+           }
+          }
+         ]
+        }
+       },
+       "hideHeader": true,
+       "conditionalRendering": {
+        "kind": "ConditionalRenderingGroup",
+        "spec": {
+         "visibility": "show",
+         "condition": "and",
+         "items": [
+          {
+           "kind": "ConditionalRenderingVariable",
+           "spec": {
+            "variable": "jogador",
+            "operator": "equals",
+            "value": ""
+           }
+          }
+         ]
+        }
+       }
+      }
+     },
+     {
+      "kind": "RowsLayoutRow",
+      "spec": {
+       "title": "Jogador escolhido: ${nome} · ${jogador}",
        "collapse": false,
        "layout": {
         "kind": "GridLayout",
@@ -967,19 +1059,6 @@
             "height": 6,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-47"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 0,
-            "y": 6,
-            "width": 12,
-            "height": 8,
-            "element": {
-             "kind": "ElementReference",
              "name": "panel-48"
             }
            }
@@ -987,7 +1066,7 @@
           {
            "kind": "GridLayoutItem",
            "spec": {
-            "x": 12,
+            "x": 0,
             "y": 6,
             "width": 12,
             "height": 8,
@@ -1000,13 +1079,26 @@
           {
            "kind": "GridLayoutItem",
            "spec": {
+            "x": 12,
+            "y": 6,
+            "width": 12,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-50"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
             "x": 0,
             "y": 14,
             "width": 16,
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-50"
+             "name": "panel-51"
             }
            }
           },
@@ -1019,8 +1111,25 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-51"
+             "name": "panel-52"
             }
+           }
+          }
+         ]
+        }
+       },
+       "conditionalRendering": {
+        "kind": "ConditionalRenderingGroup",
+        "spec": {
+         "visibility": "show",
+         "condition": "and",
+         "items": [
+          {
+           "kind": "ConditionalRenderingVariable",
+           "spec": {
+            "variable": "jogador",
+            "operator": "notEquals",
+            "value": ""
            }
           }
          ]

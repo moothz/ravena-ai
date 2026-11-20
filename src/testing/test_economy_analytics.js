@@ -2182,6 +2182,27 @@ async function main() {
 				operator: "equals",
 				value: "zinthos"
 			});
+			// Estados vazios por renderização condicional (timeseries não mostra noValue): Petalitas sem fluxos, com aviso
+			const cond = (sec) => sec.conditional?.spec.items[0].spec;
+			const moedaTab = layout[1].sections;
+			assert.deepStrictEqual(cond(moedaTab.find((s) => s.title === "Fluxos — ${moeda}")), {
+				variable: "moeda",
+				operator: "notEquals",
+				value: "petalitas"
+			});
+			const aviso = moedaTab.find(
+				(s) => cond(s)?.value === "petalitas" && cond(s).operator === "equals"
+			);
+			assert.strictEqual(byName.get(aviso.elements[0]).title, "Petalitas: sem extrato (fase 2)");
+			// Ficha do jogador só com jogador escolhido; sem ele, a instrução
+			const jogSecs = dashboardLayout(DASHBOARD_JOGADORES)[0].sections;
+			assert.deepStrictEqual(
+				jogSecs.map((s) => cond(s) && [s.title, cond(s).operator, cond(s).value]).filter(Boolean),
+				[
+					["", "equals", ""],
+					["Jogador escolhido: ${nome} · ${jogador}", "notEquals", ""]
+				]
+			);
 			// Todo elemento do layout existe e todo elemento está no layout (uma vez)
 			const used = layout.flatMap((t) => t.sections.flatMap((s) => s.elements));
 			assert.deepStrictEqual([...used].sort(), [...byName.keys()].sort());

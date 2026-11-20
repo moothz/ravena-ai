@@ -1178,10 +1178,10 @@
      }
     }
    },
-   "panel-36": {
+   "panel-39": {
     "kind": "Panel",
     "spec": {
-     "id": 36,
+     "id": 39,
      "title": "",
      "description": "",
      "links": [],
@@ -1200,7 +1200,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "**Como a moeda escolhida está se comportando?** Escolha a moeda no topo. Petalitas ainda não tem extrato: os painéis de fluxo mostram o aviso no lugar."
+        "content": "**Como a moeda escolhida está se comportando?** Escolha a moeda no topo."
        },
        "fieldConfig": {
         "defaults": {},
@@ -1849,6 +1849,38 @@
           ]
          }
         ]
+       }
+      }
+     }
+    }
+   },
+   "panel-36": {
+    "kind": "Panel",
+    "spec": {
+     "id": 36,
+     "title": "Petalitas: sem extrato (fase 2)",
+     "description": "",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "text",
+      "version": "",
+      "spec": {
+       "options": {
+        "mode": "markdown",
+        "content": "O Jardim das Sombras ainda não manda o extrato (linhas por motivo), só o saldo: criado e destruído, fluxo por motivo, de onde vem e para onde vai e a conferência estoque × fluxos ficam indisponíveis até a fase 2. A massa (acima) e a concentração (abaixo) já valem."
+       },
+       "fieldConfig": {
+        "defaults": {},
+        "overrides": []
        }
       }
      }
@@ -2770,10 +2802,10 @@
      }
     }
    },
-   "panel-52": {
+   "panel-53": {
     "kind": "Panel",
     "spec": {
-     "id": 52,
+     "id": 53,
      "title": "",
      "description": "",
      "links": [],
@@ -2803,10 +2835,10 @@
      "transparent": true
     }
    },
-   "panel-42": {
+   "panel-43": {
     "kind": "Panel",
     "spec": {
-     "id": 42,
+     "id": 43,
      "title": "Quem mais ganhou — ${moeda} (período selecionado)",
      "description": "Os 25 que mais receberam de motivos de criação no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -2997,7 +3029,7 @@
             "value": [
              {
               "title": "Abrir ficha do jogador",
-              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
              }
             ]
            },
@@ -3151,10 +3183,10 @@
      }
     }
    },
-   "panel-43": {
+   "panel-44": {
     "kind": "Panel",
     "spec": {
-     "id": 43,
+     "id": 44,
      "title": "Quem mais perdeu — ${moeda} (período selecionado)",
      "description": "Os 25 com o pior saldo líquido (entrou − saiu, sem as linhas fora do dinheiro) no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -3345,7 +3377,7 @@
             "value": [
              {
               "title": "Abrir ficha do jogador",
-              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
              }
             ]
            },
@@ -3499,10 +3531,10 @@
      }
     }
    },
-   "panel-44": {
+   "panel-45": {
     "kind": "Panel",
     "spec": {
-     "id": 44,
+     "id": 45,
      "title": "Anomalias (pista, não prova): dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
      "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui. É pista, não prova.",
      "links": [],
@@ -3723,7 +3755,7 @@
             "value": [
              {
               "title": "Abrir ficha do jogador",
-              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
              }
             ]
            },
@@ -3829,10 +3861,10 @@
      }
     }
    },
-   "panel-45": {
+   "panel-46": {
     "kind": "Panel",
     "spec": {
-     "id": 45,
+     "id": 46,
      "title": "Maiores saldos — ${moeda} (agora)",
      "description": "Saldo atual por pessoa (somando os IDs dela), fatia da massa e variação desde o saldo de 7 dias atrás (fim do dia econômico).",
      "links": [],
@@ -4023,7 +4055,7 @@
             "value": [
              {
               "title": "Abrir ficha do jogador",
-              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
              }
             ]
            },
@@ -4129,10 +4161,10 @@
      }
     }
    },
-   "panel-39": {
+   "panel-40": {
     "kind": "Panel",
     "spec": {
-     "id": 39,
+     "id": 40,
      "title": "",
      "description": "",
      "links": [],
@@ -4494,10 +4526,10 @@
      }
     }
    },
-   "panel-40": {
+   "panel-41": {
     "kind": "Panel",
     "spec": {
-     "id": 40,
+     "id": 41,
      "title": "",
      "description": "",
      "links": [],
@@ -4863,10 +4895,10 @@
      }
     }
    },
-   "panel-41": {
+   "panel-42": {
     "kind": "Panel",
     "spec": {
-     "id": 41,
+     "id": 42,
      "title": "",
      "description": "",
      "links": [],
@@ -6133,7 +6165,7 @@
           {
            "kind": "RowsLayoutRow",
            "spec": {
-            "title": "Fluxos — ${moeda}",
+            "title": "",
             "collapse": false,
             "layout": {
              "kind": "GridLayout",
@@ -6148,7 +6180,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-36"
+                  "name": "panel-39"
                  }
                 }
                },
@@ -6164,12 +6196,27 @@
                   "name": "panel-5"
                  }
                 }
-               },
+               }
+              ]
+             }
+            },
+            "hideHeader": true
+           }
+          },
+          {
+           "kind": "RowsLayoutRow",
+           "spec": {
+            "title": "Fluxos — ${moeda}",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
                {
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 0,
-                 "y": 10,
+                 "y": 0,
                  "width": 12,
                  "height": 8,
                  "element": {
@@ -6182,7 +6229,7 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 12,
-                 "y": 10,
+                 "y": 0,
                  "width": 12,
                  "height": 8,
                  "element": {
@@ -6195,7 +6242,7 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 0,
-                 "y": 18,
+                 "y": 8,
                  "width": 24,
                  "height": 11,
                  "element": {
@@ -6208,13 +6255,75 @@
                 "kind": "GridLayoutItem",
                 "spec": {
                  "x": 0,
-                 "y": 29,
+                 "y": 19,
                  "width": 24,
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
                   "name": "panel-10"
                  }
+                }
+               }
+              ]
+             }
+            },
+            "conditionalRendering": {
+             "kind": "ConditionalRenderingGroup",
+             "spec": {
+              "visibility": "show",
+              "condition": "and",
+              "items": [
+               {
+                "kind": "ConditionalRenderingVariable",
+                "spec": {
+                 "variable": "moeda",
+                 "operator": "notEquals",
+                 "value": "petalitas"
+                }
+               }
+              ]
+             }
+            }
+           }
+          },
+          {
+           "kind": "RowsLayoutRow",
+           "spec": {
+            "title": "",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 0,
+                 "width": 24,
+                 "height": 3,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-36"
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "hideHeader": true,
+            "conditionalRendering": {
+             "kind": "ConditionalRenderingGroup",
+             "spec": {
+              "visibility": "show",
+              "condition": "and",
+              "items": [
+               {
+                "kind": "ConditionalRenderingVariable",
+                "spec": {
+                 "variable": "moeda",
+                 "operator": "equals",
+                 "value": "petalitas"
                 }
                }
               ]
@@ -6446,7 +6555,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-52"
+             "name": "panel-53"
             }
            }
           },
@@ -6459,7 +6568,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-42"
+             "name": "panel-43"
             }
            }
           },
@@ -6472,7 +6581,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-43"
+             "name": "panel-44"
             }
            }
           },
@@ -6485,7 +6594,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-44"
+             "name": "panel-45"
             }
            }
           },
@@ -6498,7 +6607,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-45"
+             "name": "panel-46"
             }
            }
           }
@@ -6524,7 +6633,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-39"
+             "name": "panel-40"
             }
            }
           },
@@ -6602,7 +6711,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-40"
+             "name": "panel-41"
             }
            }
           },
@@ -6663,7 +6772,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-41"
+                  "name": "panel-42"
                  }
                 }
                },

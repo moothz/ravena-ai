@@ -847,14 +847,18 @@ resumo = [v2.Section(None, stack("**Está tudo bem, e os dados são de agora?** 
           v2.Section(None, [massa_sep], only=("escala", "separado")),
           v2.Section(None, [ultimas])]
 
-# Moeda: seções
-fluxos = [header("**Como a moeda escolhida está se comportando?** Escolha a moeda no topo. Petalitas ainda não tem extrato: os painéis de fluxo mostram o aviso no lugar.")]
-fluxos += [moeda_p[0], moeda_p[1], moeda_p[2], ondevem, moeda_p[-1]]
-y0 = 2
-for pnl, (x, w, h) in zip(fluxos[1:], ((0, 24, 8), (0, 12, 8), (12, 12, 8), (0, 24, 11), (0, 24, 6))):
-    pnl["gridPos"].update({"x": x, "w": w, "h": h})
-moeda_p[0]["gridPos"]["y"] = 2; moeda_p[1]["gridPos"]["y"] = 10; moeda_p[2]["gridPos"]["y"] = 10
-ondevem["gridPos"]["y"] = 18; moeda_p[-1]["gridPos"]["y"] = 29
+# Moeda: massa (toda moeda tem retrato) → fluxos (só moeda com extrato) ou o aviso de Petalitas → concentração…
+# Timeseries não mostra o noValue: com Petalitas a seção de fluxos some e entra um texto no lugar.
+massa_moeda = moeda_p[0]
+massa_moeda["gridPos"].update({"x": 0, "y": 0, "w": 24, "h": 8})
+fluxos = [moeda_p[1], moeda_p[2], ondevem, moeda_p[-1]]
+for pnl, (x, y_, w, h) in zip(fluxos, ((0, 0, 12, 8), (12, 0, 12, 8), (0, 8, 24, 11), (0, 19, 24, 6))):
+    pnl["gridPos"].update({"x": x, "y": y_, "w": w, "h": h})
+sem_extrato = panel("text", "Petalitas: sem extrato (fase 2)", "", 0, 0, 24, 3, extra={"targets": [], "datasource": None, "options": {
+    "mode": "markdown", "content": (
+        "O Jardim das Sombras ainda não manda o extrato (linhas por motivo), só o saldo: criado e destruído, fluxo por motivo, de onde "
+        "vem e para onde vai e a conferência estoque × fluxos ficam indisponíveis até a fase 2. A massa (acima) e a concentração "
+        "(abaixo) já valem.")}})
 concentracao = [moeda_p[3], moeda_p[4]] + quem_p
 moeda_p[3]["gridPos"].update({"x": 0, "y": 0}); moeda_p[4]["gridPos"].update({"x": 12, "y": 0})
 for pnl in quem_p:
@@ -877,7 +881,9 @@ glossario = panel("text", "Glossário", "", 0, 0, 24, 7, extra={"targets": [], "
 
 tabs = [
     v2.Tab("Resumo", resumo),
-    v2.Tab("Moeda", [v2.Section("Fluxos — ${moeda}", fluxos),
+    v2.Tab("Moeda", [v2.Section(None, stack("**Como a moeda escolhida está se comportando?** Escolha a moeda no topo.", [massa_moeda])),
+                     v2.Section("Fluxos — ${moeda}", fluxos, only=("moeda", "petalitas", "notEquals")),
+                     v2.Section(None, [sem_extrato], only=("moeda", "petalitas")),
                      v2.Section("Concentração e quem recebe — ${moeda}", concentracao),
                      v2.Section("Câmbio e transferências", cambio_p, collapse=True),
                      v2.Section("Ciclo da alma gêmea", alma_p, only=("moeda", "zinthos"))]),
@@ -922,7 +928,8 @@ pp AS (
 )"""
 SHOWID = ("CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) "
           "WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END")
-LINK = [{"title": "Abrir ficha do jogador", "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa}&${moeda:queryparam}&${__url_time_range}"}]
+LINK = [{"title": "Abrir ficha do jogador", "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}"
+                                                 "&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"}]
 def person_cols():
     return [by_name(c, ("noValue", "—")) for c in ("Zinthos", "Runas", "Petalitas", "Comandos (7 dias)", "Saldo atual", "Maior fonte",
                                                    "Variação em 7 dias", "% da massa", "Motivo dominante", "% do dia")] + [by_name("Pessoa", ("custom.hidden", True)), by_name("Nome", ("links", LINK), ("custom.width", 180)),
@@ -1148,13 +1155,19 @@ busca["description"] = "Digite parte do nome, do telefone ou do ID no campo 'Bus
 jog[0]["description"] = ("Escolha o jogador clicando num nome (aqui ou nas tabelas da aba Jogadores) ou digitando a pessoa no campo 'Jogador': "
                          "telefone com 13 dígitos, tg:<id> ou lid:<id>. Período = seletor de tempo.")
 jog[1]["fieldConfig"]["defaults"].setdefault("custom", {})["lineInterpolation"] = "stepAfter"
+# Sem jogador escolhido, a ficha (que só teria "escolha um jogador") some e fica a instrução
+escolha = panel("text", "", "", 0, 0, 24, 2, extra={"targets": [], "datasource": None, "transparent": True, "options": {
+    "mode": "markdown", "content": "**Nenhum jogador escolhido.** Clique num nome na tabela acima (ou nas tabelas da aba Jogadores do painel "
+                                   "da economia), ou digite a pessoa no campo Jogador: telefone com 13 dígitos, `tg:<id>` ou `lid:<id>`."}})
 jdash = v2.dashboard("ravena-jogador", "Ravena — Jogador", tabs=[v2.Tab("Jogador", [
         v2.Section("Encontrar jogador", [busca]),
-        v2.Section("Jogador escolhido: ${jogador}", jog)])],
+        v2.Section(None, [escolha], only=("jogador", "")),
+        v2.Section("Jogador escolhido: ${nome} · ${jogador}", jog, only=("jogador", "", "notEquals"))])],
     description="Ficha de um jogador da economia: saldo, extrato diário e comandos. Mesma fonte do painel da economia (analytics.db). "
                 "Mostra nome e telefone (decisão de produto: moeda de jogo; Grafana só por túnel ou com senha). " + TIME_NOTE,
     tags=["ravena", "economia"],
-    variables=[v2.custom_var("moeda", "Moeda", MOEDA_OPTS, "zinthos"), v2.text_var("busca", "Buscar"), v2.text_var("jogador", "Jogador")],
+    variables=[v2.custom_var("moeda", "Moeda", MOEDA_OPTS, "zinthos"), v2.text_var("busca", "Buscar"), v2.text_var("jogador", "Jogador"),
+               v2.text_var("nome", "Nome", hide="hideVariable")],
     annotations=[v2.BUILTIN_ANNOTATION, v2.annotation("Mudanças registradas", DS, anno_sql, "orange")],
     links=[v2.link("Economia", "/d/ravena-economia/ravena-economia", "Painel da economia")])
 jout = os.path.join(OUT, "observability/grafana/dashboards/jogador.json")
