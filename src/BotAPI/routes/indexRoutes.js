@@ -25,6 +25,7 @@ const storageService = require("../../services/StorageService");
  * - GET  /tts, /falar                 - Interface web de síntese de voz (TTS)
  * - GET  /pesca, /fishing             - Interface web do jogo de pesca
  * - GET  /status                      - Página pública de status das instâncias e canais de aviso
+ * - GET  /admin, /admin.html          - Painel de admin unificado (experimental, Basic Auth)
  * - GET  /waifuletes, /waifus         - Atalho para o app de Waifuletes na OS
  * - GET  /groups-dossier              - Visualizador HTML de dossiês de grupos
  * - GET  /service-providers           - Interface de gerenciamento de provedores de IA
@@ -194,6 +195,31 @@ function registerIndexRoutes(api) {
 		}
 		res.setHeader("Cache-Control", "no-cache");
 		res.sendFile(path.join(__dirname, "../../../public/status.html"));
+	});
+
+	// Painel de admin unificado (experimental). Registrado ANTES do express.static para que
+	// /admin/ e /admin.html não sejam servidos sem autenticação pelo diretório public/admin.
+	// As telas antigas continuam nas rotas de sempre; o painel só as reúne.
+	app.get(["/admin", "/admin/", "/admin.html"], api.authenticateBasic, async (req, res) => {
+		if (api.isAdmin(req)) {
+			api.setAdminSessionCookie(res);
+		}
+		res.setHeader("Cache-Control", "no-cache");
+		try {
+			const rawHtml = await fs.readFile(path.join(PUBLIC_DIR, "admin.html"), "utf-8");
+			const [vTokens, vCss, vJs] = await Promise.all([
+				assetVersion("admin/tokens.css"),
+				assetVersion("admin/admin.css"),
+				assetVersion("admin/admin.js")
+			]);
+			const html = rawHtml
+				.replace(/tokens\.css\?v=[^"']+/g, `tokens.css?v=${vTokens}`)
+				.replace(/admin\.css\?v=[^"']+/g, `admin.css?v=${vCss}`)
+				.replace(/admin\.js\?v=[^"']+/g, `admin.js?v=${vJs}`);
+			return res.type("html").send(html);
+		} catch {
+			return res.sendFile(path.join(PUBLIC_DIR, "admin.html"));
+		}
 	});
 
 	// Entrega da interface Desktop OS como homepage principal (/)

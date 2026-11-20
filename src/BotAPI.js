@@ -259,6 +259,7 @@ class BotAPI {
 	 *    - GET  /                                  -> Homepage Desktop OS (redireciona/serve UI)
 	 *    - GET  /os, /os/*                         -> Interface Desktop OS
 	 *    - GET  /classic, /legado                  -> Dashboard clássico/legado
+	 *    - GET  /admin, /admin.html                -> Painel de admin unificado (experimental)
 	 *    - GET  /dashboard, /dashboard.html        -> Redirecionamento para /instances
 	 *    - GET  /logout                            -> Limpeza de cookie de sessão de admin
 	 *    - GET  /health                            -> Verificação de saúde em tempo real (RAM)
