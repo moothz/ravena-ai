@@ -356,7 +356,9 @@ SELECT "Motivo", "Tipo", "Entrou", "Saiu", "Líquido", "Transações" FROM (
 # Horizonte do "depois": até onde a moeda foi carregada (load_runs); sem carga registrada, a última hora com fluxo.
 # Moeda sem extrato (Petalitas) também avança pelo load_runs.
 # Mudanças descartadas (--descartar, só com as automáticas) somem da ficha e dos gráficos
-ANNO_KEEP = " AND COALESCE(origin, 'manual') <> 'descartada'" if AUTO else ""
+# Fichas de antes/depois só com mudanças decididas: automáticas, manuais (NULL = 'manual') e possíveis confirmadas.
+# Possível ainda a decidir fica na tabela própria da aba Mudanças; descartada some de tudo.
+ANNO_KEEP = " AND COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada')" if AUTO else ""
 LAST_H = ("COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), "
           "(SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c))")
 FICHA_CTE = f"""a AS (
@@ -417,7 +419,7 @@ rs AS (
   SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,
     CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))
          ELSE 'fechada' END
-      {"|| CASE WHEN origin = 'possivel' THEN ' · confirmar?' ELSE '' END " if AUTO else ""}AS situacao
+      AS situacao
   FROM r
 )"""
 # Δ só ganha ▲▼ (e cor) com a ficha fechada (7 dias); antes disso, texto neutro "parcial"
@@ -436,14 +438,16 @@ EMPTY_MUD = ("Nenhuma mudança registrada ainda. " + ("As automáticas aparecem 
 NEUTRAL = ("thresholds", {"mode": "absolute", "steps": [{"color": "text", "value": None}]})
 DELTA_MAP = [{"type": "regex", "options": {"pattern": "^[▲▼].*", "result": {"color": AMBER, "index": 0}}},
              {"type": "regex", "options": {"pattern": "^cedo.*|^acompanhando.*", "result": {"color": "text", "index": 1}}},
-             ] + ([{"type": "regex", "options": {"pattern": ".*confirmar\\?$", "result": {"color": AMBER, "index": 2}}}] if AUTO else [])
+             ]
 MUD_DESC = ("Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. "
             "Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a "
             "última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da "
             "mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. "
             + ("Origem: automática (um parâmetro de balanceamento mudou "
-               "no serviço), possível (detectada nos dados: motivo novo, sumido ou valor por transação diferente; confirmar) ou "
-               "manual (scripts/economy-annotate.js). Possível descartada (--descartar) some daqui e dos gráficos. " if AUTO else
+               "no serviço; a de câmbio vale para todas as moedas), possível confirmada (detectada nos dados e confirmada com "
+               "--confirmar) ou manual (scripts/economy-annotate.js). Possível ainda a decidir fica na tabela 'Possíveis mudanças a "
+               "decidir' (aba Mudanças); descartada some de tudo. Rótulo terminado em '(hora aproximada)' = a hora exata da mudança "
+               "não é conhecida (entre duas leituras). " if AUTO else
                "Registradas à mão com scripts/economy-annotate.js. ")
             + "Mudança sem moeda usa a moeda do seletor.")
 state.append(panel("table", "Últimas mudanças (3)", f"""
@@ -639,10 +643,26 @@ FROM rs ORDER BY ts DESC
         by_name("Situação", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 300)),
         by_name("Semanas no normal", ("custom.hidden", True))],
     options=TABLE_OPTS))
-mud_p.append(panel("text", "Como registrar e ler", "", 0, 19, 24, 4, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
+if AUTO:
+    mud_p.append(panel("table", "Possíveis mudanças a decidir", f"""
+SELECT rowid AS "Id", ts / 1000 AS "Quando",
+  CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END AS "Moeda",
+  label AS "O que pode ter mudado", printf('--confirmar %d  ·  --descartar %d', rowid, rowid) AS "Decidir com economy-annotate.js"
+FROM annotations WHERE origin = 'possivel' AND ts <= {TO}
+ORDER BY ts DESC LIMIT 50
+""", 0, 19, 24, 6,
+        desc="Detectadas nos dados (motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro), ainda "
+             "sem decisão: não entram nas fichas nem nas Últimas mudanças. Aparecem como marca cinza nos gráficos (Possíveis mudanças). "
+             "Decidir: docker exec ravena-ai node scripts/economy-annotate.js --confirmar <Id> [\"texto novo\"] ou --descartar <Id>.",
+        time_cols=["Quando"], defaults={"noValue": "nenhuma possível mudança a decidir"},
+        overrides=when("Quando") + [by_name("Id", ("custom.width", 70)), by_name("Quando", ("custom.width", 95)),
+                                    by_name("Moeda", ("custom.width", 90)), by_name("O que pode ter mudado", ("custom.width", 700))],
+        options=TABLE_OPTS))
+mud_p.append(panel("text", "Como registrar e ler", "", 0, 25 if AUTO else 19, 24, 4, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
     ("**Automáticas**: a cada carga a ravena lê os parâmetros de balanceamento dos serviços (`/internal/economy/params`) e registra o que mudou, "
      "com valor antigo e novo. **Possíveis**: motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro; "
-     "veja com `--listar` e confirme ou descarte com `scripts/economy-annotate.js --confirmar|--descartar <ts> \"texto\"`. **Manuais**: " if AUTO else "**Registrar**: ")
+     "elas ficam na tabela acima até alguém decidir: `docker exec ravena-ai node scripts/economy-annotate.js --confirmar <id> [\"texto novo\"]` "
+     "(entra nas fichas) ou `--descartar <id>` (some), com o Id da tabela (ou do `--listar --possiveis`). **Manuais**: " if AUTO else "**Registrar**: ")
     + "`docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" "
     "[zinthos|petalitas|runas|todas] [data ISO]`.\n\n"
     "Leitura antes/depois, não causal. Até 1 dia depois a linha fica \"cedo demais\"; até 7 dias, \"acompanhando\" e os números ainda mudam.")}}))

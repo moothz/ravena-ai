@@ -2011,10 +2011,33 @@ async function main() {
 				"INSERT INTO annotations (ts, currency, label, origin) VALUES (?, 'zinthos', 'motivo novo', 'possivel')"
 			).run(T + 2 * D + 3 * H);
 			db.close();
-			const rows = readAll(
-				file,
-				dashboardSql("Ficha de antes e depois (últimas 20)", { from: 0, to: T + 30 * D })
-			);
+			const ficha = () =>
+				readAll(
+					file,
+					dashboardSql("Ficha de antes e depois (últimas 20)", { from: 0, to: T + 30 * D })
+				);
+			if (AUTO_CHANGES) {
+				// Possível ainda a decidir fica fora da ficha, na tabela própria com o id do --confirmar/--descartar
+				assert.deepStrictEqual(
+					ficha().map((r) => r["O que mudou"]),
+					["DAILY 100 → 300"]
+				);
+				const [aDecidir] = readAll(
+					file,
+					dashboardSql("Possíveis mudanças a decidir", { from: 0, to: T + 30 * D })
+				);
+				assert.strictEqual(aDecidir["O que pode ter mudado"], "motivo novo");
+				assert.strictEqual(
+					aDecidir["Decidir com economy-annotate.js"],
+					`--confirmar ${aDecidir.Id}  ·  --descartar ${aDecidir.Id}`
+				);
+				const dbc = new BetterSQLite(file);
+				dbc
+					.prepare("UPDATE annotations SET origin = 'confirmada' WHERE rowid = ?")
+					.run(aDecidir.Id);
+				dbc.close();
+			}
+			const rows = ficha();
 			assert.strictEqual(rows.length, 2);
 			const [poss, auto] = rows;
 			if (AUTO_CHANGES) assert.strictEqual(auto.Origem, "automática");
@@ -2026,8 +2049,8 @@ async function main() {
 			assert.match(auto["Motivos que mais mudaram"], /Divórcio \+\d+\/dia/);
 			assert.ok(auto["Semanas no normal"] >= 7);
 			if (AUTO_CHANGES) {
-				assert.strictEqual(poss.Origem, "possível");
-				assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia) · confirmar?");
+				assert.strictEqual(poss.Origem, "possível, confirmada");
+				assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia)");
 			} else {
 				assert.strictEqual(poss.Origem, undefined);
 				assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia)");
@@ -2675,7 +2698,11 @@ async function main() {
 						`${p.title}: coluna em snake_case ${m[1]}`
 					);
 				}
-				if (!/Últimas mudanças|Confiança|Disponibilidade|Ficha de antes e depois/.test(p.title)) {
+				if (
+					!/Últimas mudanças|Confiança|Disponibilidade|Ficha de antes e depois|Possíveis mudanças/.test(
+						p.title
+					)
+				) {
 					assert.match(
 						p.title,
 						/últimos 7 dias|12 semanas|período selecionado|retrato mais recente|últimas 50|agora/,

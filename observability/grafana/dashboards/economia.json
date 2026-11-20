@@ -230,10 +230,10 @@
    }
   ],
   "elements": {
-   "panel-35": {
+   "panel-36": {
     "kind": "Panel",
     "spec": {
-     "id": 35,
+     "id": 36,
      "title": "",
      "description": "",
      "links": [],
@@ -575,10 +575,10 @@
      }
     }
    },
-   "panel-34": {
+   "panel-35": {
     "kind": "Panel",
     "spec": {
-     "id": 34,
+     "id": 35,
      "title": "Alertas disparados",
      "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point. Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
      "links": [],
@@ -622,10 +622,10 @@
      }
     }
    },
-   "panel-31": {
+   "panel-32": {
     "kind": "Panel",
     "spec": {
-     "id": 31,
+     "id": 32,
      "title": "Massa em circulação, por moeda — índice, escala log (12 semanas)",
      "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
@@ -746,10 +746,10 @@
      }
     }
    },
-   "panel-32": {
+   "panel-33": {
     "kind": "Panel",
     "spec": {
-     "id": 32,
+     "id": 33,
      "title": "Massa em circulação, por moeda — valor (12 semanas)",
      "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
@@ -866,10 +866,10 @@
      }
     }
    },
-   "panel-33": {
+   "panel-34": {
     "kind": "Panel",
     "spec": {
-     "id": 33,
+     "id": 34,
      "title": "Massa — ${moedas:text} (12 semanas)",
      "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
@@ -991,7 +991,7 @@
     "spec": {
      "id": 4,
      "title": "Últimas mudanças (3)",
-     "description": "Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. Origem: automática (um parâmetro de balanceamento mudou no serviço), possível (detectada nos dados: motivo novo, sumido ou valor por transação diferente; confirmar) ou manual (scripts/economy-annotate.js). Possível descartada (--descartar) some daqui e dos gráficos. Mudança sem moeda usa a moeda do seletor. A ficha completa fica na aba Mudanças.",
+     "description": "Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. Origem: automática (um parâmetro de balanceamento mudou no serviço; a de câmbio vale para todas as moedas), possível confirmada (detectada nos dados e confirmada com --confirmar) ou manual (scripts/economy-annotate.js). Possível ainda a decidir fica na tabela 'Possíveis mudanças a decidir' (aba Mudanças); descartada some de tudo. Rótulo terminado em '(hora aproximada)' = a hora exata da mudança não é conhecida (entre duas leituras). Mudança sem moeda usa a moeda do seletor. A ficha completa fica na aba Mudanças.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -1009,8 +1009,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') <> 'descartada' ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      || CASE WHEN origin = 'possivel' THEN ' · confirmar?' ELSE '' END AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\"\nFROM rs ORDER BY ts DESC",
-            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') <> 'descartada' ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      || CASE WHEN origin = 'possivel' THEN ' · confirmar?' ELSE '' END AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\"\nFROM rs ORDER BY ts DESC",
+            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada') ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\"\nFROM rs ORDER BY ts DESC",
+            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada') ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\"\nFROM rs ORDER BY ts DESC",
             "timeColumns": [
              "Quando"
             ]
@@ -1127,16 +1127,6 @@
                 "index": 1
                }
               }
-             },
-             {
-              "type": "regex",
-              "options": {
-               "pattern": ".*confirmar\\?$",
-               "result": {
-                "color": "#e5a650",
-                "index": 2
-               }
-              }
              }
             ]
            },
@@ -1192,16 +1182,6 @@
                 "index": 1
                }
               }
-             },
-             {
-              "type": "regex",
-              "options": {
-               "pattern": ".*confirmar\\?$",
-               "result": {
-                "color": "#e5a650",
-                "index": 2
-               }
-              }
              }
             ]
            },
@@ -1223,10 +1203,10 @@
      }
     }
    },
-   "panel-39": {
+   "panel-40": {
     "kind": "Panel",
     "spec": {
-     "id": 39,
+     "id": 40,
      "title": "",
      "description": "",
      "links": [],
@@ -1881,10 +1861,10 @@
      }
     }
    },
-   "panel-36": {
+   "panel-37": {
     "kind": "Panel",
     "spec": {
-     "id": 36,
+     "id": 37,
      "title": "Petalitas: sem extrato (fase 2)",
      "description": "",
      "links": [],
@@ -2340,10 +2320,10 @@
      }
     }
    },
-   "panel-20": {
+   "panel-21": {
     "kind": "Panel",
     "spec": {
-     "id": 20,
+     "id": 21,
      "title": "Divórcios de alma gêmea que pagaram mais que as cotas (últimos 7 dias)",
      "description": "Regressão do ciclo cotas → alma gêmea → divórcio (fechado no 148d21d: retorno 0,09×). Conta divórcios de alma gêmea em que o pagamento foi estritamente maior que o que o jogador gastou em cotas daquele personagem (custo > 0) desde o divórcio anterior; divórcio sem cotas fica de fora (painel ao lado). Deve ficar em 0; qualquer valor acima é o ciclo voltando a imprimir moeda (também vira alerta).",
      "links": [],
@@ -2421,10 +2401,10 @@
      }
     }
    },
-   "panel-21": {
+   "panel-22": {
     "kind": "Panel",
     "spec": {
-     "id": 21,
+     "id": 22,
      "title": "Maior retorno de um divórcio de alma gêmea (últimos 7 dias)",
      "description": "Pagamento do divórcio ÷ custo das cotas, o maior da semana. Abaixo de 1 = o ciclo dá prejuízo (fechado). Vazio = nenhum divórcio de alma gêmea com custo de cotas na semana.",
      "links": [],
@@ -2506,10 +2486,10 @@
      }
     }
    },
-   "panel-22": {
+   "panel-23": {
     "kind": "Panel",
     "spec": {
-     "id": 22,
+     "id": 23,
      "title": "Divórcios de alma gêmea (últimos 7 dias)",
      "description": "",
      "links": [],
@@ -2570,10 +2550,10 @@
      }
     }
    },
-   "panel-23": {
+   "panel-24": {
     "kind": "Panel",
     "spec": {
-     "id": 23,
+     "id": 24,
      "title": "Divórcios de alma gêmea sem cotas (últimos 7 dias)",
      "description": "Divórcios de alma gêmea sem nenhuma cota comprada (não entram no 'pagou mais que as cotas' nem nos percentuais). 'desconhecido' quando as horas da semana vieram de um waifuletes anterior a esse número.",
      "links": [],
@@ -2634,10 +2614,10 @@
      }
     }
    },
-   "panel-24": {
+   "panel-25": {
     "kind": "Panel",
     "spec": {
-     "id": 24,
+     "id": 25,
      "title": "Ciclo da alma gêmea por dia (período selecionado)",
      "description": "Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio. Pagou mais que as cotas = pagamento estritamente maior que o custo das cotas (custo > 0); o % é sobre os divórcios com cotas (divórcios − sem cotas; sem cotas desconhecido, de waifuletes antigo, conta como 0).",
      "links": [],
@@ -2841,10 +2821,10 @@
      }
     }
    },
-   "panel-53": {
+   "panel-54": {
     "kind": "Panel",
     "spec": {
-     "id": 53,
+     "id": 54,
      "title": "",
      "description": "",
      "links": [],
@@ -2874,10 +2854,10 @@
      "transparent": true
     }
    },
-   "panel-45": {
+   "panel-46": {
     "kind": "Panel",
     "spec": {
-     "id": 45,
+     "id": 46,
      "title": "Anomalias (pista, não prova): dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
      "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui. É pista, não prova.",
      "links": [],
@@ -3204,10 +3184,10 @@
      }
     }
    },
-   "panel-43": {
+   "panel-44": {
     "kind": "Panel",
     "spec": {
-     "id": 43,
+     "id": 44,
      "title": "Quem mais ganhou — ${moeda} (período selecionado)",
      "description": "Os 25 que mais receberam de motivos de criação no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -3552,10 +3532,10 @@
      }
     }
    },
-   "panel-44": {
+   "panel-45": {
     "kind": "Panel",
     "spec": {
-     "id": 44,
+     "id": 45,
      "title": "Quem mais perdeu — ${moeda} (período selecionado)",
      "description": "Os 25 com o pior saldo líquido (entrou − saiu, sem as linhas fora do dinheiro) no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -3900,10 +3880,10 @@
      }
     }
    },
-   "panel-46": {
+   "panel-47": {
     "kind": "Panel",
     "spec": {
-     "id": 46,
+     "id": 47,
      "title": "Maiores saldos — ${moeda} (agora)",
      "description": "Saldo atual por pessoa (somando os IDs dela), fatia da massa e variação desde o saldo de 7 dias atrás (fim do dia econômico).",
      "links": [],
@@ -4200,10 +4180,10 @@
      }
     }
    },
-   "panel-40": {
+   "panel-41": {
     "kind": "Panel",
     "spec": {
-     "id": 40,
+     "id": 41,
      "title": "",
      "description": "",
      "links": [],
@@ -4233,10 +4213,10 @@
      "transparent": true
     }
    },
-   "panel-25": {
+   "panel-26": {
     "kind": "Panel",
     "spec": {
-     "id": 25,
+     "id": 26,
      "title": "Pessoas ativas por dia (período selecionado)",
      "description": "Pessoas distintas que usaram algum comando no dia econômico (04:00 BRT), com LID e variantes de telefone unidas. Fonte: cmd_usage.db (sem comandos automáticos nem interação passiva, como o resumo semanal). Guardado por ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90). Só dias inteiros: o dia corrente (incompleto) fica de fora.",
      "links": [],
@@ -4294,10 +4274,10 @@
      }
     }
    },
-   "panel-26": {
+   "panel-27": {
     "kind": "Panel",
     "spec": {
-     "id": 26,
+     "id": 27,
      "title": "Jogadores com movimento por dia, por moeda (período selecionado)",
      "description": "Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato. Só dias inteiros: o dia corrente (incompleto) fica de fora.",
      "links": [],
@@ -4403,10 +4383,10 @@
      }
     }
    },
-   "panel-27": {
+   "panel-28": {
     "kind": "Panel",
     "spec": {
-     "id": 27,
+     "id": 28,
      "title": "Comandos por hora (período selecionado)",
      "description": "",
      "links": [],
@@ -4459,10 +4439,10 @@
      }
     }
    },
-   "panel-28": {
+   "panel-29": {
     "kind": "Panel",
     "spec": {
-     "id": 28,
+     "id": 29,
      "title": "Comandos mais usados (últimos 7 dias)",
      "description": "Top 25 comandos nos 7 dias, com o maior número de pessoas distintas num dia.",
      "links": [],
@@ -4567,10 +4547,10 @@
      }
     }
    },
-   "panel-41": {
+   "panel-42": {
     "kind": "Panel",
     "spec": {
-     "id": 41,
+     "id": 42,
      "title": "",
      "description": "",
      "links": [],
@@ -4605,7 +4585,7 @@
     "spec": {
      "id": 18,
      "title": "Ficha de antes e depois (últimas 20)",
-     "description": "Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. Origem: automática (um parâmetro de balanceamento mudou no serviço), possível (detectada nos dados: motivo novo, sumido ou valor por transação diferente; confirmar) ou manual (scripts/economy-annotate.js). Possível descartada (--descartar) some daqui e dos gráficos. Mudança sem moeda usa a moeda do seletor. Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois. Massa: Δ nos 7 dias antes = a mesma conta na semana anterior à mudança, como referência. Com menos de 4 semanas de histórico o Δ diz com quantas semanas o normal foi medido.",
+     "description": "Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. Origem: automática (um parâmetro de balanceamento mudou no serviço; a de câmbio vale para todas as moedas), possível confirmada (detectada nos dados e confirmada com --confirmar) ou manual (scripts/economy-annotate.js). Possível ainda a decidir fica na tabela 'Possíveis mudanças a decidir' (aba Mudanças); descartada some de tudo. Rótulo terminado em '(hora aproximada)' = a hora exata da mudança não é conhecida (entre duas leituras). Mudança sem moeda usa a moeda do seletor. Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois. Massa: Δ nos 7 dias antes = a mesma conta na semana anterior à mudança, como referência. Com menos de 4 semanas de histórico o Δ diz com quantas semanas o normal foi medido.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -4623,8 +4603,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') <> 'descartada' ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      || CASE WHEN origin = 'possivel' THEN ' · confirmar?' ELSE '' END AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", \n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS \"Massa: Δ nos 7 dias antes (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
-            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') <> 'descartada' ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      || CASE WHEN origin = 'possivel' THEN ' · confirmar?' ELSE '' END AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", \n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS \"Massa: Δ nos 7 dias antes (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
+            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada') ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", \n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS \"Massa: Δ nos 7 dias antes (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
+            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to AND COALESCE(origin, 'manual') NOT IN ('possivel', 'descartada') ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END AS \"Origem\", \n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS \"Massa: Δ nos 7 dias antes (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
             "timeColumns": [
              "Quando"
             ]
@@ -4816,16 +4796,6 @@
                 "index": 1
                }
               }
-             },
-             {
-              "type": "regex",
-              "options": {
-               "pattern": ".*confirmar\\?$",
-               "result": {
-                "color": "#e5a650",
-                "index": 2
-               }
-              }
              }
             ]
            },
@@ -4881,16 +4851,6 @@
                 "index": 1
                }
               }
-             },
-             {
-              "type": "regex",
-              "options": {
-               "pattern": ".*confirmar\\?$",
-               "result": {
-                "color": "#e5a650",
-                "index": 2
-               }
-              }
              }
             ]
            },
@@ -4928,6 +4888,125 @@
     "kind": "Panel",
     "spec": {
      "id": 19,
+     "title": "Possíveis mudanças a decidir",
+     "description": "Detectadas nos dados (motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro), ainda sem decisão: não entram nas fichas nem nas Últimas mudanças. Aparecem como marca cinza nos gráficos (Possíveis mudanças). Decidir: docker exec ravena-ai node scripts/economy-annotate.js --confirmar <Id> [\"texto novo\"] ou --descartar <Id>.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "SELECT rowid AS \"Id\", ts / 1000 AS \"Quando\",\n  CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END AS \"Moeda\",\n  label AS \"O que pode ter mudado\", printf('--confirmar %d  ·  --descartar %d', rowid, rowid) AS \"Decidir com economy-annotate.js\"\nFROM annotations WHERE origin = 'possivel' AND ts <= $__to\nORDER BY ts DESC LIMIT 50",
+            "rawQueryText": "SELECT rowid AS \"Id\", ts / 1000 AS \"Quando\",\n  CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' WHEN 'runas' THEN 'Runas' ELSE 'Todas' END AS \"Moeda\",\n  label AS \"O que pode ter mudado\", printf('--confirmar %d  ·  --descartar %d', rowid, rowid) AS \"Decidir com economy-annotate.js\"\nFROM annotations WHERE origin = 'possivel' AND ts <= $__to\nORDER BY ts DESC LIMIT 50",
+            "timeColumns": [
+             "Quando"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "table",
+      "version": "",
+      "spec": {
+       "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "nenhuma possível mudança a decidir"
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Quando"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "time:DD/MM HH:mm"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Id"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 70
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Quando"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 95
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Moeda"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 90
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "O que pode ter mudado"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 700
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "panel-20": {
+    "kind": "Panel",
+    "spec": {
+     "id": 20,
      "title": "Como registrar e ler",
      "description": "",
      "links": [],
@@ -4946,7 +5025,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "**Automáticas**: a cada carga a ravena lê os parâmetros de balanceamento dos serviços (`/internal/economy/params`) e registra o que mudou, com valor antigo e novo. **Possíveis**: motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro; veja com `--listar` e confirme ou descarte com `scripts/economy-annotate.js --confirmar|--descartar <ts> \"texto\"`. **Manuais**: `docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" [zinthos|petalitas|runas|todas] [data ISO]`.\n\nLeitura antes/depois, não causal. Até 1 dia depois a linha fica \"cedo demais\"; até 7 dias, \"acompanhando\" e os números ainda mudam."
+        "content": "**Automáticas**: a cada carga a ravena lê os parâmetros de balanceamento dos serviços (`/internal/economy/params`) e registra o que mudou, com valor antigo e novo. **Possíveis**: motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro; elas ficam na tabela acima até alguém decidir: `docker exec ravena-ai node scripts/economy-annotate.js --confirmar <id> [\"texto novo\"]` (entra nas fichas) ou `--descartar <id>` (some), com o Id da tabela (ou do `--listar --possiveis`). **Manuais**: `docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" [zinthos|petalitas|runas|todas] [data ISO]`.\n\nLeitura antes/depois, não causal. Até 1 dia depois a linha fica \"cedo demais\"; até 7 dias, \"acompanhando\" e os números ainda mudam."
        },
        "fieldConfig": {
         "defaults": {},
@@ -4956,10 +5035,10 @@
      }
     }
    },
-   "panel-42": {
+   "panel-43": {
     "kind": "Panel",
     "spec": {
-     "id": 42,
+     "id": 43,
      "title": "",
      "description": "",
      "links": [],
@@ -4989,10 +5068,10 @@
      "transparent": true
     }
    },
-   "panel-37": {
+   "panel-38": {
     "kind": "Panel",
     "spec": {
-     "id": 37,
+     "id": 38,
      "title": "Alertas da economia",
      "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point.",
      "links": [],
@@ -5739,10 +5818,10 @@
      }
     }
    },
-   "panel-29": {
+   "panel-30": {
     "kind": "Panel",
     "spec": {
-     "id": 29,
+     "id": 30,
      "title": "Disponibilidade dos painéis",
      "description": "Painéis que dependem de dado que pode não existir ainda. Indisponível = o painel aparece com o selo 'Indisponível — depende de: …' em vez de números. A carga regrava esta tabela a cada hora.",
      "links": [],
@@ -5873,10 +5952,10 @@
      }
     }
    },
-   "panel-30": {
+   "panel-31": {
     "kind": "Panel",
     "spec": {
-     "id": 30,
+     "id": 31,
      "title": "Causa da moeda sem origem (últimos 7 dias)",
      "description": "Quanto de cada causa conhecida explica a moeda sem origem. Hoje ela aparece como um número só (Diagnóstico). Na fase 2, cada caminho sem extrato passa a gravar uma linha própria e este painel se liga sozinho.",
      "links": [],
@@ -5942,10 +6021,10 @@
      }
     }
    },
-   "panel-38": {
+   "panel-39": {
     "kind": "Panel",
     "spec": {
-     "id": 38,
+     "id": 39,
      "title": "Glossário",
      "description": "",
      "links": [],
@@ -6005,7 +6084,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-35"
+                  "name": "panel-36"
                  }
                 }
                },
@@ -6031,7 +6110,7 @@
                  "height": 4,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-34"
+                  "name": "panel-35"
                  }
                 }
                }
@@ -6059,7 +6138,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-31"
+                  "name": "panel-32"
                  }
                 }
                }
@@ -6104,7 +6183,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-32"
+                  "name": "panel-33"
                  }
                 }
                }
@@ -6149,7 +6228,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-33"
+                  "name": "panel-34"
                  },
                  "repeat": {
                   "mode": "variable",
@@ -6241,7 +6320,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-39"
+                  "name": "panel-40"
                  }
                 }
                },
@@ -6365,7 +6444,7 @@
                  "height": 3,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-36"
+                  "name": "panel-37"
                  }
                 }
                }
@@ -6516,7 +6595,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-20"
+                  "name": "panel-21"
                  }
                 }
                },
@@ -6529,7 +6608,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-21"
+                  "name": "panel-22"
                  }
                 }
                },
@@ -6542,7 +6621,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-22"
+                  "name": "panel-23"
                  }
                 }
                },
@@ -6555,7 +6634,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-23"
+                  "name": "panel-24"
                  }
                 }
                },
@@ -6568,7 +6647,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-24"
+                  "name": "panel-25"
                  }
                 }
                }
@@ -6616,7 +6695,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-53"
+             "name": "panel-54"
             }
            }
           },
@@ -6629,7 +6708,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-45"
+             "name": "panel-46"
             }
            }
           },
@@ -6642,7 +6721,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-43"
+             "name": "panel-44"
             }
            }
           },
@@ -6655,7 +6734,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-44"
+             "name": "panel-45"
             }
            }
           },
@@ -6668,7 +6747,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-46"
+             "name": "panel-47"
             }
            }
           }
@@ -6694,7 +6773,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-40"
+             "name": "panel-41"
             }
            }
           },
@@ -6702,19 +6781,6 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 2,
-            "width": 12,
-            "height": 8,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-25"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 12,
             "y": 2,
             "width": 12,
             "height": 8,
@@ -6727,13 +6793,26 @@
           {
            "kind": "GridLayoutItem",
            "spec": {
+            "x": 12,
+            "y": 2,
+            "width": 12,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-27"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
             "x": 0,
             "y": 10,
             "width": 12,
             "height": 7,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-27"
+             "name": "panel-28"
             }
            }
           },
@@ -6746,7 +6825,7 @@
             "height": 7,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-28"
+             "name": "panel-29"
             }
            }
           }
@@ -6772,7 +6851,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-41"
+             "name": "panel-42"
             }
            }
           },
@@ -6795,10 +6874,23 @@
             "x": 0,
             "y": 19,
             "width": 24,
-            "height": 4,
+            "height": 6,
             "element": {
              "kind": "ElementReference",
              "name": "panel-19"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 25,
+            "width": 24,
+            "height": 4,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-20"
             }
            }
           }
@@ -6833,7 +6925,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-42"
+                  "name": "panel-43"
                  }
                 }
                },
@@ -6846,7 +6938,7 @@
                  "height": 5,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-37"
+                  "name": "panel-38"
                  }
                 }
                },
@@ -6926,7 +7018,7 @@
                  "height": 6,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-29"
+                  "name": "panel-30"
                  }
                 }
                },
@@ -6939,7 +7031,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-30"
+                  "name": "panel-31"
                  }
                 }
                }
@@ -6966,7 +7058,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-38"
+                  "name": "panel-39"
                  }
                 }
                }

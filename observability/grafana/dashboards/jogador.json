@@ -171,10 +171,10 @@
    }
   ],
   "elements": {
-   "panel-47": {
+   "panel-48": {
     "kind": "Panel",
     "spec": {
-     "id": 47,
+     "id": 48,
      "title": "Encontrar jogador (busca por nome, telefone ou ID)",
      "description": "Digite parte do nome, do telefone ou do ID no campo 'Buscar' no topo e clique no nome para abrir a ficha.",
      "links": [],
@@ -453,10 +453,10 @@
      }
     }
    },
-   "panel-54": {
+   "panel-55": {
     "kind": "Panel",
     "spec": {
-     "id": 54,
+     "id": 55,
      "title": "",
      "description": "",
      "links": [],
@@ -486,10 +486,10 @@
      "transparent": true
     }
    },
-   "panel-48": {
+   "panel-49": {
     "kind": "Panel",
     "spec": {
-     "id": 48,
+     "id": 49,
      "title": "Ficha do jogador",
      "description": "Escolha o jogador clicando num nome (aqui ou nas tabelas da aba Jogadores) ou digitando a pessoa no campo 'Jogador': telefone com 13 dígitos, tg:<id> ou lid:<id>. Período = seletor de tempo.",
      "links": [],
@@ -630,10 +630,10 @@
      }
     }
    },
-   "panel-49": {
+   "panel-50": {
     "kind": "Panel",
     "spec": {
-     "id": 49,
+     "id": 50,
      "title": "Saldo por dia — ${moeda} — jogador escolhido",
      "description": "Saldo no fim de cada dia econômico (o dia corrente = agora). Petalitas: só desde a primeira carga.",
      "links": [],
@@ -689,10 +689,10 @@
      }
     }
    },
-   "panel-50": {
+   "panel-51": {
     "kind": "Panel",
     "spec": {
-     "id": 50,
+     "id": 51,
      "title": "Fluxo por motivo e dia — ${moeda} — jogador escolhido",
      "description": "Líquido (entrou − saiu) por motivo e dia econômico.",
      "links": [],
@@ -761,10 +761,10 @@
      }
     }
    },
-   "panel-51": {
+   "panel-52": {
     "kind": "Panel",
     "spec": {
-     "id": 51,
+     "id": 52,
      "title": "Extrato diário — ${moeda} — jogador escolhido",
      "description": "",
      "links": [],
@@ -916,10 +916,10 @@
      }
     }
    },
-   "panel-52": {
+   "panel-53": {
     "kind": "Panel",
     "spec": {
-     "id": 52,
+     "id": 53,
      "title": "Comandos por dia — jogador escolhido",
      "description": "",
      "links": [],
@@ -999,7 +999,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-47"
+             "name": "panel-48"
             }
            }
           }
@@ -1026,7 +1026,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-54"
+             "name": "panel-55"
             }
            }
           }
@@ -1071,19 +1071,6 @@
             "height": 6,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-48"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 0,
-            "y": 6,
-            "width": 12,
-            "height": 8,
-            "element": {
-             "kind": "ElementReference",
              "name": "panel-49"
             }
            }
@@ -1091,7 +1078,7 @@
           {
            "kind": "GridLayoutItem",
            "spec": {
-            "x": 12,
+            "x": 0,
             "y": 6,
             "width": 12,
             "height": 8,
@@ -1104,13 +1091,26 @@
           {
            "kind": "GridLayoutItem",
            "spec": {
+            "x": 12,
+            "y": 6,
+            "width": 12,
+            "height": 8,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-51"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
             "x": 0,
             "y": 14,
             "width": 16,
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-51"
+             "name": "panel-52"
             }
            }
           },
@@ -1123,7 +1123,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-52"
+             "name": "panel-53"
             }
            }
           }
