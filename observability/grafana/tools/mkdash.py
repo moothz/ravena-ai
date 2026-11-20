@@ -911,10 +911,14 @@ ECON_DESC = ("Painel da economia (Zinthos, Petalitas, Runas). Fonte: analytics.d
 # (ids continuam: os painéis do ranking entram no dashboard da economia)
 J = "${jogador:sqlstring}"
 DAYF = f"d.day >= (({FROM} - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < {TO}"
-PEOPLE = """pp AS (
-  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos,
-    COALESCE(MAX(i.name), (SELECT MAX(p.name) FROM players p JOIN identities j ON j.player_id = p.player_id WHERE j.person = i.person)) AS nome
-  FROM identities i GROUP BY i.person
+# Pessoa → telefone, tipos de ID e nome (o da identidade; sem ele, o maior nome dos players dela). Nome reserva num
+# JOIN agregado (pn), não numa subconsulta correlata por pessoa (quadrática com players ⋈ identities).
+PEOPLE = """pn AS (
+  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person
+),
+pp AS (
+  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome
+  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person
 )"""
 SHOWID = ("CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) "
           "WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END")
