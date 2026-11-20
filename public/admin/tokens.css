@@ -1,0 +1,97 @@
+/*
+ * Tokens de tema do painel de admin da Ravena.
+ *
+ * Um único lugar para cores, fontes e cantos. Os componentes (admin.css) só leem
+ * var(--…); nenhuma cor é escrita fora deste arquivo.
+ *
+ * Inspirado no tema "Instrument" do Ara (painel de instrumentos: plano, quase neutro,
+ * âmbar só para "precisa de você") e no "Paper" para o claro (o mesmo painel impresso).
+ *
+ * Escolha do tema:
+ *   - sem data-theme (ou data-theme="auto") no <html>: segue prefers-color-scheme;
+ *   - data-theme="dark" | "light": escolha manual, salva no navegador pelo admin.js.
+ */
+
+:root {
+	color-scheme: dark;
+
+	/* Superfícies, do quadro da janela ao que fica acima de um painel. */
+	--chrome: #0f0f0e;
+	--work: #151514;
+	--panel: #1c1c1a;
+	--raised: #232321;
+	--hover: #2c2c29;
+
+	/* Linhas entre superfícies. */
+	--hairline: rgba(255, 255, 255, 0.08);
+	--hairline-strong: rgba(255, 255, 255, 0.14);
+
+	/* Texto. */
+	--fg: #e6e4df;
+	--muted: #a8a59d;
+	--faint: #96938b;
+	--on-fg: #151514; /* texto sobre um fundo var(--fg) */
+
+	/* Estados: precisa de você (âmbar), falha, tudo certo. */
+	--attention: #e3ad4f;
+	--destructive: #ff7a7a;
+	--ok: #93b97f;
+
+	/* Seleção neutra (nunca âmbar) e foco. */
+	--selected: var(--fg);
+	--focus: var(--fg);
+
+	/* Cantos: controles quase retos, linhas e abas levemente arredondadas. */
+	--radius-control: 2px;
+	--radius-row: 4px;
+	--radius-pill: 6px;
+
+	/* Tipografia. */
+	--font-sans: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+	--font-mono: "IBM Plex Mono", "Cascadia Mono", Consolas, ui-monospace, monospace;
+
+	/* Sombra só para o que flutua (menus). */
+	--shadow-float: 0 8px 24px rgba(0, 0, 0, 0.35);
+}
+
+/* Claro pelo sistema, a menos que o usuário tenha escolhido o escuro. */
+@media (prefers-color-scheme: light) {
+	:root:not([data-theme="dark"]) {
+		color-scheme: light;
+		--chrome: #e8e3d7;
+		--work: #f8f5ee;
+		--panel: #f0ece2;
+		--raised: #fbf9f4;
+		--hover: #e2dccd;
+		--hairline: rgba(52, 44, 30, 0.14);
+		--hairline-strong: rgba(52, 44, 30, 0.26);
+		--fg: #24211c;
+		--muted: #57524a;
+		--faint: #605a50;
+		--on-fg: #f8f5ee;
+		--attention: #825200;
+		--destructive: #b02a20;
+		--ok: #3b6620;
+		--shadow-float: 0 8px 24px rgba(52, 44, 30, 0.18);
+	}
+}
+
+/* Claro escolhido à mão. */
+:root[data-theme="light"] {
+	color-scheme: light;
+	--chrome: #e8e3d7;
+	--work: #f8f5ee;
+	--panel: #f0ece2;
+	--raised: #fbf9f4;
+	--hover: #e2dccd;
+	--hairline: rgba(52, 44, 30, 0.14);
+	--hairline-strong: rgba(52, 44, 30, 0.26);
+	--fg: #24211c;
+	--muted: #57524a;
+	--faint: #605a50;
+	--on-fg: #f8f5ee;
+	--attention: #825200;
+	--destructive: #b02a20;
+	--ok: #3b6620;
+	--shadow-float: 0 8px 24px rgba(52, 44, 30, 0.18);
+}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-BR">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="robots" content="noindex, nofollow" />
+		<title>Ravena Admin</title>
+		<link rel="icon" href="/favicon-32x32.png" type="image/png" />
+		<!-- Aplica o tema salvo antes da primeira pintura (sem piscar no tema errado). -->
+		<script>
+			try {
+				var t = localStorage.getItem("ravena-admin-theme");
+				if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+			} catch (e) {}
+		</script>
+		<link rel="preconnect" href="https://fonts.googleapis.com" />
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link
+			rel="stylesheet"
+			href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap"
+		/>
+		<link rel="stylesheet" href="/admin/tokens.css?v=1" />
+		<link rel="stylesheet" href="/admin/admin.css?v=1" />
+	</head>
+	<body>
+		<a class="skip" href="#main">Pular para o conteúdo</a>
+
+		<header class="topbar">
+			<a class="brand" href="#/geral" aria-label="Ravena Admin, visão geral">
+				<span class="brand-mark" aria-hidden="true"></span>
+				<span class="brand-name">Ravena</span>
+				<span class="brand-sub">admin</span>
+			</a>
+			<span class="topbar-sep" aria-hidden="true"></span>
+			<span class="topbar-summary" id="topbar-summary" aria-live="polite"></span>
+			<span class="spacer"></span>
+			<div class="seg" id="theme-switch" role="group" aria-label="Tema">
+				<button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button>
+				<button type="button" data-theme-choice="light" aria-pressed="false">Claro</button>
+				<button type="button" data-theme-choice="dark" aria-pressed="false">Escuro</button>
+			</div>
+			<a class="btn btn-quiet" href="/logout">Sair</a>
+		</header>
+
+		<div class="shell">
+			<nav class="sidebar" id="sidebar" aria-label="Áreas do painel"></nav>
+			<main class="main" id="main" tabindex="-1"></main>
+		</div>
+
+		<script src="/admin/admin.js?v=1"></script>
+	</body>
+</html>
