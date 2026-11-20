@@ -274,6 +274,7 @@ async function convertGifToMp4(inputPath) {
 const commands = [
 	new Command({
 		name: "gif",
+		cooldown: 20,
 		description: "Busca e envia um GIF do Giphy",
 		category: "busca",
 		reactions: {

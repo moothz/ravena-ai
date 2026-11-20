@@ -105,6 +105,7 @@ async function serverStatusCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "minecraft-servidor",
+		cooldown: 20,
 		description: "Configura o servidor de Minecraft do grupo (ip[:porta])",
 		usage: "!minecraft-servidor ip[:porta]",
 		category: "jogos",
@@ -115,6 +116,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mine-servidor",
+		cooldown: 20,
 		aliases: ["mine-server"],
 		description: "Alias para o comando minecraft-servidor",
 		usage: "!mine-servidor ip[:porta]",
@@ -130,7 +132,7 @@ const commands = [
 		description: "Mostra se o servidor de Minecraft do grupo está online e quem está jogando",
 		usage: "!minecraft",
 		category: "jogos",
-		cooldown: 10,
+		cooldown: 20,
 		reactions: { before: "⏳", after: "🧱" },
 		method: serverStatusCommand
 	})

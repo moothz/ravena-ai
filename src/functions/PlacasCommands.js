@@ -751,6 +751,7 @@ async function consultarSiPt(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "placa",
+		cooldown: 20,
 		hidden: true,
 		caseSensitive: false,
 		description: "Consulta informações sobre uma placa de veículo",
@@ -765,6 +766,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sipt",
+		cooldown: 20,
 		description: "Consulta informações sobre uma placa no InstaSiPt",
 		category: "busca",
 		usage: "!sipt ABC1234",

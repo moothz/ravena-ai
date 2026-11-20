@@ -1909,6 +1909,7 @@ async function aceitarInviteCommand(bot, message, args) {
 const commands = [
 	new Command({
 		name: "canal-seguir",
+		cooldown: 20,
 		aliases: ["seguir-canal", "canalseguir"],
 		description: "Cadastra um canal do WhatsApp para seguir neste grupo",
 		usage: "!canal-seguir <nome> <link>",
@@ -1920,6 +1921,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-lista",
+		cooldown: 20,
 		aliases: ["canais", "canais-lista", "lista-canais"],
 		description: "Lista os canais do WhatsApp seguidos neste grupo",
 		usage: "!canal-lista",
@@ -1931,6 +1933,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-del",
+		cooldown: 20,
 		aliases: ["canal-remover", "remover-canal", "canaldel"],
 		description: "Para de seguir um canal do WhatsApp neste grupo",
 		usage: "!canal-del <nome>",
@@ -1942,6 +1945,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-ver",
+		cooldown: 20,
 		aliases: ["canalver"],
 		description: "Exibe as postagens do dia de um canal seguido no grupo",
 		usage: "!canal-ver <nome> [data]",
@@ -1953,6 +1957,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-midias",
+		cooldown: 20,
 		aliases: ["canal-midia", "canalmidias"],
 		description: "Configura quais tipos de mídias serão capturados do canal",
 		usage: "!canal-midias <nome> [texto,imagem,audio,sticker,video,documento]",
@@ -1964,6 +1969,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-rnd",
+		cooldown: 20,
 		aliases: ["canal-random", "canalrnd"],
 		description: "Envia uma postagem aleatória de um canal seguido",
 		usage: "!canal-rnd <nome> [tipos]",
@@ -1975,6 +1981,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-encaminhar",
+		cooldown: 20,
 		aliases: ["canalencaminhar", "encaminhar-canal"],
 		description:
 			"Ativa ou desativa o encaminhamento de mensagens do canal para o grupo em tempo real",
@@ -1987,6 +1994,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canais-header",
+		cooldown: 20,
 		aliases: ["canal-header", "canaisheader", "canalheader"],
 		description: "Ativa ou desativa o envio de cabeçalho (canal/horário) nas mensagens do canal",
 		usage: "!canais-header <nome>",
@@ -1998,6 +2006,7 @@ const commands = [
 	}),
 	new Command({
 		name: "canal-aceitarinvite",
+		cooldown: 20,
 		aliases: ["canal-aceitar", "aceitar-canal", "canal-aceitar-convite", "canalaceitar"],
 		description: "Aceita um convite de administrador para um canal (Newsletter) do WhatsApp",
 		usage: "!canal-aceitarinvite <linkOuJidOuApelido>",

@@ -624,6 +624,7 @@ async function horaDataCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "violencia",
+		cooldown: 20,
 		description: "Pratica um ato de violência",
 		category: "zoeira",
 		reactions: {
@@ -634,6 +635,7 @@ const commands = [
 	}),
 	new Command({
 		name: "violência",
+		cooldown: 20,
 		category: "zoeira",
 		hidden: "true",
 		reactions: {
@@ -645,6 +647,7 @@ const commands = [
 
 	new Command({
 		name: "morreu",
+		cooldown: 20,
 		description: "de gue?",
 		category: "zoeira",
 		reactions: {
@@ -656,6 +659,7 @@ const commands = [
 
 	new Command({
 		name: "boleto",
+		cooldown: 20,
 		description: "Escolhe alguém pra pagar",
 		category: "zoeira",
 		reactions: {
@@ -665,6 +669,7 @@ const commands = [
 	}),
 	new Command({
 		name: "pagar",
+		cooldown: 20,
 		aliases: ["pagar-boleto"],
 		category: "zoeira",
 		hidden: true,
@@ -676,6 +681,7 @@ const commands = [
 
 	new Command({
 		name: "clonarcartao",
+		cooldown: 20,
 		description: "Pra pagar o agiota",
 		category: "zoeira",
 		reactions: {
@@ -687,6 +693,7 @@ const commands = [
 
 	new Command({
 		name: "presente",
+		cooldown: 20,
 		description: "Os melhores da internet",
 		category: "zoeira",
 		reactions: {
@@ -697,6 +704,7 @@ const commands = [
 
 	new Command({
 		name: "pix",
+		cooldown: 20,
 		description: "Simula uma transferência fictícia por Pix",
 		category: "zoeira",
 		reactions: {
@@ -707,6 +715,7 @@ const commands = [
 
 	new Command({
 		name: "aniversario",
+		cooldown: 20,
 		description: "Parabeniza um membro do grupo!",
 		category: "zoeira",
 		reactions: {
@@ -717,6 +726,7 @@ const commands = [
 	}),
 	new Command({
 		name: "aniversário",
+		cooldown: 20,
 		category: "zoeira",
 		hidden: "true",
 		reactions: {
@@ -727,6 +737,7 @@ const commands = [
 	}),
 	new Command({
 		name: "pecar",
+		cooldown: 20,
 		category: "zoeira",
 		reactions: {
 			after: "⛪️"
@@ -736,6 +747,7 @@ const commands = [
 	}),
 	new Command({
 		name: "meus-pecados",
+		cooldown: 20,
 		category: "zoeira",
 		hidden: "true",
 		reactions: {
@@ -746,6 +758,7 @@ const commands = [
 	}),
 	new Command({
 		name: "genshin",
+		cooldown: 20,
 		hidden: "false",
 		category: "zoeira",
 		reactions: {
@@ -756,6 +769,7 @@ const commands = [
 	}),
 	new Command({
 		name: "hora",
+		cooldown: 20,
 		aliases: ["data"],
 		description: "Informa a data e hora atual com precisão aproximada",
 		category: "zoeira",
@@ -766,6 +780,7 @@ const commands = [
 	}),
 	new Command({
 		name: "data",
+		cooldown: 20,
 		category: "zoeira",
 		hidden: true,
 		reactions: {

@@ -510,7 +510,7 @@ const commands = [
 	}),
 	new Command({
 		name: "ignorar",
-		cooldown: 0,
+		cooldown: 20,
 		description: "Alterna ser ignorado pelas menções de grupo",
 		category: "grupo",
 		reactions: {
@@ -521,7 +521,7 @@ const commands = [
 	}),
 	new Command({
 		name: "apagar",
-		cooldown: 0,
+		cooldown: 20,
 		description: "Apaga a mensagem do bot quando usado em resposta a ela",
 		category: "grupo",
 		reactions: {

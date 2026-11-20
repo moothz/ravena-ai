@@ -377,6 +377,7 @@ async function handleVolumeAdjust(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "extractaudio",
+		cooldown: 20,
 		description: "Extrai audio do arquivo especificado, em mp3",
 		category: "audio",
 		reactions: {
@@ -390,6 +391,7 @@ const commands = [
 
 	new Command({
 		name: "extractvoice",
+		cooldown: 20,
 		description: "Extrai audio do arquivo especificado, como mensagem de voz",
 		category: "audio",
 		reactions: {
@@ -403,6 +405,7 @@ const commands = [
 
 	new Command({
 		name: "volume",
+		cooldown: 20,
 		description: "Ajusta o volume da mídia (0-1000)",
 		category: "audio",
 		reactions: {

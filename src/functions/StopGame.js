@@ -581,7 +581,7 @@ const commands = [
 		description: "Inicia um jogo de Stop/Adedonha",
 		group: "stopadedonha",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: "🛑",
 			after: "📝",
@@ -595,7 +595,7 @@ const commands = [
 		description: "Alias para o jogo de Stop/Adedonha",
 		group: "stopadedonha",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: "🛑",
 			after: "📝",

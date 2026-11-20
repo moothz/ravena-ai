@@ -922,6 +922,7 @@ async function showPopularStreams(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "streams",
+		cooldown: 20,
 		description: "Lista todos os canais configurados para monitoramento",
 		category: "streams",
 		reactions: {
@@ -933,6 +934,7 @@ const commands = [
 
 	new Command({
 		name: "streamstatus",
+		cooldown: 20,
 		description: "Mostra status dos canais monitorados",
 		category: "streams",
 		reactions: {
@@ -945,6 +947,7 @@ const commands = [
 	// Novos comandos para listar streamers online
 	new Command({
 		name: "streamers",
+		cooldown: 20,
 		description: "Lista todos os streamers atualmente online",
 		category: "streams",
 		reactions: {
@@ -955,6 +958,7 @@ const commands = [
 	}),
 	new Command({
 		name: "live",
+		cooldown: 20,
 		description: "Mostra informações de uma stream da Twitch",
 		category: "streams",
 		reactions: {
@@ -966,6 +970,7 @@ const commands = [
 
 	new Command({
 		name: "live-kick",
+		cooldown: 20,
 		description: "Mostra informações de uma stream do Kick",
 		category: "streams",
 		reactions: {
@@ -977,6 +982,7 @@ const commands = [
 
 	new Command({
 		name: "topstreams",
+		cooldown: 20,
 		aliases: ["popular", "top-streams", "top"],
 		description: "Mostra as streams mais populares no momento",
 		category: "streams",

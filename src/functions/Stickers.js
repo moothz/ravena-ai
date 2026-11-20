@@ -923,7 +923,7 @@ const commands = [
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "🖼",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -941,7 +941,7 @@ const commands = [
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "🖼",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -960,7 +960,7 @@ const commands = [
 		group: "ssticker",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "🖼",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -978,7 +978,7 @@ const commands = [
 		group: "ssticker",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "🖼",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -996,7 +996,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1012,7 +1012,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1029,7 +1029,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1046,7 +1046,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1063,7 +1063,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1080,7 +1080,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1098,7 +1098,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1115,7 +1115,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1132,7 +1132,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1148,7 +1148,7 @@ const commands = [
 		group: "sstickerqua",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🖼",
@@ -1164,7 +1164,7 @@ const commands = [
 		group: "ssticker",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "🖼",
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -1181,7 +1181,7 @@ const commands = [
 		group: "ssticker",
 		needsMedia: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "🖼",
 			before: process.env.LOADING_EMOJI ?? "⌛️",

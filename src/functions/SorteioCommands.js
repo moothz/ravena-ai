@@ -847,6 +847,7 @@ async function processSorteioReaction(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "sorteio",
+		cooldown: 20,
 		description: "Inicia um novo sorteio ou exibe os detalhes do sorteio ativo",
 		category: "grupo",
 		reactions: {
@@ -857,6 +858,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sorteio-entrar",
+		cooldown: 20,
 		description: "Participar do sorteio ativo no grupo",
 		category: "grupo",
 		reactions: {
@@ -867,6 +869,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sorteio-sair",
+		cooldown: 20,
 		description: "Sair do sorteio ativo no grupo",
 		category: "grupo",
 		reactions: {
@@ -877,6 +880,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sorteio-limpar",
+		cooldown: 20,
 		description: "Remove do sorteio ativo os participantes que já saíram do grupo",
 		category: "grupo",
 		reactions: {
@@ -887,6 +891,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sortear",
+		cooldown: 20,
 		description:
 			"Realiza o sorteio ativo ou sorteia membros aleatórios no grupo (permite definir quantidade)",
 		category: "grupo",
@@ -898,6 +903,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sorteios",
+		cooldown: 20,
 		description: "Lista o histórico de sorteios realizados no grupo",
 		category: "grupo",
 		reactions: {
@@ -908,6 +914,7 @@ const commands = [
 	}),
 	new Command({
 		name: "reactionSorteioHelper",
+		cooldown: 20,
 		description: "Invocado apenas pelo ReactionsHandler para gerenciar inscrições via emoji",
 		reactions: {
 			trigger: ["🎲"]

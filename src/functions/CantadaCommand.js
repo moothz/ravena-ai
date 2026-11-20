@@ -72,6 +72,7 @@ async function cantadaCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "cantada",
+		cooldown: 20,
 		description: "Faz uma cantada para alguém do grupo",
 		category: "zoeira",
 		reactions: {

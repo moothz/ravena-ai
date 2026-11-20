@@ -2555,6 +2555,7 @@ async function processListReaction(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "listas",
+		cooldown: 20,
 		description: "Mostra as listas disponíveis no grupo",
 		category: "listas",
 		group: "llistas",
@@ -2567,6 +2568,7 @@ const commands = [
 
 	new Command({
 		name: "ll",
+		cooldown: 20,
 		description: "Alias para comando listas",
 		category: "listas",
 		group: "llistas",
@@ -2579,6 +2581,7 @@ const commands = [
 
 	new Command({
 		name: "lista",
+		cooldown: 20,
 		description: "Exibe detalhes de uma lista específica",
 		category: "listas",
 		reactions: {
@@ -2591,6 +2594,7 @@ const commands = [
 	// ── Comandos de Listas de Pessoas ──
 	new Command({
 		name: "lc",
+		cooldown: 20,
 		description: "Cria uma nova lista de pessoas",
 		category: "listas",
 		reactions: {
@@ -2602,6 +2606,7 @@ const commands = [
 
 	new Command({
 		name: "lct",
+		cooldown: 20,
 		description: "Cria uma nova lista de pessoas com título",
 		category: "listas",
 		reactions: {
@@ -2613,6 +2618,7 @@ const commands = [
 
 	new Command({
 		name: "le",
+		cooldown: 20,
 		description: "Entra em uma lista de pessoas",
 		category: "listas",
 		reactions: {
@@ -2624,6 +2630,7 @@ const commands = [
 
 	new Command({
 		name: "ls",
+		cooldown: 20,
 		description: "Sai de uma lista de pessoas",
 		category: "listas",
 		reactions: {
@@ -2635,6 +2642,7 @@ const commands = [
 
 	new Command({
 		name: "lr",
+		cooldown: 20,
 		description: "Remove um usuário de uma lista (admin only)",
 		category: "listas",
 		reactions: {
@@ -2647,6 +2655,7 @@ const commands = [
 	// ── Comandos de Listas de Itens (Compras / Tarefas) ──
 	new Command({
 		name: "lci",
+		cooldown: 20,
 		description: "Cria uma lista de compras/itens interativa",
 		category: "listas",
 		reactions: {
@@ -2658,6 +2667,7 @@ const commands = [
 
 	new Command({
 		name: "add",
+		cooldown: 20,
 		description: "Adiciona itens a uma lista (suporta citação de mensagens)",
 		category: "listas",
 		reactions: {
@@ -2669,6 +2679,7 @@ const commands = [
 
 	new Command({
 		name: "check",
+		cooldown: 20,
 		description: "Marca item pendente como concluído e o move pro final",
 		category: "listas",
 		reactions: {
@@ -2680,6 +2691,7 @@ const commands = [
 
 	new Command({
 		name: "uncheck",
+		cooldown: 20,
 		description: "Desmarca um item concluído e o devolve aos pendentes",
 		category: "listas",
 		reactions: {
@@ -2691,6 +2703,7 @@ const commands = [
 
 	new Command({
 		name: "rem",
+		cooldown: 20,
 		description: "Remove um item específico da lista",
 		category: "listas",
 		reactions: {
@@ -2702,6 +2715,7 @@ const commands = [
 
 	new Command({
 		name: "limpar",
+		cooldown: 20,
 		description: "Limpa todos os itens de uma lista",
 		category: "listas",
 		reactions: {
@@ -2714,6 +2728,7 @@ const commands = [
 	// ── Comandos Universais ──
 	new Command({
 		name: "lt",
+		cooldown: 20,
 		description: "Define título de uma lista",
 		category: "listas",
 		reactions: {
@@ -2725,6 +2740,7 @@ const commands = [
 
 	new Command({
 		name: "lp",
+		cooldown: 20,
 		description: "Define modo de permissão da lista (todos|admin)",
 		category: "listas",
 		reactions: {
@@ -2736,6 +2752,7 @@ const commands = [
 
 	new Command({
 		name: "ld",
+		cooldown: 20,
 		description: "Deleta uma lista definitivamente",
 		category: "listas",
 		reactions: {
@@ -2747,6 +2764,7 @@ const commands = [
 
 	new Command({
 		name: "lix",
+		cooldown: 20,
 		description: "Exporta os itens de uma lista como mensagem de texto",
 		category: "listas",
 		reactions: {
@@ -2759,6 +2777,7 @@ const commands = [
 	// ── Helper de Reações ──
 	new Command({
 		name: "reactionListHelper",
+		cooldown: 20,
 		description: "Invocado apenas pelo ReactionsHandler",
 		reactions: {
 			trigger: NUMBER_EMOJIS.concat(NUMBER_EMOJIS2, NUMBER_EMOJIS3, [

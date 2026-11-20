@@ -1351,6 +1351,7 @@ async function updatesCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "ping",
+		cooldown: 20,
 		description: "Verifica se o bot está online",
 		category: "geral",
 		hidden: "true",
@@ -1362,12 +1363,14 @@ const commands = [
 	}),
 	new Command({
 		name: "status",
+		cooldown: 20,
 		description: "Verifica o status dos bots",
 		category: "geral",
 		method: statusCommand
 	}),
 	new Command({
 		name: "apelido",
+		cooldown: 20,
 		description: "Define seu apelido no grupo",
 		category: "grupo",
 		method: apelidoCommand
@@ -1387,6 +1390,7 @@ const commands = [
 	}),
 
 	// new Command({
+	//   cooldown: 20,
 	//   name: 'diferenças',
 	//   description: 'Exibe as diferenças para a ravena antiga',
 	//   category: "geral",
@@ -1395,6 +1399,7 @@ const commands = [
 
 	new Command({
 		name: "grupao",
+		cooldown: 20,
 		description: "Comunidades da ravena!",
 		category: "geral",
 		reactions: {
@@ -1404,6 +1409,7 @@ const commands = [
 	}),
 	new Command({
 		name: "comunidade",
+		cooldown: 20,
 		hidden: true,
 		description: "Comunidades da ravena!",
 		category: "geral",
@@ -1415,6 +1421,7 @@ const commands = [
 
 	new Command({
 		name: "avisos",
+		cooldown: 20,
 		description: "Grupo de avisos ravenabot",
 		category: "geral",
 		reactions: {
@@ -1424,6 +1431,7 @@ const commands = [
 	}),
 	new Command({
 		name: "codigo",
+		cooldown: 20,
 		description: "Código da ravenabot",
 		category: "geral",
 		reactions: {
@@ -1433,6 +1441,7 @@ const commands = [
 	}),
 	new Command({
 		name: "código",
+		cooldown: 20,
 		description: "Código da ravenabot",
 		category: "geral",
 		hidden: true,
@@ -1443,6 +1452,7 @@ const commands = [
 	}),
 	new Command({
 		name: "private",
+		cooldown: 20,
 		description: "Info Ravena Privada",
 		category: "geral",
 		hidden: true,
@@ -1453,6 +1463,7 @@ const commands = [
 	}),
 	new Command({
 		name: "retrospectiva",
+		cooldown: 20,
 		description: "Retrospectiva 2025! 🥳",
 		category: "geral",
 		hidden: true,
@@ -1464,6 +1475,7 @@ const commands = [
 
 	new Command({
 		name: "comunitaria",
+		cooldown: 20,
 		description: "Info Ravena Comunitaria",
 		category: "geral",
 		hidden: true,
@@ -1475,6 +1487,7 @@ const commands = [
 
 	new Command({
 		name: "convite",
+		cooldown: 20,
 		description: "Saiba mas sobre a ravena em grupos",
 		category: "geral",
 		reactions: {
@@ -1484,6 +1497,7 @@ const commands = [
 	}),
 	new Command({
 		name: "discord",
+		cooldown: 20,
 		description: "Info sobre a Ravena no Discord",
 		category: "geral",
 		reactions: {
@@ -1493,6 +1507,7 @@ const commands = [
 	}),
 	new Command({
 		name: "telegram",
+		cooldown: 20,
 		description: "Info sobre a Ravena no Telegram",
 		category: "geral",
 		reactions: {

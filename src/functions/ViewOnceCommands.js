@@ -384,7 +384,7 @@ const commands = [
 		name: "roubar",
 		description: "Baixa mídia de visualização única e envia no seu privado",
 		category: "grupo",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "👀",
 			before: false,
@@ -399,7 +399,7 @@ const commands = [
 		category: "grupo",
 		hidden: true,
 		reply: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: "👽",
 			before: false,

@@ -295,6 +295,7 @@ async function newsCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "news",
+		cooldown: 20,
 		description: "Exibe as MuNews para uma data específica (padrão: hoje)",
 		usage: "!news [YYYY-MM-DD]",
 		category: "utilidades",

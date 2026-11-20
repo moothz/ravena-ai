@@ -265,6 +265,7 @@ async function epicCommandHandler(variant, bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "apod",
+		cooldown: 20,
 		description: "Foto astronômica do dia (NASA)",
 		category: "busca",
 		reactions: { before: "🌌", after: "✨", error: "❌" },
@@ -272,6 +273,7 @@ const commands = [
 	}),
 	new Command({
 		name: "epic",
+		cooldown: 20,
 		description: "Imagem da Terra pela câmera EPIC (Natural)",
 		category: "busca",
 		reactions: { before: "🌍", after: "✨", error: "❌" },
@@ -280,6 +282,7 @@ const commands = [
 	}),
 	new Command({
 		name: "epic-enhanced",
+		cooldown: 20,
 		description: "Imagem da Terra pela câmera EPIC (Color Enhanced)",
 		category: "busca",
 		reactions: { before: "🌍", after: "✨", error: "❌" },
@@ -288,6 +291,7 @@ const commands = [
 	}),
 	new Command({
 		name: "epic-aerosol",
+		cooldown: 20,
 		description: "Imagem da Terra pela câmera EPIC (Aerosol Index)",
 		category: "busca",
 		reactions: { before: "🌍", after: "✨", error: "❌" },
@@ -296,6 +300,7 @@ const commands = [
 	}),
 	new Command({
 		name: "epic-cloud",
+		cooldown: 20,
 		description: "Imagem da Terra pela câmera EPIC (Cloud Fraction)",
 		category: "busca",
 		reactions: { before: "🌍", after: "✨", error: "❌" },

@@ -1376,6 +1376,7 @@ const disableDownloads = process.env.DISABLE_DOWNLOADS && process.env.DISABLE_DO
 const commands = downloadCommands.map(
 	(name) =>
 		new Command({
+			cooldown: 20,
 			name,
 			caseSensitive: false,
 			description: `Baixa conteúdo de mídias sociais${
@@ -1403,6 +1404,7 @@ commands[1].reactions.trigger = "⏬";
 commands.push(
 	new Command({
 		name: "reactionYoutubeSearchHelper",
+		cooldown: 20,
 		description: "Invocado apenas pelo ReactionsHandler para selecionar vídeos da busca do YouTube",
 		reactions: {
 			trigger: NUMBER_EMOJIS.concat(NUMBER_EMOJIS2, NUMBER_EMOJIS3)

@@ -230,6 +230,7 @@ async function desvincularCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "vincular",
+		cooldown: 20,
 		aliases: ["link", "vincular-conta"],
 		description: "Vincula sua conta da Ravena no WhatsApp com o Telegram ou Discord",
 		usage: "!vincular (no WhatsApp PV) ou /vincular <codigo> (no Telegram/Discord)",
@@ -244,6 +245,7 @@ const commands = [
 	}),
 	new Command({
 		name: "desvincular",
+		cooldown: 20,
 		aliases: ["unlink", "desvincular-conta"],
 		description: "Desvincula sua conta do Telegram ou Discord da conta do WhatsApp",
 		usage: "!desvincular (no WhatsApp PV) ou /desvincular (no Telegram/Discord)",

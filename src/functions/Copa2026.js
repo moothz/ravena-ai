@@ -1452,6 +1452,7 @@ async function detectCopaGif(message, bot) {
 const commands = [
 	new Command({
 		name: "copa",
+		cooldown: 20,
 		description: "Lista todos os comandos da Copa do Mundo 2026",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "⚽", error: "❌" },
@@ -1460,6 +1461,7 @@ const commands = [
 
 	new Command({
 		name: "copa-times",
+		cooldown: 20,
 		description: "Lista todos os 48 times (ou de um grupo: !copa-times C)",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "🌎", error: "❌" },
@@ -1468,6 +1470,7 @@ const commands = [
 
 	new Command({
 		name: "copa-time",
+		cooldown: 20,
 		description: "Informações de um time específico",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "🏆", error: "❌" },
@@ -1476,6 +1479,7 @@ const commands = [
 
 	new Command({
 		name: "copa-grupos",
+		cooldown: 20,
 		description: "Classificação de todos os 12 grupos",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "📊", error: "❌" },
@@ -1484,6 +1488,7 @@ const commands = [
 
 	new Command({
 		name: "copa-grupo",
+		cooldown: 20,
 		description: "Classificação detalhada de um grupo (ex: !copa-grupo C)",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "📊", error: "❌" },
@@ -1492,6 +1497,7 @@ const commands = [
 
 	new Command({
 		name: "copa-jogos",
+		cooldown: 20,
 		description: "Calendário de jogos (ou de um grupo: !copa-jogos A)",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "📅", error: "❌" },
@@ -1500,6 +1506,7 @@ const commands = [
 
 	new Command({
 		name: "copa-jogo",
+		cooldown: 20,
 		description: "Detalhes de uma partida (ex: !copa-jogo 1)",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "⚽", error: "❌" },
@@ -1508,6 +1515,7 @@ const commands = [
 
 	new Command({
 		name: "copa-estadios",
+		cooldown: 20,
 		description: "Lista todos os 16 estádios da Copa",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "🏟️", error: "❌" },
@@ -1516,6 +1524,7 @@ const commands = [
 
 	new Command({
 		name: "copa-seguir",
+		cooldown: 20,
 		description: "Habilita/Desabilita notificações de partidas de um time",
 		category: "cultura",
 		reactions: { before: "⌛️", after: "🔔", error: "❌" },

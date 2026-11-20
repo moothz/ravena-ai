@@ -516,6 +516,7 @@ function generatePixPayload(key, description, value, merchantName) {
 const commands = [
 	new Command({
 		name: "qr",
+		cooldown: 20,
 		description: "Gera um QR Code para um texto ou link",
 		category: "utilidades",
 		reactions: {
@@ -526,6 +527,7 @@ const commands = [
 	}),
 	new Command({
 		name: "qr-wifi",
+		cooldown: 20,
 		description: "Gera um QR Code para conexão WiFi",
 		category: "utilidades",
 		reactions: {
@@ -536,6 +538,7 @@ const commands = [
 	}),
 	new Command({
 		name: "qr-pix",
+		cooldown: 20,
 		description: "Gera um QR Code para pagamento PIX",
 		category: "utilidades",
 		reactions: {

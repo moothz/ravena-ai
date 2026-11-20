@@ -607,6 +607,7 @@ async function aeroportoCommand(bot, message, args) {
 const commands = [
 	new Command({
 		name: "voo",
+		cooldown: 20,
 		aliases: ["flight", "rastrear"],
 		description:
 			"Rastreia um voo em tempo real com mapa e localização (ex: !voo G31500, !voo TAM3054, !voo PR-GGD)",
@@ -621,6 +622,7 @@ const commands = [
 	}),
 	new Command({
 		name: "voos",
+		cooldown: 20,
 		aliases: ["flights", "painelvoos"],
 		description:
 			"Painel de partidas e chegadas de um aeroporto ou busca de voo (ex: !voos CWB, !voos curitiba, !voos GRU)",
@@ -635,6 +637,7 @@ const commands = [
 	}),
 	new Command({
 		name: "prefixo",
+		cooldown: 20,
 		aliases: ["rab", "matricula", "aeronave"],
 		description:
 			"Consulta dados oficiais no Registro Aeronáutico Brasileiro (ANAC RAB) e status ao vivo (ex: !prefixo PR-XMR, !rab PT-XYZ)",
@@ -649,6 +652,7 @@ const commands = [
 	}),
 	new Command({
 		name: "radar",
+		cooldown: 20,
 		aliases: ["voosradar", "airtraffic"],
 		description:
 			"Radar de tráfego aéreo ao redor de um aeródromo ou cidade (ex: !radar SBGR, !radar Curitiba)",
@@ -663,6 +667,7 @@ const commands = [
 	}),
 	new Command({
 		name: "aeroporto",
+		cooldown: 20,
 		aliases: ["airport"],
 		description:
 			"Ficha técnica e condições meteorológicas METAR de um aeroporto (ex: !aeroporto SBGR, !aeroporto CWB)",

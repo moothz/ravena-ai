@@ -881,6 +881,7 @@ async function faladoresAtividadeCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "faladores",
+		cooldown: 20,
 		description: "Mostra o ranking de quem mais fala no grupo",
 		category: "grupo",
 		method: faladoresCommand,
@@ -888,6 +889,7 @@ const commands = [
 	}),
 	new Command({
 		name: "faladores-limpeza",
+		cooldown: 20,
 		description: "Remove do ranking membros que saíram do grupo",
 		category: "grupo",
 		adminOnly: true,
@@ -896,6 +898,7 @@ const commands = [
 	}),
 	new Command({
 		name: "faladores-reset",
+		cooldown: 20,
 		description: "Mostra o ranking final e reinicia a contagem",
 		category: "grupo",
 		adminOnly: true,
@@ -904,6 +907,7 @@ const commands = [
 	}),
 	new Command({
 		name: "faladores-atividade",
+		cooldown: 20,
 		aliases: ["atividade", "faladores-atv"],
 		description: "Mostra o rank de membros por tempo de atividade recente no grupo",
 		category: "grupo",

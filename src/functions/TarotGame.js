@@ -357,6 +357,7 @@ Responda em PORTUGUÊS BRASIL.`;
 const commands = [
 	new Command({
 		name: "tarot",
+		cooldown: 20,
 		description: "Consulta a cartomante para uma tiragem",
 		category: "jogos",
 		reactions: {

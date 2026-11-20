@@ -176,6 +176,7 @@ async function platinaCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "steam-platinas",
+		cooldown: 20,
 		aliases: ["platina", "platinas"],
 		description: "Consulta jogos com 100% das conquistas na Steam, sem cadastro no Platifly",
 		usage: "!steam-platinas <usuario/steamid/url>",

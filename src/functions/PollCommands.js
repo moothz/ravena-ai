@@ -369,6 +369,7 @@ async function criarEnquete(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "enquete",
+		cooldown: 20,
 		aliases: ["poll"],
 		description: "Cria uma enquete interativa no WhatsApp",
 		category: "utilidades",

@@ -1106,6 +1106,7 @@ async function slotsRankingCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "slots",
+		cooldown: 20,
 		description: "Joga o caça-coisas",
 		category: "jogos",
 		reactions: { after: "🎰", error: "❌" },
@@ -1115,7 +1116,7 @@ const commands = [
 		name: "slots-premios",
 		description: "Mostra tabela de prêmios e probabilidades do caça-coisas",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🏆", error: "❌" },
 		method: slotsHelpCommand
 	}),
@@ -1123,7 +1124,7 @@ const commands = [
 		name: "slots-historico",
 		description: "Lista seus prêmios conquistados no caça-coisas",
 		category: "jogos",
-		cooldown: 10,
+		cooldown: 20,
 		reactions: { after: "📜", error: "❌" },
 		method: slotsPrizesCommand
 	}),
@@ -1131,7 +1132,7 @@ const commands = [
 		name: "slots-ranking",
 		description: "Mostra o ranking de vitórias do caça-coisas no grupo",
 		category: "jogos",
-		cooldown: 10,
+		cooldown: 20,
 		reactions: { after: "🏆", error: "❌" },
 		method: slotsRankingCommand
 	})

@@ -648,7 +648,7 @@ const commands = [
 		description: "Consulta seu saldo de Runas, patrimônio e cotas no RavenaBank",
 		category: "ravenabank",
 		group: "bank-core",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "🏛️", after: "✨", error: "❌" },
 		method: handleBanco
@@ -659,7 +659,7 @@ const commands = [
 		description: "Envia link seguro no PV para gerenciar conta e trocar moedas pela web",
 		category: "ravenabank",
 		group: "bank-adm",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "⏳", after: "🔗", error: "❌" },
 		method: handleBancoAdm
@@ -670,7 +670,7 @@ const commands = [
 		description: "Panorama econômico, cotações do dia das Runas e regras do sistema",
 		category: "ravenabank",
 		group: "bank-eco",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "📊", after: "📈", error: "❌" },
 		method: handleEconomia
@@ -682,7 +682,7 @@ const commands = [
 		usage: "!banco-vender <peixe|zinthos|jardim> <quantidade|tudo>",
 		category: "ravenabank",
 		group: "bank-vender",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "⏳", after: "💰", error: "❌" },
 		method: handleDepositar
@@ -694,7 +694,7 @@ const commands = [
 		usage: "!banco-comprar <zinthos|jardim|moeda|isca> <quantidade>",
 		category: "ravenabank",
 		group: "bank-comprar",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "⏳", after: "💸", error: "❌" },
 		method: handleSacar
@@ -706,7 +706,7 @@ const commands = [
 		usage: "!banco-loja",
 		category: "ravenabank",
 		group: "bank-loja",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "⏳", after: "🏪", error: "❌" },
 		method: handleLoja
@@ -717,7 +717,7 @@ const commands = [
 		description: "Consulta o histórico das suas últimas transações no RavenaBank",
 		category: "ravenabank",
 		group: "bank-extrato",
-		cooldown: 3,
+		cooldown: 20,
 		reply: true,
 		reactions: { before: "📜", after: "📋", error: "❌" },
 		method: handleExtrato

@@ -432,12 +432,14 @@ async function showDonationPerks(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "doar",
+		cooldown: 20,
 		description: "Mostra informações de doação e link",
 		category: "geral",
 		method: showTopDonors
 	}),
 	new Command({
 		name: "doadores",
+		cooldown: 20,
 		description: "Mostra informações de doação e link",
 		category: "geral",
 		method: showTopDonors,
@@ -445,6 +447,7 @@ const commands = [
 	}),
 	new Command({
 		name: "donate",
+		cooldown: 20,
 		description: "Mostra informações de doação e link",
 		category: "geral",
 		method: showTopDonors,
@@ -452,12 +455,14 @@ const commands = [
 	}),
 	new Command({
 		name: "doar-vantagens",
+		cooldown: 20,
 		description: "Mostra todas as vantagens, bônus para doadores e seus benefícios acumulados",
 		category: "geral",
 		method: showDonationPerks
 	}),
 	new Command({
 		name: "vantagens",
+		cooldown: 20,
 		description: "Alias de !doar-vantagens",
 		category: "geral",
 		method: showDonationPerks,
@@ -465,6 +470,7 @@ const commands = [
 	}),
 	new Command({
 		name: "bonus-doar",
+		cooldown: 20,
 		description: "Alias de !doar-vantagens",
 		category: "geral",
 		method: showDonationPerks,
@@ -472,6 +478,7 @@ const commands = [
 	}),
 	new Command({
 		name: "vantagens-doar",
+		cooldown: 20,
 		description: "Alias de !doar-vantagens",
 		category: "geral",
 		method: showDonationPerks,

@@ -673,7 +673,7 @@ const commands = [
 		name: "pinto",
 		description: "Gera uma avaliação de tamanho aleatória",
 		category: "jogos",
-		cooldown: 0, // O cooldown é controlado internamente pelo lastUpdated
+		cooldown: 20, // O cooldown é controlado internamente pelo lastUpdated
 		reactions: {
 			before: "📏",
 			after: "🍆",

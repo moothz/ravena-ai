@@ -921,6 +921,7 @@ const disableDownloads = process.env.DISABLE_DOWNLOADS && process.env.DISABLE_DO
 const commands = [
 	new Command({
 		name: "yt",
+		cooldown: 20,
 		caseSensitive: false,
 		description: "Baixa um vídeo do YouTube",
 		category: "downloaders",
@@ -940,6 +941,7 @@ const commands = [
 
 	new Command({
 		name: "sr",
+		cooldown: 20,
 		caseSensitive: false,
 		description: "Baixa uma música do YouTube (áudio do vídeo)",
 		category: "downloaders",
@@ -959,6 +961,7 @@ const commands = [
 
 	new Command({
 		name: "letra",
+		cooldown: 20,
 		caseSensitive: false,
 		description: "Busca a letra de uma música",
 		category: "downloaders",

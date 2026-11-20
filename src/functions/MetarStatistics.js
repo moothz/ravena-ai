@@ -82,6 +82,7 @@ async function metarCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "metar",
+		cooldown: 20,
 		description: "Busca o METAR de um aeroporto (ex: !metar SBPA)",
 		usage: "!metar <código_icao>",
 		category: "busca",

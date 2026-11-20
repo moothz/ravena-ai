@@ -427,7 +427,7 @@ const commands = [
 		name: "anonimo",
 		description: "Envia uma mensagem anônima para um grupo",
 		category: "jogos",
-		cooldown: 0, // O cooldown é gerenciado internamente
+		cooldown: 20, // O cooldown é gerenciado internamente
 		reactions: {
 			before: "👻",
 			after: "📨",
@@ -440,7 +440,7 @@ const commands = [
 		description: "Envia uma mensagem anônima para um grupo",
 		category: "jogos",
 		hidden: true,
-		cooldown: 0, // O cooldown é gerenciado internamente
+		cooldown: 20, // O cooldown é gerenciado internamente
 		reactions: {
 			before: "👻",
 			after: "📨",
@@ -453,7 +453,7 @@ const commands = [
 		description: "Gerencia mensagens anônimas (apenas admin)",
 		category: "admin",
 		hidden: true,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			before: "🔍",
 			after: "📋",

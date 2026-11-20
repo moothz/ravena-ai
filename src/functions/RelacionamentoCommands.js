@@ -1362,6 +1362,7 @@ async function celibarCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "namorar",
+		cooldown: 20,
 		description: "Pede em namoro ou aceita pedido de namoro",
 		category: "interacao",
 		reactions: {
@@ -1371,6 +1372,7 @@ const commands = [
 	}),
 	new Command({
 		name: "casar",
+		cooldown: 20,
 		description: "Pede em casamento ou aceita pedido de casamento",
 		category: "interacao",
 		reactions: {
@@ -1380,6 +1382,7 @@ const commands = [
 	}),
 	new Command({
 		name: "separar",
+		cooldown: 20,
 		aliases: ["divorciar", "divorcio"],
 		description: "Pede separação ou termina relacionamento por menção, número da lista ou telefone",
 		category: "interacao",
@@ -1390,6 +1393,7 @@ const commands = [
 	}),
 	new Command({
 		name: "celibar",
+		cooldown: 20,
 		aliases: ["celibato"],
 		description: "Termina todos os seus relacionamentos no grupo e adere ao celibato",
 		category: "interacao",
@@ -1400,6 +1404,7 @@ const commands = [
 	}),
 	new Command({
 		name: "recusar",
+		cooldown: 20,
 		description: "Recusa um pedido de namoro, casamento ou separação",
 		category: "interacao",
 		reactions: {
@@ -1409,6 +1414,7 @@ const commands = [
 	}),
 	new Command({
 		name: "coisar",
+		cooldown: 20,
 		description: "Coisa com a pessoa marcada ou com parceiro aleatório",
 		category: "interacao",
 		reactions: {
@@ -1418,6 +1424,7 @@ const commands = [
 	}),
 	new Command({
 		name: "trair",
+		cooldown: 20,
 		description: "Trai parceiro(s) com a pessoa marcada ou membro aleatório",
 		category: "interacao",
 		reactions: {
@@ -1427,6 +1434,7 @@ const commands = [
 	}),
 	new Command({
 		name: "relacionamento",
+		cooldown: 20,
 		description: "Exibe o histórico de relacionamentos do autor",
 		category: "interacao",
 		reactions: {
@@ -1436,6 +1444,7 @@ const commands = [
 	}),
 	new Command({
 		name: "relacionamentos",
+		cooldown: 20,
 		description: "Exibe todos os relacionamentos e estatísticas do grupo",
 		category: "interacao",
 		reactions: {

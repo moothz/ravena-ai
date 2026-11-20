@@ -302,6 +302,7 @@ async function audioCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "audio",
+		cooldown: 20,
 		aliases: ["áudio", "som"],
 		description: "Busca um áudio no site MyInstants (não é música)",
 		usage: "!audio <nome_do_áudio> <número>",
@@ -315,6 +316,7 @@ const commands = [
 	}),
 	new Command({
 		name: "áudio",
+		cooldown: 20,
 		hidden: true,
 		description: "Busca um áudio no site MyInstants",
 		usage: "!audio <nome_do_áudio> <número>",
@@ -328,6 +330,7 @@ const commands = [
 	}),
 	new Command({
 		name: "som",
+		cooldown: 20,
 		hidden: true,
 		description: "Busca um áudio no site MyInstants",
 		usage: "!som <nome_do_áudio> <número>",

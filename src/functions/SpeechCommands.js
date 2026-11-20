@@ -1023,6 +1023,7 @@ async function processAutoSTT(bot, message, group, opts = {}) {
 const commands = [
 	new Command({
 		name: "stt",
+		cooldown: 20,
 		description: "Converte voz para texto",
 		category: "voz",
 		group: "transcr",
@@ -1036,6 +1037,7 @@ const commands = [
 	}),
 	new Command({
 		name: "transcrever",
+		cooldown: 20,
 		description: "Converte voz para texto",
 		category: "voz",
 		group: "transcr",

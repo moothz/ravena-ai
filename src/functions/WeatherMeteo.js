@@ -353,6 +353,7 @@ async function handleWeatherCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "clima",
+		cooldown: 20,
 		description: "Clima e previsão do tempo (Open-Meteo)",
 		category: "utilidades",
 		reactions: {

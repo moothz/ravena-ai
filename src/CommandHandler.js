@@ -173,48 +173,68 @@ class CommandHandler {
 	 * @param {string} groupId - ID do grupo ou chat
 	 * @returns {Promise<Object>} - Informações sobre o cooldown
 	 */
-	async checkCooldown(command, groupId, botId) {
-		const commandName = typeof command === "string" ? command : command.name;
-		const finalId = `${botId}_${groupId}`;
+	async checkCooldown(command, groupId, botId, userKey) {
+		const commandName =
+			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		let cooldownValue = 0;
+		if (typeof command === "object") {
+			cooldownValue = command.cooldown ?? 0;
+		}
+		const cooldownMs = cooldownValue * 1000;
+		if (cooldownMs === 0) {
+			return { inCooldown: false, timeLeft: 0, formattedTime: "" };
+		}
+
+		// Chave por usuário (sempre ativa quando há cooldown)
+		const effectiveUserKey = userKey || groupId;
+		const userFinalId = `${botId}_${effectiveUserKey}`;
+		const userMemKey = `${userFinalId}|${commandName}`;
+		// Chave por grupo (apenas quando command.cooldownGrupo === true)
+		const useGroupKey = typeof command === "object" && command.cooldownGrupo === true;
+		const groupFinalId = `${botId}_${groupId}`;
+		const groupMemKey = `${groupFinalId}|${commandName}`;
 
 		try {
-			const memKey = `${finalId}|${commandName}`;
-			let lastUsed = this.cooldownCache.get(memKey);
+			const now = Date.now();
+
+			// Verifica a chave por usuário
+			let lastUsed = this.cooldownCache.get(userMemKey);
 			if (lastUsed === undefined) {
 				const row = await this.database.dbGet(
 					"cooldowns",
 					"SELECT timestamp FROM cooldowns WHERE context_key = ? AND command = ?",
-					[finalId, commandName]
+					[userFinalId, commandName]
 				);
 				lastUsed = row ? row.timestamp : 0;
-				this._setCooldownCache(memKey, lastUsed);
+				this._setCooldownCache(userMemKey, lastUsed);
 			}
-			const now = Date.now();
-
-			let cooldownValue = 0;
-			if (typeof command === "object") {
-				cooldownValue = command.cooldown ?? cooldownValue;
-			}
-
-			const cooldownMs = cooldownValue * 1000;
-
 			if (now - lastUsed < cooldownMs) {
 				const timeLeft = Math.ceil((cooldownMs - (now - lastUsed)) / 1000);
-				return {
-					inCooldown: true,
-					timeLeft,
-					formattedTime: this.formatCooldownTime(timeLeft)
-				};
+				return { inCooldown: true, timeLeft, formattedTime: this.formatCooldownTime(timeLeft) };
+			}
+
+			// Verifica a chave por grupo (apenas se cooldownGrupo)
+			if (useGroupKey) {
+				let groupLastUsed = this.cooldownCache.get(groupMemKey);
+				if (groupLastUsed === undefined) {
+					const row = await this.database.dbGet(
+						"cooldowns",
+						"SELECT timestamp FROM cooldowns WHERE context_key = ? AND command = ?",
+						[groupFinalId, commandName]
+					);
+					groupLastUsed = row ? row.timestamp : 0;
+					this._setCooldownCache(groupMemKey, groupLastUsed);
+				}
+				if (now - groupLastUsed < cooldownMs) {
+					const timeLeft = Math.ceil((cooldownMs - (now - groupLastUsed)) / 1000);
+					return { inCooldown: true, timeLeft, formattedTime: this.formatCooldownTime(timeLeft) };
+				}
 			}
 		} catch (error) {
 			this.logger.error("Erro ao verificar cooldown:", error);
 		}
 
-		return {
-			inCooldown: false,
-			timeLeft: 0,
-			formattedTime: ""
-		};
+		return { inCooldown: false, timeLeft: 0, formattedTime: "" };
 	}
 
 	/**
@@ -256,10 +276,21 @@ class CommandHandler {
 		}
 	}
 
-	async updateCooldown(command, groupId, botId) {
-		const commandName = typeof command === "string" ? command : command.name;
-		const finalId = `${botId}_${groupId}`;
-		this._setCooldownCache(`${finalId}|${commandName}`, Date.now());
+	async updateCooldown(command, groupId, botId, userKey) {
+		const commandName =
+			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		const now = Date.now();
+
+		// Chave por usuário (sempre)
+		const effectiveUserKey = userKey || groupId;
+		const userFinalId = `${botId}_${effectiveUserKey}`;
+		this._setCooldownCache(`${userFinalId}|${commandName}`, now);
+		// Chave por grupo (apenas quando command.cooldownGrupo === true)
+		const useGroupKey = typeof command === "object" && command.cooldownGrupo === true;
+		const groupFinalId = `${botId}_${groupId}`;
+		if (useGroupKey) {
+			this._setCooldownCache(`${groupFinalId}|${commandName}`, now);
+		}
 
 		try {
 			await this.database.dbRun(
@@ -268,8 +299,18 @@ class CommandHandler {
         INSERT INTO cooldowns (context_key, command, timestamp) VALUES (?, ?, ?)
         ON CONFLICT(context_key, command) DO UPDATE SET timestamp = excluded.timestamp
       `,
-				[finalId, commandName, Date.now()]
+				[userFinalId, commandName, now]
 			);
+			if (useGroupKey) {
+				await this.database.dbRun(
+					"cooldowns",
+					`
+        INSERT INTO cooldowns (context_key, command, timestamp) VALUES (?, ?, ?)
+        ON CONFLICT(context_key, command) DO UPDATE SET timestamp = excluded.timestamp
+      `,
+					[groupFinalId, commandName, now]
+				);
+			}
 		} catch (error) {
 			this.logger.error("Erro ao atualizar cooldown:", error);
 		}
@@ -1586,7 +1627,8 @@ class CommandHandler {
 
 			// Verifica cooldown
 			const groupId = message.group ?? message.author;
-			const cooldownInfo = await this.checkCooldown(command, groupId, bot.id);
+			const userKey = this.getLimitUserKey(bot, message);
+			const cooldownInfo = await this.checkCooldown(command, groupId, bot.id, userKey);
 
 			if (cooldownInfo.inCooldown) {
 				this.logger.debug(`Comando ${command.name} em cooldown por mais ${cooldownInfo.timeLeft}s`);
@@ -1618,7 +1660,7 @@ class CommandHandler {
 
 			// Executa método do comando
 			if (typeof command.method === "function") {
-				this.updateCooldown(command, groupId, bot.id);
+				this.updateCooldown(command, groupId, bot.id, userKey);
 				this.recordCommandLimitUsage(commandLimit, message);
 				//this.logger.debug(`Comando ${command.name} tem method, executando`);
 				telemetry.addEvent("command.checks_passed");
@@ -1964,8 +2006,19 @@ class CommandHandler {
 			}
 
 			// Verifica cooldown (passa objeto inteiro para que o cooldown personalizado do comando seja respeitado)
-			const cooldownCheckCmd = { name: command.startsWith, cooldown: command.cooldown ?? 0 };
-			const cooldownInfo = await this.checkCooldown(cooldownCheckCmd, message.group, bot.id);
+			const userKey = this.getLimitUserKey(bot, message);
+			const cooldownCheckCmd = {
+				name: command.startsWith,
+				startsWith: command.startsWith,
+				cooldown: command.cooldown ?? 0,
+				cooldownGrupo: command.cooldownGrupo ?? false
+			};
+			const cooldownInfo = await this.checkCooldown(
+				cooldownCheckCmd,
+				message.group ?? message.author,
+				bot.id,
+				userKey
+			);
 
 			if (cooldownInfo.inCooldown) {
 				this.logger.debug(
@@ -1977,7 +2030,7 @@ class CommandHandler {
 						bot,
 						message,
 						command.startsWith,
-						message.group,
+						message.group ?? message.author,
 						cooldownInfo
 					);
 				return null;
@@ -2033,7 +2086,7 @@ class CommandHandler {
 				}
 			}
 
-			this.updateCooldown(command.startsWith, message.group, bot.id);
+			this.updateCooldown(cooldownCheckCmd, message.group ?? message.author, bot.id, userKey);
 			this.recordCommandLimitUsage(commandLimit, message);
 
 			let finalResult = null;

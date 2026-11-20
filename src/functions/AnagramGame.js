@@ -769,14 +769,14 @@ const commands = [
 		category: "jogos",
 		usage: "!ana <palpite>",
 		needsArgs: true,
-		cooldown: 2,
+		cooldown: 20,
 		method: guessCommand
 	}),
 	new Command({
 		name: "ana-dica",
 		description: "Pede uma dica para a palavra atual do Anagrama.",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		method: hintCommand,
 		reactions: {
 			after: "📝",
@@ -787,7 +787,7 @@ const commands = [
 		name: "ana-pular",
 		description: "Pula a palavra atual no jogo Anagrama.",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		method: skipCommand,
 		reactions: {
 			after: "⏭️",
@@ -799,7 +799,7 @@ const commands = [
 		description: "Mostra o ranking do jogo Anagrama.",
 		category: "jogos",
 		aliases: ["a-rank", "anagramaranking"],
-		cooldown: 10,
+		cooldown: 20,
 		method: rankingCommand,
 		reactions: {
 			after: "🏆",

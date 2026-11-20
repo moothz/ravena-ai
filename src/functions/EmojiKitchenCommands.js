@@ -246,7 +246,7 @@ const commands = [
 		category: "stickers",
 		group: "emojik",
 		caseSensitive: false,
-		cooldown: 5, // 5 segundos entre usos
+		cooldown: 20, // 5 segundos entre usos
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🧪",
@@ -261,7 +261,7 @@ const commands = [
 		category: "stickers",
 		group: "emojik",
 		caseSensitive: false,
-		cooldown: 5,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🧪",

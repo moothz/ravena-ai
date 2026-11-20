@@ -549,7 +549,7 @@ const commands = [
 		name: "comida",
 		description: "Envie foto de comida para registrar os ingredientes e calorias.",
 		category: "utilidades",
-		cooldown: 10,
+		cooldown: 20,
 		method: comidaCommand,
 		needsMedia: true,
 		reactions: {
@@ -563,7 +563,7 @@ const commands = [
 		name: "comida-info",
 		description: "Mostra estatísticas da sua alimentação.",
 		category: "utilidades",
-		cooldown: 5,
+		cooldown: 20,
 		method: comidaInfoCommand,
 		reactions: {
 			after: "🍽️"
@@ -573,7 +573,7 @@ const commands = [
 		name: "comida-lista",
 		description: "Lista seu histórico de alimentação.",
 		category: "utilidades",
-		cooldown: 5,
+		cooldown: 20,
 		method: comidaListaCommand,
 		reactions: {
 			after: "🥦"

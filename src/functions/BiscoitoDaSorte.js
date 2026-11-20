@@ -72,6 +72,7 @@ async function biscoitoCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "biscoito",
+		cooldown: 20,
 		description: "Abre um biscoito da sorte",
 		category: "zoeira",
 		reactions: {
@@ -81,6 +82,7 @@ const commands = [
 	}),
 	new Command({
 		name: "biscoito-da-sorte",
+		cooldown: 20,
 		hidden: true,
 		category: "zoeira",
 		reactions: {
@@ -90,6 +92,7 @@ const commands = [
 	}),
 	new Command({
 		name: "biscoito-sorte",
+		cooldown: 20,
 		hidden: true,
 		category: "zoeira",
 		reactions: {

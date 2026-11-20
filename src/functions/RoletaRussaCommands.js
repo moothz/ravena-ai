@@ -741,7 +741,7 @@ const commands = [
 		name: "roletarussa",
 		description: "Joga roleta russa, risco de ser silenciado",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			after: "🔫",
 			error: "❌"
@@ -754,7 +754,7 @@ const commands = [
 		hidden: true,
 		description: "Joga roleta russa, risco de ser silenciado",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			after: "🔫",
 			error: "❌"
@@ -766,7 +766,7 @@ const commands = [
 		name: "roleta-ranking",
 		description: "Mostra ranking da roleta russa",
 		category: "jogos",
-		cooldown: 10,
+		cooldown: 20,
 		reactions: {
 			after: "🏆",
 			error: "❌"
@@ -778,7 +778,7 @@ const commands = [
 		description: "Mostra ranking da roleta russa",
 		category: "jogos",
 		hidden: true,
-		cooldown: 10,
+		cooldown: 20,
 		reactions: {
 			after: "🏆",
 			error: "❌"
@@ -803,7 +803,7 @@ const commands = [
 		description: "Define o tempo de timeout da roleta russa",
 		category: "jogos",
 		adminOnly: true,
-		cooldown: 10,
+		cooldown: 20,
 		reactions: {
 			after: "🕐",
 			error: "❌"
@@ -815,7 +815,7 @@ const commands = [
 		description: "Ativa ou desativa a remoção de mensagens de jogadores mortos",
 		category: "jogos",
 		adminOnly: true,
-		cooldown: 10,
+		cooldown: 20,
 		reactions: {
 			after: "🔇",
 			error: "❌"

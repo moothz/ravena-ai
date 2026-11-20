@@ -315,6 +315,7 @@ async function searchImages(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "buscar",
+		cooldown: 20,
 		description: "Busca na web",
 		category: "busca",
 		aliases: ["google", "search"],
@@ -328,6 +329,7 @@ const commands = [
 
 	new Command({
 		name: "buscar-img",
+		cooldown: 20,
 		description: "Busca por imagens",
 		category: "busca",
 		aliases: ["img", "imagem"],

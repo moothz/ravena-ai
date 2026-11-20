@@ -75,6 +75,7 @@ async function lolBuildCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "lol-build",
+		cooldown: 20,
 		description: "Retorna o link da build de um campeão do League of Legends",
 		category: "jogos",
 		reactions: {

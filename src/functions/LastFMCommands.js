@@ -262,6 +262,7 @@ async function lastfmCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "lastfm",
+		cooldown: 20,
 		description: "Exibe informações de um perfil do Last.fm",
 		usage: "!lastfm username",
 		category: "busca",
@@ -277,6 +278,7 @@ const commands = [
 	// Alias 'lfm' para facilitar o uso
 	new Command({
 		name: "lfm",
+		cooldown: 20,
 		description: "Alias para o comando lastfm",
 		usage: "!lfm username",
 		category: "busca",

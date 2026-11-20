@@ -133,6 +133,7 @@ async function psnPlatinaCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "psn-platinas",
+		cooldown: 20,
 		aliases: ["psn", "playstation"],
 		description: "Consulta as platinas PSN sem cadastro no Platifly",
 		usage: "!psn-platinas <online-id>",

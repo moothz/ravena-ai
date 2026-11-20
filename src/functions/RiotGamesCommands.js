@@ -669,6 +669,7 @@ async function handleWildRiftCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "lol",
+		cooldown: 20,
 		description: "Busca perfil de jogador de League of Legends",
 		category: "jogos",
 		reactions: {
@@ -681,6 +682,7 @@ const commands = [
 
 	new Command({
 		name: "valorant",
+		cooldown: 20,
 		description: "Busca perfil de jogador de Valorant",
 		category: "jogos",
 		group: "valorant",
@@ -694,6 +696,7 @@ const commands = [
 
 	new Command({
 		name: "valo",
+		cooldown: 20,
 		description: "Busca perfil de jogador de Valorant",
 		category: "jogos",
 		group: "valorant",
@@ -707,6 +710,7 @@ const commands = [
 
 	new Command({
 		name: "wildrift",
+		cooldown: 20,
 		description: "Busca perfil de jogador de Wild Rift",
 		category: "jogos",
 		group: "wildrift",
@@ -720,6 +724,7 @@ const commands = [
 
 	new Command({
 		name: "wr",
+		cooldown: 20,
 		description: "Busca perfil de jogador de Wild Rift",
 		category: "jogos",
 		group: "wildrift",

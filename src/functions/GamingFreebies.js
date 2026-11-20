@@ -900,6 +900,7 @@ startFreeGamesScheduler();
 const commands = [
 	new Command({
 		name: "0800",
+		cooldown: 20,
 		aliases: ["jogos-free", "giveaways"],
 		description: "Mostra jogos grátis e brindes atuais",
 		usage: "!0800 [plataforma] ou !jogos-free [plataforma]",
@@ -911,6 +912,7 @@ const commands = [
 	}),
 	new Command({
 		name: "jogos-free",
+		cooldown: 20,
 		aliases: ["0800", "giveaways"],
 		description: "Mostra jogos grátis e brindes atuais",
 		usage: "!jogos-free [plataforma]",
@@ -922,6 +924,7 @@ const commands = [
 	}),
 	new Command({
 		name: "giveaways",
+		cooldown: 20,
 		description: "Mostra jogos grátis e brindes atuais",
 		usage: "!giveaways [plataforma]",
 		category: "jogos",
@@ -932,6 +935,7 @@ const commands = [
 	}),
 	new Command({
 		name: "jogos-free-notificar",
+		cooldown: 20,
 		aliases: ["0800-notificar"],
 		description: "Ativa ou desativa notificações automáticas de jogos grátis (Steam e Epic Games)",
 		usage: "!jogos-free-notificar [steam|epic|todas]",
@@ -944,6 +948,7 @@ const commands = [
 	}),
 	new Command({
 		name: "jogos-free-frequencia",
+		cooldown: 20,
 		aliases: ["0800-frequencia"],
 		description: "Configura o intervalo e horário das notificações de jogos grátis do grupo",
 		usage: "!jogos-free-frequencia [dias] [manha|tarde|noite]",

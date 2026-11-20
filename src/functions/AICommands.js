@@ -421,14 +421,17 @@ async function handleCommandInvocation(classification, bot, message, group) {
 				);
 
 				// Verifica cooldown
+				const userKey = commandHandler.getLimitUserKey(bot, message);
 				const cooldownCheckCmd = {
 					name: customCommand.startsWith,
-					cooldown: customCommand.cooldown ?? 0
+					cooldown: customCommand.cooldown ?? 0,
+					cooldownGrupo: customCommand.cooldownGrupo ?? false
 				};
 				const cooldownInfo = await commandHandler.checkCooldown(
 					cooldownCheckCmd,
-					message.group,
-					bot.id
+					message.group ?? message.author,
+					bot.id,
+					userKey
 				);
 				if (cooldownInfo.inCooldown) {
 					return new ReturnMessage({
@@ -1303,7 +1306,7 @@ const commands = [
 			after: "🧠",
 			error: "❌"
 		},
-		cooldown: 15,
+		cooldown: 20,
 		method: userFactsCommand
 	})
 ];

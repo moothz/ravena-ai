@@ -8980,6 +8980,7 @@ const commands = [
 	// ── MÍTICOS ─────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-mitico",
+		cooldown: 20,
 		aliases: ["mu-miticos", "mu-criar-mitico", "mu-forjar", "mu-forjarmitico", "mu-mythic"],
 		description: "Instruções sobre como forjar personagens míticos exclusivos",
 		category: "mudae",
@@ -8994,7 +8995,7 @@ const commands = [
 		description: "Sorteia um personagem aleatório (waifus e husbandos)",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollAny
@@ -9004,7 +9005,7 @@ const commands = [
 		description: "Alias curto para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollAny
@@ -9014,7 +9015,7 @@ const commands = [
 		description: "Alias para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollAny
@@ -9024,7 +9025,7 @@ const commands = [
 		description: "Alias curto para !mu-roll",
 		category: "mudae",
 		group: "muwaifu-roll",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollAny
@@ -9036,7 +9037,7 @@ const commands = [
 		description: "Sorteia apenas personagens masculinos (husbandos)",
 		category: "mudae",
 		group: "muwaifu-rollm",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollMale
@@ -9046,7 +9047,7 @@ const commands = [
 		description: "Alias de !mu-rollm",
 		category: "mudae",
 		group: "muwaifu-rollm",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollMale
@@ -9056,7 +9057,7 @@ const commands = [
 		description: "Alias de !mu-rollm",
 		category: "mudae",
 		group: "muwaifu-rollm",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollMale
@@ -9068,7 +9069,7 @@ const commands = [
 		description: "Sorteia apenas personagens femininos (waifus)",
 		category: "mudae",
 		group: "muwaifu-rollf",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollFemale
@@ -9078,7 +9079,7 @@ const commands = [
 		description: "Alias de !mu-rollf",
 		category: "mudae",
 		group: "muwaifu-rollf",
-		cooldown: 1,
+		cooldown: 20,
 		reactions: { before: "🎲", after: "✅", error: "❌" },
 		reply: true,
 		method: rollFemale
@@ -9087,6 +9088,7 @@ const commands = [
 	// ── CASAR ───────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-casar",
+		cooldown: 20,
 		description: "Casa com o personagem sorteado recentemente (janela 300s)",
 		category: "mudae",
 		group: "muwaifu-casar",
@@ -9096,6 +9098,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-claim",
+		cooldown: 20,
 		description: "Alias de !mu-casar",
 		category: "mudae",
 		group: "muwaifu-casar",
@@ -9105,6 +9108,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-c",
+		cooldown: 20,
 		description: "Alias curto de !mu-casar",
 		category: "mudae",
 		group: "muwaifu-casar",
@@ -9114,6 +9118,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-marry",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-casar",
 		category: "mudae",
 		group: "muwaifu-casar",
@@ -9123,6 +9128,7 @@ const commands = [
 	}),
 	new Command({
 		name: "reactionWaifuHelper",
+		cooldown: 20,
 		description: "Invocado apenas pelo ReactionsHandler para casamentos por reação numérica",
 		category: "mudae",
 		reactions: {
@@ -9136,6 +9142,7 @@ const commands = [
 	// ── FOTO DE CASAMENTO ────────────────────────────────────────────────────
 	new Command({
 		name: "mu-foto",
+		cooldown: 20,
 		description: "Exibe ou gera a foto oficial de casamento do casal",
 		category: "mudae",
 		group: "muwaifu-foto",
@@ -9146,6 +9153,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-photo",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-foto",
 		category: "mudae",
 		group: "muwaifu-foto",
@@ -9156,6 +9164,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-fotocasal",
+		cooldown: 20,
 		description: "Alias de !mu-foto",
 		category: "mudae",
 		group: "muwaifu-foto",
@@ -9168,6 +9177,7 @@ const commands = [
 	// ── DIVORCIAR ───────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-divorciar",
+		cooldown: 20,
 		description: "Divorcia um personagem do harém e resgata Zinthos (💜)",
 		category: "mudae",
 		group: "muwaifu-div",
@@ -9178,6 +9188,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-divorce",
+		cooldown: 20,
 		description: "Alias de !mu-divorciar",
 		category: "mudae",
 		group: "muwaifu-div",
@@ -9188,6 +9199,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-div",
+		cooldown: 20,
 		description: "Alias curto de !mu-divorciar",
 		category: "mudae",
 		group: "muwaifu-div",
@@ -9198,6 +9210,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-d",
+		cooldown: 20,
 		description: "Alias ultra-curto de !mu-divorciar",
 		category: "mudae",
 		group: "muwaifu-div",
@@ -9210,6 +9223,7 @@ const commands = [
 	// ── LIKE ────────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-like",
+		cooldown: 20,
 		description: "Dá like/coração em um personagem para aumentar sua popularidade",
 		category: "mudae",
 		group: "muwaifu-like",
@@ -9220,6 +9234,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-l",
+		cooldown: 20,
 		description: "Alias curto de !mu-like",
 		category: "mudae",
 		group: "muwaifu-like",
@@ -9230,6 +9245,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-coracao",
+		cooldown: 20,
 		description: "Alias de !mu-like",
 		category: "mudae",
 		group: "muwaifu-like",
@@ -9242,6 +9258,7 @@ const commands = [
 	// ── DIÁRIO ──────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-diario",
+		cooldown: 20,
 		description: "Coleta sua recompensa diária de Zinthos (💜)",
 		category: "mudae",
 		group: "muwaifu-daily",
@@ -9251,6 +9268,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-daily",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-diario",
 		category: "mudae",
 		group: "muwaifu-daily",
@@ -9260,6 +9278,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-dz",
+		cooldown: 20,
 		description: "Alias curto de !mu-diario (Daily Zinthos)",
 		category: "mudae",
 		group: "muwaifu-daily",
@@ -9269,6 +9288,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-dk",
+		cooldown: 20,
 		description: "Alias de compatibilidade de !mu-diario (Daily Kakera)",
 		category: "mudae",
 		group: "muwaifu-daily",
@@ -9278,6 +9298,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-zinthos-diario",
+		cooldown: 20,
 		description: "Alias descritivo de !mu-diario",
 		category: "mudae",
 		group: "muwaifu-daily",
@@ -9287,6 +9308,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-kakera-diario",
+		cooldown: 20,
 		description: "Alias de compatibilidade de !mu-diario",
 		category: "mudae",
 		group: "muwaifu-daily",
@@ -9298,6 +9320,7 @@ const commands = [
 	// ── SALDO ───────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-saldo",
+		cooldown: 20,
 		description: "Consulta seu saldo atual de Zinthos (💜)",
 		category: "mudae",
 		group: "muwaifu-saldo",
@@ -9307,6 +9330,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-zinthos",
+		cooldown: 20,
 		description: "Alias de !mu-saldo",
 		category: "mudae",
 		group: "muwaifu-saldo",
@@ -9316,6 +9340,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-z",
+		cooldown: 20,
 		description: "Alias curto de !mu-saldo",
 		category: "mudae",
 		group: "muwaifu-saldo",
@@ -9325,6 +9350,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-kakera",
+		cooldown: 20,
 		description: "Alias de compatibilidade de !mu-saldo",
 		category: "mudae",
 		group: "muwaifu-saldo",
@@ -9334,6 +9360,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-k",
+		cooldown: 20,
 		description: "Alias curto de compatibilidade de !mu-saldo",
 		category: "mudae",
 		group: "muwaifu-saldo",
@@ -9343,6 +9370,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-bal",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-saldo",
 		category: "mudae",
 		group: "muwaifu-saldo",
@@ -9354,6 +9382,7 @@ const commands = [
 	// ── HARÉM ───────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-harem",
+		cooldown: 20,
 		description: "Lista todos os personagens pertencentes ao seu harém",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9363,6 +9392,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-h",
+		cooldown: 20,
 		description: "Alias curto de !mu-harem",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9372,6 +9402,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-harem-nome",
+		cooldown: 20,
 		description: "Define ou altera o nome personalizado do seu harém (máx 20 caracteres)",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9381,6 +9412,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-hnome",
+		cooldown: 20,
 		description: "Alias curto para !mu-harem-nome",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9390,6 +9422,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-harem-privado",
+		cooldown: 20,
 		description: "Alterna a privacidade do seu harém entre público e privado",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9399,6 +9432,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-hprivado",
+		cooldown: 20,
 		description: "Alias curto para !mu-harem-privado",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9408,6 +9442,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-harem-foto",
+		cooldown: 20,
 		description:
 			"Consulta fotos ou fixa uma foto no card do harém (!mu-harem-foto <personagem> [índice | casamento | reset])",
 		category: "mudae",
@@ -9419,6 +9454,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-hfoto",
+		cooldown: 20,
 		description: "Alias curto para !mu-harem-foto",
 		category: "mudae",
 		group: "muwaifu-harem",
@@ -9430,6 +9466,7 @@ const commands = [
 	// ── COLEÇÕES (PASTAS) ───────────────────────────────────────────────────
 	new Command({
 		name: "mu-colecoes",
+		cooldown: 20,
 		description: "Lista suas pastas de waifus ou os personagens de uma coleção",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9439,6 +9476,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-colecao",
+		cooldown: 20,
 		description: "Alias de !mu-colecoes",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9448,6 +9486,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-cols",
+		cooldown: 20,
 		description: "Alias curto de !mu-colecoes",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9457,6 +9496,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-nova",
+		cooldown: 20,
 		description: "Cria uma nova coleção para organizar suas waifus (máx 100)",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9467,6 +9507,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-del",
+		cooldown: 20,
 		description: "Apaga uma coleção mantendo os personagens no harém geral",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9477,6 +9518,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-add",
+		cooldown: 20,
 		description: "Adiciona uma waifu à pasta especificada (!mu-col-add <pasta> | <personagem>)",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9487,6 +9529,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-rem",
+		cooldown: 20,
 		description: "Remove uma waifu de sua pasta atual e retorna ao harém geral",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9497,6 +9540,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-privada",
+		cooldown: 20,
 		description: "Alterna a privacidade de uma coleção de waifus (!mu-col-privada <pasta>)",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9507,6 +9551,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-priv",
+		cooldown: 20,
 		description: "Alias curto para !mu-col-privada",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9517,6 +9562,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-ordem",
+		cooldown: 20,
 		description:
 			"Define a ordem de exibição das coleções (!mu-col-ordem <pasta1> | <pasta2> | ...)",
 		category: "mudae",
@@ -9528,6 +9574,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-col-ordenar",
+		cooldown: 20,
 		description: "Alias de !mu-col-ordem",
 		category: "mudae",
 		group: "muwaifu-colecoes",
@@ -9540,6 +9587,7 @@ const commands = [
 	// ── PERFIL ──────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-perfil",
+		cooldown: 20,
 		description: "Exibe seu perfil completo no jogo, harém e waifu favorita",
 		category: "mudae",
 		group: "muwaifu-perfil",
@@ -9549,6 +9597,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-p",
+		cooldown: 20,
 		description: "Alias curto de !mu-perfil",
 		category: "mudae",
 		group: "muwaifu-perfil",
@@ -9558,6 +9607,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-profile",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-perfil",
 		category: "mudae",
 		group: "muwaifu-perfil",
@@ -9567,6 +9617,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-eu",
+		cooldown: 20,
 		description: "Alias rápido de !mu-perfil",
 		category: "mudae",
 		group: "muwaifu-perfil",
@@ -9578,6 +9629,7 @@ const commands = [
 	// ── WISHLIST ────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-wishlist",
+		cooldown: 20,
 		description: "Lista seus personagens desejados cadastrados",
 		category: "mudae",
 		group: "muwaifu-wl",
@@ -9587,6 +9639,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-wl",
+		cooldown: 20,
 		description: "Alias curto de !mu-wishlist",
 		category: "mudae",
 		group: "muwaifu-wl",
@@ -9596,6 +9649,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-desejos",
+		cooldown: 20,
 		description: "Alias em português de !mu-wishlist",
 		category: "mudae",
 		group: "muwaifu-wl",
@@ -9607,6 +9661,7 @@ const commands = [
 	// ── DESEJAR ─────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-desejar",
+		cooldown: 20,
 		description: "Adiciona um personagem à sua Wishlist (aumenta chance no roll)",
 		category: "mudae",
 		group: "muwaifu-wish",
@@ -9617,6 +9672,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-wish",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-desejar",
 		category: "mudae",
 		group: "muwaifu-wish",
@@ -9627,6 +9683,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-add",
+		cooldown: 20,
 		description: "Alias de !mu-desejar",
 		category: "mudae",
 		group: "muwaifu-wish",
@@ -9639,6 +9696,7 @@ const commands = [
 	// ── COBIÇAR WAIFU CASADA ────────────────────────────────────────────────
 	new Command({
 		name: "mu-cobiçar",
+		cooldown: 20,
 		description: "Cobiça uma waifu já casada de outro jogador, adicionando-a à sua Wishlist",
 		category: "mudae",
 		group: "muwaifu-covet",
@@ -9650,6 +9708,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-cobicar",
+		cooldown: 20,
 		description: "Alias de !mu-cobiçar",
 		category: "mudae",
 		group: "muwaifu-covet",
@@ -9663,6 +9722,7 @@ const commands = [
 	// ── REMOVER DESEJO ──────────────────────────────────────────────────────
 	new Command({
 		name: "mu-removerdesejo",
+		cooldown: 20,
 		description: "Remove um personagem da sua Wishlist",
 		category: "mudae",
 		group: "muwaifu-rmwish",
@@ -9673,6 +9733,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-rmwish",
+		cooldown: 20,
 		description: "Alias curto de !mu-removerdesejo",
 		category: "mudae",
 		group: "muwaifu-rmwish",
@@ -9683,6 +9744,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-rmdesejo",
+		cooldown: 20,
 		description: "Alias de !mu-removerdesejo",
 		category: "mudae",
 		group: "muwaifu-rmwish",
@@ -9693,6 +9755,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-unwish",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-removerdesejo",
 		category: "mudae",
 		group: "muwaifu-rmwish",
@@ -9705,6 +9768,7 @@ const commands = [
 	// ── LIMPAR WISHLIST (REMOVER CASADAS) ────────────────────────────────────
 	new Command({
 		name: "mu-wishlist-limpar",
+		cooldown: 20,
 		description: "Remove todas as waifus casadas da sua Wishlist",
 		category: "mudae",
 		group: "muwaifu-wllimpar",
@@ -9714,6 +9778,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-wllimpar",
+		cooldown: 20,
 		description: "Alias de !mu-wishlist-limpar",
 		category: "mudae",
 		group: "muwaifu-wllimpar",
@@ -9723,6 +9788,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-limparwishlist",
+		cooldown: 20,
 		description: "Alias em português de !mu-wishlist-limpar",
 		category: "mudae",
 		group: "muwaifu-wllimpar",
@@ -9734,6 +9800,7 @@ const commands = [
 	// ── FAVORITO ────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-favorito",
+		cooldown: 20,
 		description: "Define um personagem do harém como o favorito principal em destaque",
 		category: "mudae",
 		group: "muwaifu-fav",
@@ -9744,6 +9811,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-fav",
+		cooldown: 20,
 		description: "Alias curto de !mu-favorito",
 		category: "mudae",
 		group: "muwaifu-fav",
@@ -9754,6 +9822,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-fave",
+		cooldown: 20,
 		description: "Alias de !mu-favorito",
 		category: "mudae",
 		group: "muwaifu-fav",
@@ -9766,6 +9835,7 @@ const commands = [
 	// ── SOULMATES ───────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-soulmates",
+		cooldown: 20,
 		description: "Lista seus personagens que atingiram status de Soulmate (10+ chaves)",
 		category: "mudae",
 		group: "muwaifu-sm",
@@ -9775,6 +9845,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-sm",
+		cooldown: 20,
 		description: "Alias curto de !mu-soulmates",
 		category: "mudae",
 		group: "muwaifu-sm",
@@ -9784,6 +9855,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-almas",
+		cooldown: 20,
 		description: "Alias em português de !mu-soulmates",
 		category: "mudae",
 		group: "muwaifu-sm",
@@ -9795,6 +9867,7 @@ const commands = [
 	// ── RANKING ─────────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-ranking",
+		cooldown: 20,
 		description: "Ranking global de jogadores mais ricos em Zinthos (💜)",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9804,6 +9877,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-top",
+		cooldown: 20,
 		description: "Alias de !mu-ranking",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9813,6 +9887,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-rank",
+		cooldown: 20,
 		description: "Alias curto de !mu-ranking",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9822,6 +9897,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-lb",
+		cooldown: 20,
 		description: "Alias Leaderboard de !mu-ranking",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9831,6 +9907,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-topgrupo",
+		cooldown: 20,
 		description: "Ranking de jogadores e waifus exclusivo do grupo",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9840,6 +9917,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-rankgrupo",
+		cooldown: 20,
 		description: "Alias de !mu-topgrupo",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9849,6 +9927,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-topg",
+		cooldown: 20,
 		description: "Alias de !mu-topgrupo",
 		category: "mudae",
 		group: "muwaifu-rank",
@@ -9860,6 +9939,7 @@ const commands = [
 	// ── TOP PERSONAGENS ─────────────────────────────────────────────────────
 	new Command({
 		name: "mu-topchars",
+		cooldown: 20,
 		description: "Ranking dos personagens mais casados e mais curtidos",
 		category: "mudae",
 		group: "muwaifu-topchars",
@@ -9869,6 +9949,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-topwaifus",
+		cooldown: 20,
 		description: "Alias de !mu-topchars",
 		category: "mudae",
 		group: "muwaifu-topchars",
@@ -9878,6 +9959,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-populares",
+		cooldown: 20,
 		description: "Alias de !mu-topchars",
 		category: "mudae",
 		group: "muwaifu-topchars",
@@ -9889,6 +9971,7 @@ const commands = [
 	// ── BUSCAR PERSONAGENS ──────────────────────────────────────────────────
 	new Command({
 		name: "mu-personagens",
+		cooldown: 20,
 		description: "Busca personagens no catálogo por nome ou série",
 		category: "mudae",
 		group: "muwaifu-chars",
@@ -9899,6 +9982,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-chars",
+		cooldown: 20,
 		description: "Alias curto de !mu-personagens",
 		category: "mudae",
 		group: "muwaifu-chars",
@@ -9909,6 +9993,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-buscar",
+		cooldown: 20,
 		description: "Alias de !mu-personagens",
 		category: "mudae",
 		group: "muwaifu-chars",
@@ -9919,6 +10004,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-find",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-personagens",
 		category: "mudae",
 		group: "muwaifu-chars",
@@ -9931,6 +10017,7 @@ const commands = [
 	// ── DETALHES PERSONAGEM ─────────────────────────────────────────────────
 	new Command({
 		name: "mu-char",
+		cooldown: 20,
 		description:
 			"Consulta detalhes e foto de um personagem por busca ampla (nome, ID, série, descrição)",
 		category: "mudae",
@@ -9942,6 +10029,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-info",
+		cooldown: 20,
 		description: "Alias de !mu-char (busca ampla por nome, ID, série ou descrição)",
 		category: "mudae",
 		group: "muwaifu-char",
@@ -9952,6 +10040,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-winfo",
+		cooldown: 20,
 		description: "Alias Waifu-Info de !mu-char (busca ampla por nome, ID, série ou descrição)",
 		category: "mudae",
 		group: "muwaifu-char",
@@ -9964,6 +10053,7 @@ const commands = [
 	// ── COOLDOWNS ───────────────────────────────────────────────────────────
 	new Command({
 		name: "mu-cooldowns",
+		cooldown: 20,
 		description: "Consulta todos os seus tempos de espera ativos (roll, claim, daily)",
 		category: "mudae",
 		group: "muwaifu-cd",
@@ -9973,6 +10063,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-cd",
+		cooldown: 20,
 		description: "Alias curto de !mu-cooldowns",
 		category: "mudae",
 		group: "muwaifu-cd",
@@ -9982,6 +10073,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-tempo",
+		cooldown: 20,
 		description: "Alias em português de !mu-cooldowns",
 		category: "mudae",
 		group: "muwaifu-cd",
@@ -9993,6 +10085,7 @@ const commands = [
 	// ── CONFIGURAÇÕES DO GRUPO (TOGGLE MARCAR WISHLIST NO ROLL) ───────────────
 	new Command({
 		name: "mu-roll-marcar",
+		cooldown: 20,
 		aliases: ["mu-rollmarcar", "roll-marcar", "rollmarcar"],
 		description:
 			"Ativa ou desativa a menção de membros quando um personagem da sua wishlist for sorteado no grupo (Apenas Admins)",
@@ -10004,6 +10097,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-rollmarcar",
+		cooldown: 20,
 		description: "Alias de !mu-roll-marcar",
 		category: "mudae",
 		group: "muwaifu-rollmarcar",
@@ -10015,6 +10109,7 @@ const commands = [
 	// ── AJUDA / GUIA DO JOGO (WAIFUS / MUNAE) ───────────────────────────────
 	new Command({
 		name: "waifus",
+		cooldown: 20,
 		description: "Explica as mecânicas do jogo Waifuletes/Munae e lista todos os comandos",
 		category: "mudae",
 		group: "muwaifu-help",
@@ -10024,6 +10119,7 @@ const commands = [
 	}),
 	new Command({
 		name: "munae",
+		cooldown: 20,
 		description: "Alias para o guia completo do jogo Waifuletes/Mudae",
 		category: "mudae",
 		group: "muwaifu-help",
@@ -10033,6 +10129,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mudae",
+		cooldown: 20,
 		description: "Alias para o guia completo do jogo Waifuletes",
 		category: "mudae",
 		group: "muwaifu-help",
@@ -10042,6 +10139,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-ajuda",
+		cooldown: 20,
 		description: "Alias de ajuda do jogo Waifuletes",
 		category: "mudae",
 		group: "muwaifu-help",
@@ -10051,6 +10149,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-help",
+		cooldown: 20,
 		description: "Alias em inglês de ajuda do jogo Waifuletes",
 		category: "mudae",
 		group: "muwaifu-help",
@@ -10062,6 +10161,7 @@ const commands = [
 	// ── PROBABILIDADES / TAXAS ───────────────────────────────────────────────
 	new Command({
 		name: "mu-chances",
+		cooldown: 20,
 		description: "Mostra as probabilidades de drop por raridade e o bônus da Wishlist",
 		category: "mudae",
 		group: "muwaifu-chances",
@@ -10071,6 +10171,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-taxas",
+		cooldown: 20,
 		description: "Alias em português de !mu-chances",
 		category: "mudae",
 		group: "muwaifu-chances",
@@ -10080,6 +10181,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-prob",
+		cooldown: 20,
 		description: "Alias curto de !mu-chances",
 		category: "mudae",
 		group: "muwaifu-chances",
@@ -10089,6 +10191,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-probabilidades",
+		cooldown: 20,
 		description: "Alias longo de !mu-chances",
 		category: "mudae",
 		group: "muwaifu-chances",
@@ -10100,6 +10203,7 @@ const commands = [
 	// ── DENÚNCIA / MODERAÇÃO DE PERSONAGENS ──────────────────────────────────
 	new Command({
 		name: "mu-denunciar",
+		cooldown: 20,
 		description: "Denuncia um personagem problemático para a moderação e remoção",
 		category: "mudae",
 		group: "muwaifu-report",
@@ -10115,6 +10219,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-report",
+		cooldown: 20,
 		description: "Alias em inglês de !mu-denunciar",
 		category: "mudae",
 		group: "muwaifu-report",
@@ -10131,6 +10236,7 @@ const commands = [
 	// ── PAINEL WEB PESSOAL (ADMIN / GESTÃO PRIVADA) ─────────────────────────
 	new Command({
 		name: "mu-adm",
+		cooldown: 20,
 		description:
 			"Gera e envia no seu privado o link de acesso ao seu painel web pessoal do Waifuletes (30 min)",
 		category: "mudae",
@@ -10142,6 +10248,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-admin",
+		cooldown: 20,
 		description: "Alias de !mu-adm",
 		category: "mudae",
 		group: "muwaifu-web",
@@ -10153,6 +10260,7 @@ const commands = [
 	// ── WAIFINDER (MODO CATÁLOGO TINDER) ────────────────────────────────────
 	new Command({
 		name: "waifinder",
+		cooldown: 20,
 		description: "Envia no seu privado o link de acesso ao Waifinder (modo catálogo estilo Tinder)",
 		category: "mudae",
 		group: "muwaifu-web",
@@ -10163,6 +10271,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-waifinder",
+		cooldown: 20,
 		description: "Alias de !waifinder",
 		category: "mudae",
 		group: "muwaifu-web",
@@ -10172,6 +10281,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-tinder",
+		cooldown: 20,
 		description: "Alias de !waifinder",
 		category: "mudae",
 		group: "muwaifu-web",
@@ -10183,6 +10293,7 @@ const commands = [
 	// ── COMPARTILHAR HARÉM (VITRINE PÚBLICA) ────────────────────────────────
 	new Command({
 		name: "mu-share",
+		cooldown: 20,
 		description: "Compartilha o link público do seu harém no Waifuletes",
 		category: "mudae",
 		group: "muwaifu-web",
@@ -10193,6 +10304,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-compartilhar",
+		cooldown: 20,
 		description: "Alias de !mu-share",
 		category: "mudae",
 		group: "muwaifu-web",
@@ -10204,6 +10316,7 @@ const commands = [
 	// ── CLASSIFICADOS E MERCADO ─────────────────────────────────────────────
 	new Command({
 		name: "mu-vender",
+		cooldown: 20,
 		description: "Anuncia uma waifu/hushando nos classificados globais com interesse de troca",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10215,6 +10328,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-anunciar",
+		cooldown: 20,
 		description: "Alias de !mu-vender",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10225,6 +10339,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-classificados",
+		cooldown: 20,
 		description: "Lista personagens disponíveis nos classificados globais",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10235,6 +10350,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-mercado",
+		cooldown: 20,
 		description: "Panorama macroeconômico, inflação, preços e negociações dos últimos 30 dias",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10245,6 +10361,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-economia",
+		cooldown: 20,
 		description: "Alias de !mu-mercado",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10254,6 +10371,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-investir",
+		cooldown: 20,
 		description: "Adquire cotas de 25% de uma waifu livre ou adquire 100% com 4 cotas",
 		category: "mudae",
 		group: "muwaifu-investment",
@@ -10265,6 +10383,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-investimentos",
+		cooldown: 20,
 		description: "Lista todas as waifus em que você possui investimento ativo em cotas",
 		category: "mudae",
 		group: "muwaifu-investment",
@@ -10275,6 +10394,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-cotacao",
+		cooldown: 20,
 		description: "Consulta cotação dinâmica de compra e cotas (25%) de um personagem",
 		category: "mudae",
 		group: "muwaifu-investment",
@@ -10286,6 +10406,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-ofertas",
+		cooldown: 20,
 		description: "Lista ofertas recebidas nos seus anúncios de classificados",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10296,6 +10417,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-of-aceitar",
+		cooldown: 20,
 		description: "Aceita uma oferta recebida nos classificados pelo ID",
 		category: "mudae",
 		group: "muwaifu-market",
@@ -10307,6 +10429,7 @@ const commands = [
 	}),
 	new Command({
 		name: "mu-of-negar",
+		cooldown: 20,
 		description: "Nega ou recusa uma oferta recebida nos classificados pelo ID",
 		category: "mudae",
 		group: "muwaifu-market",

@@ -198,6 +198,7 @@ async function buscarWikipedia(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "wiki",
+		cooldown: 20,
 		description: "Busca informações na Wikipedia",
 		category: "busca",
 		reactions: {

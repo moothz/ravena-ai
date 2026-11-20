@@ -734,6 +734,7 @@ async function processTranslationReaction(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "traduzir",
+		cooldown: 20,
 		description: "Traduz um texto para o idioma especificado",
 		category: "utilidades",
 		usage:
@@ -747,6 +748,7 @@ const commands = [
 	}),
 	new Command({
 		name: "translationReactionHelper",
+		cooldown: 20,
 		description: "Invocado apenas pelo ReactionsHandler",
 		reactions: {
 			trigger: Object.keys(FLAG_TO_LANGUAGE)

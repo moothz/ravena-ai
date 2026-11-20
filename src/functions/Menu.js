@@ -1210,6 +1210,7 @@ async function sendGroupCommandList(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "cmd",
+		cooldown: 20,
 		description: "Mostra todos os comandos disponíveis",
 		category: "geral",
 		group: "menu",
@@ -1217,6 +1218,7 @@ const commands = [
 	}),
 	new Command({
 		name: "comandos",
+		cooldown: 20,
 		description: "Mostra todos os comandos disponíveis",
 		category: "geral",
 		group: "menu",
@@ -1226,6 +1228,7 @@ const commands = [
 
 	new Command({
 		name: "menu",
+		cooldown: 20,
 		category: "geral",
 		group: "menu",
 		description: "Mostra todos os comandos disponíveis",
@@ -1234,6 +1237,7 @@ const commands = [
 
 	new Command({
 		name: "info",
+		cooldown: 20,
 		category: "geral",
 		group: "menu",
 		hidden: true,
@@ -1242,6 +1246,7 @@ const commands = [
 	}),
 	new Command({
 		name: "cmd-gerenciamento",
+		cooldown: 20,
 		description: "Mostra comandos de gerenciamento do grupo",
 		category: "geral",
 		group: "cmdGer",
@@ -1251,6 +1256,7 @@ const commands = [
 
 	new Command({
 		name: "cmd-g",
+		cooldown: 20,
 		description: "Mostra comandos de gerenciamento do grupo",
 		category: "geral",
 		group: "cmdGer",
@@ -1261,6 +1267,7 @@ const commands = [
 
 	new Command({
 		name: "cmd-grupo",
+		cooldown: 20,
 		description: "Mostra comandos personalizados do grupo",
 		category: "geral",
 		method: async (bot, message, args, group) =>
@@ -1268,6 +1275,7 @@ const commands = [
 	}),
 	new Command({
 		name: "cmd-categoria",
+		cooldown: 20,
 		description: "Mostra comandos da categoria informada",
 		category: "geral",
 		method: async (bot, message, args, group) =>
@@ -1284,6 +1292,7 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 	commands.push(
 		new Command({
 			name: `cmd-${category}`,
+			cooldown: 20,
 			description: `Mostra comandos da categoria ${category}`,
 			category: "geral",
 			hidden: true,
@@ -1295,6 +1304,7 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 commands.push(
 	new Command({
 		name: "cmd-banco",
+		cooldown: 20,
 		description: "Mostra comandos do RavenaBank",
 		category: "geral",
 		hidden: true,
@@ -1306,6 +1316,7 @@ commands.push(
 commands.push(
 	new Command({
 		name: "reactionMenuHelper",
+		cooldown: 20,
 		description: "Invocado apenas pelo ReactionsHandler para navegação do menu por emojis",
 		reactions: {
 			trigger: [...new Set([...Object.values(CATEGORY_EMOJIS), "⚙️", "⚙", "🏛️", "🏛", "🏦"])]

@@ -313,6 +313,7 @@ async function handleRobloxCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "roblox",
+		cooldown: 20,
 		description: "Busca perfil de jogador do Roblox",
 		category: "jogos",
 		group: "roblox",
@@ -326,6 +327,7 @@ const commands = [
 
 	new Command({
 		name: "rbx",
+		cooldown: 20,
 		description: "Busca perfil de jogador do Roblox (Alias)",
 		category: "jogos",
 		group: "roblox",

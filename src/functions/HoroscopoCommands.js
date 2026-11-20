@@ -247,6 +247,7 @@ async function horoscopoCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "horoscopo",
+		cooldown: 20,
 		description: "Exibe o horóscopo para um signo e/ou data específica.",
 		usage: "!horoscopo [signo] [data]",
 		category: "utilidades",
@@ -259,6 +260,7 @@ const commands = [
 	}),
 	new Command({
 		name: "horóscopo",
+		cooldown: 20,
 		hidden: true,
 		description: "Exibe o horóscopo para um signo e/ou data específica.",
 		usage: "!horoscopo [signo] [data]",
@@ -272,6 +274,7 @@ const commands = [
 	}),
 	new Command({
 		name: "signo",
+		cooldown: 20,
 		hidden: true,
 		description: "Exibe o horóscopo para um signo e/ou data específica.",
 		usage: "!horoscopo [signo] [data]",

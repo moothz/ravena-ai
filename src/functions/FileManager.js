@@ -768,6 +768,7 @@ async function processFileVariable(filePath, bot, chatId) {
 const commands = [
 	new Command({
 		name: "pastas",
+		cooldown: 20,
 		category: "arquivos",
 		description: "Lista as pastas e arquivos",
 		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📂" },
@@ -775,6 +776,7 @@ const commands = [
 	}),
 	new Command({
 		name: "p-criar",
+		cooldown: 20,
 		description: "Cria nova pasta",
 		category: "arquivos",
 		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📁" },
@@ -782,6 +784,7 @@ const commands = [
 	}),
 	new Command({
 		name: "p-enviar",
+		cooldown: 20,
 		description: "Envia arquivo para a pasta",
 		category: "arquivos",
 		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📤" },
@@ -789,6 +792,7 @@ const commands = [
 	}),
 	new Command({
 		name: "p-excluir",
+		cooldown: 20,
 		description: "Apaga arquivo ou pasta",
 		category: "arquivos",
 		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "🧹" },
@@ -796,6 +800,7 @@ const commands = [
 	}),
 	new Command({
 		name: "p-baixar",
+		cooldown: 20,
 		description: "Baixa arquivo ou pasta",
 		category: "arquivos",
 		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "📥" },

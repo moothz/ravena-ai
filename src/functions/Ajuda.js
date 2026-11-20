@@ -310,6 +310,7 @@ async function handleAjuda(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "ajuda",
+		cooldown: 20,
 		description: "Consulta a assistente inteligente para tirar dúvidas sobre comandos e uso do bot",
 		category: "geral",
 		usage: "!ajuda [sua pergunta]",

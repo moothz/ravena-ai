@@ -4547,7 +4547,7 @@ const commands = [
 		name: "pescar",
 		description: "Pesque um peixe",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { before: "🎣", after: "🐟", error: "❌" },
 		method: fishCommand
 	}),
@@ -4556,7 +4556,7 @@ const commands = [
 		hidden: true,
 		description: "Pesque um peixe",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { before: "🎣", after: "🐟", error: "❌" },
 		method: fishCommand
 	}),
@@ -4564,7 +4564,7 @@ const commands = [
 		name: "meus-pescados",
 		description: "Ficha do Pescador",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🐠", error: "❌" },
 		method: fishingDataCommand
 	}),
@@ -4573,7 +4573,7 @@ const commands = [
 		hidden: true,
 		description: "Ficha do Pescador",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🐠", error: "❌" },
 		method: fishingDataCommand
 	}),
@@ -4581,7 +4581,7 @@ const commands = [
 		name: "pesca-ficha",
 		description: "Ficha do Pescador",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🐠", error: "❌" },
 		method: fishingDataCommand
 	}),
@@ -4590,7 +4590,7 @@ const commands = [
 		description: "Mostra o ranking de pescaria do grupo atual",
 		category: "jogos",
 		group: "pescrank",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🏆", error: "❌" },
 		method: fishingRankingCommand
 	}),
@@ -4600,7 +4600,7 @@ const commands = [
 		description: "Mostra o ranking de pescaria do grupo atual",
 		category: "jogos",
 		group: "pescrank",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🐋", error: "❌" },
 		method: fishingRankingCommand
 	}),
@@ -4617,7 +4617,7 @@ const commands = [
 		description: "Reseta os dados de pesca para o grupo atual",
 		category: "jogos",
 		adminOnly: true,
-		cooldown: 10,
+		cooldown: 20,
 		reactions: { before: process.env.LOADING_EMOJI ?? "⌛️", after: "✅", error: "❌" },
 		method: resetFishingDataCommand
 	}),
@@ -4625,7 +4625,7 @@ const commands = [
 		name: "pesca-lendas",
 		description: "Mostra os peixes lendários que foram pescados",
 		category: "jogos",
-		cooldown: 10,
+		cooldown: 20,
 		reactions: { after: "🐉", error: "❌" },
 		method: legendaryFishCommand
 	}),
@@ -4633,7 +4633,7 @@ const commands = [
 		name: "pesca-peixes",
 		description: "Lista todos os tipos de peixes disponíveis",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "📋", error: "❌" },
 		method: listFishTypesCommand
 	}),
@@ -4641,7 +4641,7 @@ const commands = [
 		name: "pesca-iscas",
 		description: "Ficha do Pescador",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🐛", error: "❌" },
 		method: fishingDataCommand
 	}),
@@ -4649,7 +4649,7 @@ const commands = [
 		name: "pesca-abandonar",
 		description: "Limpa seu inventário de peixes após confirmação",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { after: "🗑️", error: "❌" },
 		method: abandonFishCommand
 	}),
@@ -4657,7 +4657,7 @@ const commands = [
 		name: "pesca-rede",
 		description: "Pescaria em lote utilizando rede",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { before: "🕸️", after: "🐟", error: "❌" },
 		method: netFishCommand
 	}),
@@ -4666,7 +4666,7 @@ const commands = [
 		hidden: true,
 		description: "Pescaria em lote utilizando rede",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { before: "🕸️", after: "🐟", error: "❌" },
 		method: netFishCommand
 	}),
@@ -4675,7 +4675,7 @@ const commands = [
 		hidden: true,
 		description: "Pescaria em lote utilizando rede",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { before: "🕸️", after: "🐟", error: "❌" },
 		method: netFishCommand
 	}),
@@ -4684,7 +4684,7 @@ const commands = [
 		hidden: true,
 		description: "Limpa seu inventário de peixes após confirmação",
 		category: "jogos",
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { after: "🗑️", error: "❌" },
 		method: abandonFishCommand
 	}),
@@ -4694,7 +4694,7 @@ const commands = [
 		category: "jogos",
 		adminOnly: true,
 		hidden: true,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { after: "➕", error: "❌" },
 		method: addBaitsCmd
 	}),
@@ -4704,7 +4704,7 @@ const commands = [
 		category: "jogos",
 		adminOnly: true,
 		hidden: true,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { after: "➕", error: "❌" },
 		method: addBuffCmd
 	}),
@@ -4714,7 +4714,7 @@ const commands = [
 		category: "jogos",
 		adminOnly: true,
 		hidden: true,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { after: "➖", error: "❌" },
 		method: addDebuffCmd
 	}),
@@ -4724,7 +4724,7 @@ const commands = [
 		category: "jogos",
 		adminOnly: true,
 		hidden: true,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: { after: "🐟", error: "❌" },
 		method: addFishCmd
 	}),
@@ -4734,7 +4734,7 @@ const commands = [
 		category: "jogos",
 		hidden: true,
 		adminOnly: true,
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { after: "🌍", error: "❌" },
 		method: globalFactorsCommand
 	}),
@@ -4742,7 +4742,7 @@ const commands = [
 		name: "peixe-bloquear",
 		description: "Bloqueia um peixe por nome (ou nome e peso) contra venda no banco",
 		category: "jogos",
-		cooldown: 2,
+		cooldown: 20,
 		reactions: { after: "🔒", error: "❌" },
 		method: lockFishCommand
 	}),
@@ -4751,7 +4751,7 @@ const commands = [
 		hidden: true,
 		description: "Bloqueia um peixe contra venda no banco",
 		category: "jogos",
-		cooldown: 2,
+		cooldown: 20,
 		reactions: { after: "🔒", error: "❌" },
 		method: lockFishCommand
 	}),
@@ -4760,7 +4760,7 @@ const commands = [
 		hidden: true,
 		description: "Bloqueia um peixe contra venda no banco",
 		category: "jogos",
-		cooldown: 2,
+		cooldown: 20,
 		reactions: { after: "🔒", error: "❌" },
 		method: lockFishCommand
 	}),
@@ -4768,7 +4768,7 @@ const commands = [
 		name: "peixe-desbloquear",
 		description: "Desbloqueia um peixe por nome (ou nome e peso) permitindo a venda no banco",
 		category: "jogos",
-		cooldown: 2,
+		cooldown: 20,
 		reactions: { after: "🔓", error: "❌" },
 		method: unlockFishCommand
 	}),
@@ -4777,7 +4777,7 @@ const commands = [
 		hidden: true,
 		description: "Desbloqueia um peixe permitindo a venda no banco",
 		category: "jogos",
-		cooldown: 2,
+		cooldown: 20,
 		reactions: { after: "🔓", error: "❌" },
 		method: unlockFishCommand
 	}),
@@ -4786,7 +4786,7 @@ const commands = [
 		hidden: true,
 		description: "Desbloqueia um peixe permitindo a venda no banco",
 		category: "jogos",
-		cooldown: 2,
+		cooldown: 20,
 		reactions: { after: "🔓", error: "❌" },
 		method: unlockFishCommand
 	})

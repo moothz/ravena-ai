@@ -251,6 +251,7 @@ async function buscarImdb(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "imdb",
+		cooldown: 20,
 		description: "Busca informações sobre filmes ou séries no IMDB",
 		category: "cultura",
 		reactions: {

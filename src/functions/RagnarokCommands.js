@@ -199,6 +199,7 @@ async function ragnarokResetCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "rag-info",
+		cooldown: 20,
 		description: "Ragnarok da ravena, no navegador!",
 		category: "jogos",
 		hidden: true,
@@ -207,6 +208,7 @@ const commands = [
 	}),
 	new Command({
 		name: "ragnavena",
+		cooldown: 20,
 		description: "Ragnarok da ravena, no navegador!",
 		category: "jogos",
 		reactions: { before: "⚔️", after: "🛡️" },
@@ -214,6 +216,7 @@ const commands = [
 	}),
 	new Command({
 		name: "ragnavena-reset",
+		cooldown: 20,
 		description: 'Reseta sua senha ou conta (use "full" para apagar tudo)',
 		category: "jogos",
 		hidden: true,

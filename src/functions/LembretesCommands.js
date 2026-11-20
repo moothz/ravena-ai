@@ -852,6 +852,7 @@ async function dispararLembrete(bot, lembreteId) {
 const commands = [
 	new Command({
 		name: "lembretes",
+		cooldown: 20,
 		description: "Lista os lembretes ativos",
 		category: "utilidades",
 		reactions: {
@@ -862,6 +863,7 @@ const commands = [
 	}),
 	new Command({
 		name: "lembrar",
+		cooldown: 20,
 		description: "Configura um lembrete para uma data específica",
 		category: "utilidades",
 		reactions: {
@@ -874,6 +876,7 @@ const commands = [
 
 	new Command({
 		name: "l-cancelar",
+		cooldown: 20,
 		description: "Cancela um lembrete por ID",
 		category: "utilidades",
 		reactions: {

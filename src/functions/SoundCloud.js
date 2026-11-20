@@ -130,7 +130,7 @@ const commands = [
 			after: "🔉",
 			error: "❌"
 		},
-		cooldown: 1,
+		cooldown: 20,
 		method: soundCloudSearchAndDownload
 	})
 ];

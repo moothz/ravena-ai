@@ -282,6 +282,7 @@ async function detectAFKMentions(bot, message, group) {
 const commands = [
 	new Command({
 		name: "afk",
+		cooldown: 20,
 		description: "Define seu status como AFK (Away From Keyboard) no grupo",
 		usage: "!afk <motivo (opcional)>",
 		category: "grupo",
@@ -316,6 +317,7 @@ const commands = [
 	}),
 	new Command({
 		name: "afk-lista",
+		cooldown: 20,
 		aliases: ["afks", "afklist"],
 		description: "Lista os membros do grupo que estão atualmente AFK",
 		usage: "!afk-lista",

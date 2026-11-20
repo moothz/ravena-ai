@@ -98,6 +98,7 @@ async function eventosCommand(bot, message) {
 const commands = [
 	new Command({
 		name: "eventos",
+		cooldown: 20,
 		aliases: ["evento", "eventos-ativos", "eventos-jogos"],
 		description: "Mostra os eventos especiais temporários ativos na Ravena",
 		category: "jogos",

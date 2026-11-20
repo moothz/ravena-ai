@@ -75,6 +75,7 @@ async function wildRiftBuildCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "wr-build",
+		cooldown: 20,
 		description: "Retorna o link da build de um campeão do Wild Rift",
 		category: "jogos",
 		reactions: {
@@ -84,6 +85,7 @@ const commands = [
 	}),
 	new Command({
 		name: "wildrift",
+		cooldown: 20,
 		hidden: true,
 		category: "jogos",
 		reactions: {
@@ -93,6 +95,7 @@ const commands = [
 	}),
 	new Command({
 		name: "wr",
+		cooldown: 20,
 		hidden: true,
 		category: "jogos",
 		reactions: {

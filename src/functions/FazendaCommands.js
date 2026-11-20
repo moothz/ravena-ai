@@ -3388,7 +3388,7 @@ const commands = [
 		usage: "!fazenda [hd]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazenda
 	}),
 	new Command({
@@ -3398,7 +3398,7 @@ const commands = [
 		usage: "!faz-adm",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazAdm
 	}),
 	new Command({
@@ -3408,7 +3408,7 @@ const commands = [
 		usage: "!faz-colheita [número do canteiro] [hd]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		reactions: { trigger: ["🌾", "🧺"], before: "⏳", after: "🌾", error: "❌" },
 		method: handleFazColher
 	}),
@@ -3420,7 +3420,7 @@ const commands = [
 		category: "jogos",
 		reply: true,
 		hidden: true,
-		cooldown: 3,
+		cooldown: 20,
 		reactions: { trigger: ["🌾", "🧺"], before: "⏳", after: "🌾", error: "❌" },
 		method: handleFazColher
 	}),
@@ -3431,7 +3431,7 @@ const commands = [
 		usage: "!faz-plantar <semente> [canteiro ou qtd] [hd]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazPlantar
 	}),
 	new Command({
@@ -3441,7 +3441,7 @@ const commands = [
 		usage: "!faz-loja",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazLoja
 	}),
 	new Command({
@@ -3451,7 +3451,7 @@ const commands = [
 		usage: "!faz-comprar <item> [quantidade] | !faz-comprar carrinho",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazComprar
 	}),
 	new Command({
@@ -3462,7 +3462,7 @@ const commands = [
 		usage: "!faz-carrinho [add|rem|limpar|comprar] [item] [qtd]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazCarrinho
 	}),
 	new Command({
@@ -3472,7 +3472,7 @@ const commands = [
 		usage: "!faz-inventario",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazInventario
 	}),
 	new Command({
@@ -3482,7 +3482,7 @@ const commands = [
 		usage: "!faz-usar <elixir> [canteiro]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazUsar
 	}),
 	new Command({
@@ -3492,7 +3492,7 @@ const commands = [
 		usage: "!faz-vender [item ou tudo]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazVender
 	}),
 	new Command({
@@ -3502,7 +3502,7 @@ const commands = [
 		usage: "!faz-decorar <enfeite> [slot ou com imagem marcada]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazDecorar
 	}),
 	new Command({
@@ -3512,7 +3512,7 @@ const commands = [
 		usage: "!faz-ranking [riqueza|colheitas]",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazRanking
 	}),
 	new Command({
@@ -3522,7 +3522,7 @@ const commands = [
 		usage: "!faz-nome <nome>",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazNome
 	}),
 	new Command({
@@ -3532,7 +3532,7 @@ const commands = [
 		usage: "!faz-ajuda",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazAjuda
 	}),
 	new Command({
@@ -3542,7 +3542,7 @@ const commands = [
 		usage: "!faz-help",
 		category: "jogos",
 		reply: true,
-		cooldown: 3,
+		cooldown: 20,
 		method: handleFazAjuda
 	})
 ];

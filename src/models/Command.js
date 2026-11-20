@@ -37,6 +37,7 @@ class Command {
 
 		// Controle de tempo e limitação
 		this.cooldown = data.cooldown ?? 0; // Tempo mínimo entre usos (segundos)
+		this.cooldownGrupo = data.cooldownGrupo ?? false; // Cooldown compartilhado por grupo (padrão false)
 		this.timeout = data.timeout ?? 30; // Tempo máximo de execução (segundos)
 
 		// Comportamento de resposta
@@ -131,6 +132,7 @@ class Command {
 
 			reactions: this.reactions,
 			cooldown: this.cooldown,
+			cooldownGrupo: this.cooldownGrupo,
 			timeout: this.timeout,
 			deleteOnComplete: this.deleteOnComplete,
 			replyInPrivate: this.replyInPrivate,

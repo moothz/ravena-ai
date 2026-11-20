@@ -153,6 +153,7 @@ async function buscarAnime(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "anime",
+		cooldown: 20,
 		description: "Busca informações sobre um anime no MyAnimeList",
 		category: "cultura",
 		reactions: {

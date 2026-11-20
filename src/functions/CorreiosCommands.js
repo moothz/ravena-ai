@@ -522,6 +522,7 @@ async function correiosDelCommand(bot, message, args, group) {
 const commands = [
 	new Command({
 		name: "correios",
+		cooldown: 20,
 		description: "Rastreia uma encomenda dos Correios",
 		category: "utilidades",
 		reactions: {
@@ -532,6 +533,7 @@ const commands = [
 	}),
 	new Command({
 		name: "correios-lista",
+		cooldown: 20,
 		description: "Lista encomendas sendo rastreadas no chat",
 		category: "utilidades",
 		reactions: {
@@ -541,6 +543,7 @@ const commands = [
 	}),
 	new Command({
 		name: "correios-del",
+		cooldown: 20,
 		description: "Para de rastrear uma encomenda",
 		category: "utilidades",
 		reactions: {

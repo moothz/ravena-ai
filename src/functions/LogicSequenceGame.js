@@ -631,7 +631,7 @@ const commands = [
 		name: "sequencia",
 		description: "Inicia um jogo de sequência lógica",
 		category: "jogos",
-		cooldown: 10,
+		cooldown: 20,
 		reactions: { before: "🧠" },
 		method: startLogicGame
 	}),
@@ -639,14 +639,14 @@ const commands = [
 		name: "seq",
 		description: "Tentar adivinhar a sequência",
 		category: "jogos",
-		cooldown: 0, // No cooldown for guessing
+		cooldown: 20, // No cooldown for guessing
 		method: handleGuess
 	}),
 	new Command({
 		name: "sequencia-ranking",
 		description: "Ver o ranking de lógica",
 		category: "jogos",
-		cooldown: 5,
+		cooldown: 20,
 		reactions: { before: "📊" },
 		method: showRanking
 	})

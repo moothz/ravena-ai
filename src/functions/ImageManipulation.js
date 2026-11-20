@@ -773,6 +773,7 @@ async function handleArtisticEffect(bot, message, args, group, effect) {
 const commands = [
 	new Command({
 		name: "removebg",
+		cooldown: 20,
 		description: "Remove o fundo de uma imagem",
 		category: "midia",
 		group: "rremovebg",
@@ -787,6 +788,7 @@ const commands = [
 
 	new Command({
 		name: "distort",
+		cooldown: 20,
 		description: "Aplica efeito de distorção a uma imagem",
 		category: "midia",
 		needsMedia: true,
@@ -800,6 +802,7 @@ const commands = [
 
 	new Command({
 		name: "stickerbg",
+		cooldown: 20,
 		description: "Cria um sticker após remover o fundo",
 		category: "stickers",
 		group: "stickerbg",
@@ -814,6 +817,7 @@ const commands = [
 	}),
 	new Command({
 		name: "sbg",
+		cooldown: 20,
 		description: "Envia sticker sem fundo",
 		category: "stickers",
 		group: "stickerbg",
@@ -827,6 +831,7 @@ const commands = [
 	}),
 	new Command({
 		name: "rbg",
+		cooldown: 20,
 		description: "Remove fundo de imagem e envia o PNG",
 		category: "midia",
 		group: "rremovebg",
@@ -840,6 +845,7 @@ const commands = [
 	}),
 	new Command({
 		name: "morejpeg",
+		cooldown: 20,
 		description: "Aplica compressão JPEG extrema",
 		category: "midia",
 		needsMedia: true,
@@ -857,6 +863,7 @@ const commands = [
 	commands.push(
 		new Command({
 			name: effect,
+			cooldown: 20,
 			description: `Aplica efeito ${effect} a uma imagem`,
 			category: "midia",
 			group: "imageEffect",

@@ -2584,7 +2584,7 @@ const commands = [
 		reply: false,
 		aliases: ["figa-categoria", "figatags", "figacategoria", "figa-categorias", "figacategorias"],
 		caseSensitive: false,
-		cooldown: 5,
+		cooldown: 20,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "🏷️",
@@ -2602,7 +2602,7 @@ const commands = [
 		aliases: ["denunciar-figa", "denunciarfiga", "figdenunciar"],
 		hidden: false,
 		caseSensitive: false,
-		cooldown: 5,
+		cooldown: 20,
 		reactions: {
 			trigger: ["🔞", "\u{1F51E}"],
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -2622,7 +2622,7 @@ const commands = [
 		aliases: ["removerFig", "remover-fig", "figa-remover", "figaremover", "delfig"],
 		hidden: true,
 		caseSensitive: false,
-		cooldown: 0,
+		cooldown: 20,
 		reactions: {
 			trigger: ["‼️", "\u203C"],
 			before: false,

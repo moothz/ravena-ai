@@ -233,7 +233,7 @@ const commands = [
 			before: process.env.LOADING_EMOJI ?? "⌛️",
 			after: "⬆️"
 		},
-		cooldown: 1,
+		cooldown: 20,
 		method: shareVariable
 	})
 ];
