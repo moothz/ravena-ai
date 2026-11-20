@@ -24,8 +24,12 @@ WEEK = 604800000
 M = "'${moeda}'"
 LATE_H = 3  # "dados atrasados" no padrão (carga de hora em hora): every_hours + 2; tabela, descrições e alerta
 # Agendamento da carga (meta, gravado pela ravena): a cada N horas e pausa. Sem as chaves: 1 h, ativa.
+# schedule.effective_every_hours é o intervalo em vigor (admin > ECONOMY_ANALYTICS_EVERY_HOURS > 1), gravado
+# pela carga na subida e a cada rodada; schedule.every_hours, só o escolhido no admin (banco de antes da chave
+# efetiva).
 SCHED_CTE = """sched AS (
-  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,
+  SELECT COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.effective_every_hours'),
+    (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.every_hours'), 1) AS ev,
     COALESCE((SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.paused'), 0) AS pz,
     (SELECT CAST(value AS INTEGER) FROM meta WHERE key = 'schedule.updated_at') AS desde
 )"""

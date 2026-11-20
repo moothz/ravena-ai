@@ -1901,6 +1901,12 @@ async function main() {
 				).find((x) => x.Moeda === "Runas");
 			assert.strictEqual(sit("velha.db")["Situação"], "atenção · conhecido");
 			assert.strictEqual(sit("velha.db").Carga, "ativa a cada 6 h");
+			// Intervalo em vigor gravado pela carga (admin > .env > 1) vale sobre a escolha do admin
+			const dbe = new BetterSQLite(path.join(tmpRoot, "velha.db"));
+			dbe.prepare("INSERT INTO meta VALUES ('schedule.effective_every_hours', '12')").run();
+			assert.strictEqual(sit("velha.db").Carga, "ativa a cada 12 h");
+			dbe.prepare("DELETE FROM meta WHERE key = 'schedule.effective_every_hours'").run();
+			dbe.close();
 			const dbp = new BetterSQLite(path.join(tmpRoot, "velha.db"));
 			dbp.prepare("UPDATE meta SET value = '1' WHERE key = 'schedule.every_hours'").run();
 			dbp.prepare("INSERT INTO meta VALUES ('schedule.paused', '1')").run();
