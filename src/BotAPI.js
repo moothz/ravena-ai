@@ -24,7 +24,10 @@ const {
 	createAuthenticateUPS
 } = require("./BotAPI/middleware/auth");
 const { createRateLimiters } = require("./BotAPI/middleware/rateLimiters");
-const { createFrameAncestorsGuard } = require("./BotAPI/middleware/security");
+const {
+	createFrameAncestorsGuard,
+	createSameOriginGuard
+} = require("./BotAPI/middleware/security");
 const {
 	upload,
 	uploadNsfw,
@@ -108,6 +111,20 @@ class BotAPI {
 
 		// Só a própria origem pode pôr as páginas da Ravena num iframe
 		this.app.use(createFrameAncestorsGuard());
+
+		// Escritas com credencial de admin só da própria origem (CSRF). Webhooks e chamadas
+		// servidor a servidor não mandam Origin/Sec-Fetch-Site e passam como antes.
+		this.app.use(
+			createSameOriginGuard({
+				hasCredentials: (req) =>
+					Boolean(
+						getCookie(req, "ravena_admin_session") ||
+						req.headers.authorization ||
+						(req.query && req.query.auth)
+					),
+				logger: this.logger
+			})
+		);
 
 		// Injeta referência do botApi nos bots
 		this.bots.forEach((bot) => {
