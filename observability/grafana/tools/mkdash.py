@@ -732,9 +732,10 @@ for pnl in quem_p:
     pnl["gridPos"]["y"] += 5
 
 # Diagnóstico: alertas completos, conferência, mapeamento, cargas, disponibilidade e fase 2, glossário
-diag_p.insert(0, alertlist("Alertas da economia", ALERT_DESC, ("firing", "pending", "noData", "normal", "error"), 0, 5))
+# (o cabeçalho ocupa a linha 0: os alertas começam na 1 e o resto desce 5)
+diag_p.insert(0, alertlist("Alertas da economia", ALERT_DESC, ("firing", "pending", "noData", "normal", "error"), 1, 5))
 for c in diag_p[1:]:
-    c["gridPos"]["y"] += 5
+    c["gridPos"]["y"] += 4
 glossario = panel("text", "Glossário", "", 0, 0, 24, 7, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
     "- **Criado / destruído**: motivos que põem ou tiram moeda da economia (recompensa, prêmio, taxa, compra no sistema). Câmbio e transferência entre jogadores ficam à parte.\n"
     "- **Líquido**: criado − destruído (ou entrou − saiu, por motivo).\n"

@@ -1925,6 +1925,38 @@ async function main() {
 			}
 		});
 
+		await test("layout: nenhum painel sobrepõe outro, em toda grade dos dois dashboards", () => {
+			for (const file of [DASHBOARD, DASHBOARD_JOGADORES]) {
+				const grids = [];
+				const walk = (l, where) => {
+					if (!l || typeof l !== "object") return;
+					if (l.kind === "GridLayout") grids.push({ where, items: l.spec.items });
+					for (const t of l.spec?.tabs || []) walk(t.spec.layout, `${where} > ${t.spec.title}`);
+					for (const r of l.spec?.rows || []) walk(r.spec.layout, `${where} > ${r.spec.title}`);
+				};
+				walk(JSON.parse(fs.readFileSync(file, "utf8")).spec.layout, path.basename(file));
+				assert.ok(grids.length > 0);
+				for (const { where, items } of grids) {
+					for (let i = 0; i < items.length; i++) {
+						const a = items[i].spec;
+						assert.ok(
+							a.x >= 0 && a.x + a.width <= 24,
+							`${where}: ${a.element.name} fora da largura`
+						);
+						for (let j = i + 1; j < items.length; j++) {
+							const b = items[j].spec;
+							const cruza =
+								a.x < b.x + b.width &&
+								b.x < a.x + a.width &&
+								a.y < b.y + b.height &&
+								b.y < a.y + a.height;
+							assert.ok(!cruza, `${where}: ${a.element.name} sobrepõe ${b.element.name}`);
+						}
+					}
+				}
+			}
+		});
+
 		await test("painel: seis abas, Resumo numa tela, alma gêmea só com Zinthos, colunas legíveis, período no título, padrão 7 dias", () => {
 			const dash = JSON.parse(fs.readFileSync(DASHBOARD, "utf8"));
 			assert.strictEqual(dash.apiVersion, "dashboard.grafana.app/v2");
