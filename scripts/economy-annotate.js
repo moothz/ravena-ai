@@ -23,16 +23,15 @@ function fail(msg) {
 	process.exit(1);
 }
 
-function publish(store) {
+async function publish(store) {
 	try {
-		return `publicada em ${store.publish()}`;
+		return `publicada em ${await store.publish()}`;
 	} catch (err) {
 		return `gravada; aparece no Grafana na próxima carga (${err.message})`;
 	}
 }
 
-const store = new EconomyAnalyticsStore();
-try {
+async function main(store) {
 	if (args[0] === "--export") {
 		process.stdout.write(`${JSON.stringify(store.listAnnotations(), null, 1)}\n`);
 	} else if (args[0] === "--import") {
@@ -43,7 +42,7 @@ try {
 				fail(`Anotação inválida: ${JSON.stringify(a)}`);
 			store.addAnnotation(Number(a.ts), a.currency || null, String(a.label));
 		}
-		console.log(`${list.length} anotações importadas; ${publish(store)}.`);
+		console.log(`${list.length} anotações importadas; ${await publish(store)}.`);
 	} else {
 		const [label, moeda = "todas", when] = args;
 		if (!label || !MOEDAS.includes(moeda)) {
@@ -55,8 +54,14 @@ try {
 		const ts = when ? Date.parse(when) : Date.now();
 		if (!Number.isFinite(ts)) fail(`Data inválida: ${when}`);
 		store.addAnnotation(ts, moeda === "todas" ? null : moeda, label);
-		console.log(`Anotação em ${new Date(ts).toISOString()} (${moeda}) ${publish(store)}.`);
+		console.log(`Anotação em ${new Date(ts).toISOString()} (${moeda}) ${await publish(store)}.`);
 	}
-} finally {
-	store.close();
 }
+
+const store = new EconomyAnalyticsStore();
+main(store)
+	.catch((err) => {
+		console.error(err.message);
+		process.exitCode = 1;
+	})
+	.finally(() => store.close());

@@ -158,6 +158,16 @@ function reasonLabelRows() {
 }
 
 /**
+ * Motivos mapeados como non_monetary numa moeda (linhas que não mexem no saldo). A reconstrução da massa
+ * histórica (EconomyAnalyticsService) desconta só os outros.
+ */
+function nonMonetaryReasons(currency) {
+	return Object.entries(MAPPING[currency] || {})
+		.filter(([, kind]) => NON_MONETARY_KINDS.includes(kind))
+		.map(([reason]) => reason);
+}
+
+/**
  * @param {string} currency zinthos | petalitas | runas
  * @param {string} reason motivo cru
  * @returns {string} kind
@@ -175,5 +185,6 @@ module.exports = {
 	KINDS,
 	NON_MONETARY_KINDS,
 	kindFor,
+	nonMonetaryReasons,
 	reasonLabelRows
 };

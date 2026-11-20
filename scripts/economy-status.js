@@ -4,7 +4,8 @@
  * contêiner): lê o .env e resolve os caminhos padrão a partir dela.
  *   docker exec ravena-ai node scripts/economy-status.js
  * Mostra, por fonte, até quando os dados estão carregados, a última tentativa e o último erro, e se o
- * retrato publicado para o Grafana existe. Não mostra dado de jogador (não há nenhum no banco).
+ * retrato publicado para o Grafana existe. Só lê o banco de trabalho (só-leitura) e não imprime dado de
+ * jogador (o banco tem nome e telefone na página Jogadores; este script mostra só contagens).
  */
 "use strict";
 
@@ -24,7 +25,9 @@ const fmt = (ms) =>
 
 console.log(`ECONOMY_ANALYTICS_ENABLED=${process.env.ECONOMY_ANALYTICS_ENABLED || "(vazio)"}`);
 if (!fs.existsSync(dbPath)) {
-	console.log(`Banco de trabalho ainda não existe: ${dbPath} (a primeira carga roda no minuto 5).`);
+	console.log(
+		`Banco de trabalho ainda não existe: ${dbPath} (a primeira carga roda cerca de 1 minuto depois da subida).`
+	);
 	process.exit(0);
 }
 const db = new BetterSQLite(dbPath, { readonly: true });

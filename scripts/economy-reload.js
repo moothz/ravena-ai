@@ -8,7 +8,8 @@
  * Datas: YYYY-MM-DD = início do dia econômico (04:00 BRT, 07:00 UTC) ou ISO 8601 em hora cheia.
  * Janela [de, ate), no máximo 90 dias e só dentro do que já foi carregado.
  * Regrava só flows_hourly da janela (idempotente) e republica o retrato do Grafana (mesma trava e
- * mesma guarda de caminhos da carga). Saldos ficam como estão; com --saldos-runas (só Runas) os
+ * mesma guarda de caminhos da carga). Não refaz o detalhe por jogador (player_daily, página Jogadores):
+ * só os totais por hora. Saldos ficam como estão; com --saldos-runas (só Runas) os
  * retratos diários que faltam na janela são preenchidos a partir do bank.db (aberto só-leitura).
  */
 "use strict";

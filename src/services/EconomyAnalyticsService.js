@@ -8,6 +8,9 @@
  *   - petalitas: GET {JARDIM_API_URL}/internal/economy/summary       (x-api-key: JARDIM_API_KEY)
  *   - runas:     bank.db local, aberto só-leitura
  *
+ * No bot, roda num worker_threads próprio (EconomyAnalyticsWorkerHost → EconomyAnalyticsWorker), fora da
+ * thread que atende o WhatsApp; os scripts (economy-status, -reload, -annotate) usam a classe direto.
+ *
  * Uma rodada cerca de 1 minuto depois da subida e depois toda hora no minuto 5 (só com
  * ECONOMY_ANALYTICS_ENABLED=true): para cada fonte pede
  * [to da última carga ok, início da hora atual) e grava fluxos por hora e motivo e o resultado em
@@ -19,7 +22,9 @@
  *
  * Por jogador (página Jogadores, ECONOMY_ANALYTICS_PLAYER_DAYS dias, padrão 90; 0 desliga): a cada
  * rodada pede GET /internal/economy/players por dia econômico, do dia da última carga até a hora atual
- * (o dia corrente é refeito a cada hora), e lê as Runas do bank.db. Atividade: comandos do cmd_usage.db
+ * (o dia corrente é refeito a cada hora), e lê as Runas do bank.db, um dia por vez, cedendo o laço de
+ * eventos entre os dias. Aumentar PLAYER_DAYS não busca os dias antigos que faltam: a carga continua do
+ * último dia carregado e os dias a mais se enchem com o tempo (ver OBSERVABILITY.md). Atividade: comandos do cmd_usage.db
  * (só leitura). Identidade: LID → telefone pela memory_identities do memory.db (só leitura).
  * Ao fim de cada rodada grava a disponibilidade dos painéis (features) e publica um retrato do banco
  * para o Grafana.
@@ -31,7 +36,12 @@ const BetterSQLite = require("better-sqlite3");
 const Logger = require("../utils/Logger");
 const telemetry = require("../telemetry");
 const { EconomyAnalyticsStore, resolvePath } = require("./EconomyAnalyticsStore");
-const { kindFor, MAPPING_VERSION, reasonLabelRows } = require("./EconomyAnalyticsMapping");
+const {
+	kindFor,
+	MAPPING_VERSION,
+	reasonLabelRows,
+	nonMonetaryReasons
+} = require("./EconomyAnalyticsMapping");
 const {
 	HOUR_MS,
 	DAY_MS,
@@ -45,7 +55,8 @@ const {
 	IdentityResolver,
 	readIdentities,
 	dayWindows,
-	runasPlayerDays,
+	runasPlayerStart,
+	runasPlayerDay,
 	readActivity
 } = require("./EconomyAnalyticsPlayers");
 
@@ -60,8 +71,9 @@ const DEFAULT_PLAYER_DAYS = 90;
 const PLAYERS_MAX_WINDOW_MS = 8 * DAY_MS;
 // Primeira rodada depois da subida (dá tempo do bot assentar); 0 ou ECONOMY_ANALYTICS_RUN_ON_START=false desliga
 const DEFAULT_START_DELAY_MS = 60000;
-// Mesma regra de balances.totalAtWindowEnd no waifuletes: a waifu confiscada nunca creditou o saldo
-const MASS_EXCLUDED_REASONS = { zinthos: ["HOSTING_FEE_WAIFU"] };
+// Mesma regra de balances.totalAtWindowEnd no waifuletes (a waifu confiscada nunca creditou o saldo):
+// a massa histórica desconta todo motivo non_monetary do mapeamento (HOSTING_FEE_WAIFU nos Zinthos)
+const massExcludedReasons = (currency) => nonMonetaryReasons(currency);
 // Encerramento do bot: no máximo isso esperando a rodada em andamento (o index.js força saída em 25 s)
 const STOP_WAIT_MS = 3000;
 
@@ -235,13 +247,6 @@ class EconomyAnalyticsService {
 		this._startTimer = null;
 	}
 
-	static getInstance() {
-		if (!EconomyAnalyticsService.instance) {
-			EconomyAnalyticsService.instance = new EconomyAnalyticsService();
-		}
-		return EconomyAnalyticsService.instance;
-	}
-
 	static isEnabled() {
 		return process.env.ECONOMY_ANALYTICS_ENABLED === "true";
 	}
@@ -316,13 +321,25 @@ class EconomyAnalyticsService {
 		return this._withDb(this.bankDbPath, this.bankQuery, fn);
 	}
 
-	/** Executa fn com leitura síncrona de um SQLite do bot aberto só-leitura (ou a injetada nos testes). */
+	/**
+	 * Executa fn com leitura síncrona de um SQLite do bot aberto só-leitura (ou a injetada nos testes).
+	 * A função de leitura guarda os comandos preparados (a busca binária repete o mesmo SQL) e tem
+	 * .iterate(sql, params) para ler em fluxo sem montar a lista.
+	 */
 	_withDb(file, injected, fn) {
 		if (injected) return fn(injected);
 		const db = new BetterSQLite(file, { readonly: true, fileMustExist: true });
 		try {
 			db.pragma("busy_timeout = 5000");
-			return fn((sql, params = []) => db.prepare(sql).all(...params));
+			const stmts = new Map();
+			const prep = (sql) => {
+				let st = stmts.get(sql);
+				if (!st) stmts.set(sql, (st = db.prepare(sql)));
+				return st;
+			};
+			const q = (sql, params = []) => prep(sql).all(...params);
+			q.iterate = (sql, params = []) => prep(sql).iterate(...params);
+			return fn(q);
 		} finally {
 			db.close();
 		}
@@ -403,15 +420,49 @@ class EconomyAnalyticsService {
 		return finished;
 	}
 
+	/**
+	 * "Rodar agora" (RPC do worker): começa uma rodada sem esperar por ela. Se já há uma rodando, não
+	 * começa outra (runOnce devolve a mesma). @returns {{started:boolean, running:boolean}}
+	 */
+	runNow() {
+		if (this._stopping) return { started: false, running: false, stopped: true };
+		if (this._running) return { started: false, running: true };
+		this.runOnce().catch((err) => logger.error(`[economy] Falha na carga pedida: ${err.message}`));
+		return { started: true, running: true };
+	}
+
+	/**
+	 * Estado da carga (RPC do worker; base do GET de estado do admin): por fonte, até quando há dados,
+	 * a última tentativa e o último erro; se há rodada em andamento; data do retrato publicado.
+	 */
+	status() {
+		const store = this._getStore();
+		let published = null;
+		try {
+			published = Math.round(require("fs").statSync(store.publishedPath).mtimeMs);
+		} catch (_) {}
+		return {
+			running: !!this._running,
+			runningSince: this._runningSince || null,
+			scheduled: !!this.task,
+			sources: this.sources.map((s) => s.name),
+			loads: store.loadStatus(),
+			published,
+			now: this.now()
+		};
+	}
+
 	/** Uma carga completa (todas as fontes). Chamadas concorrentes esperam a que está rodando. */
 	runOnce() {
 		if (this._running) return this._running;
 		if (this._stopping) return Promise.resolve({ stopped: true });
 		this._abort = new AbortController();
+		this._runningSince = this.now();
 		this._running = telemetry
 			.withSpan("economy.analytics.run", { root: true }, () => this._run())
 			.finally(() => {
 				this._running = null;
+				this._runningSince = null;
 				this._abort = null;
 			});
 		return this._running;
@@ -450,7 +501,7 @@ class EconomyAnalyticsService {
 		}
 		if (this._stopping) return { ...results, stopped: true };
 		try {
-			store.publish();
+			await store.publish();
 		} catch (err) {
 			logger.warn(`[economy] Falha ao publicar o retrato para o Grafana: ${err.message}`);
 		}
@@ -569,12 +620,7 @@ class EconomyAnalyticsService {
 	_reconstructMass(store, currency, anchorTs, anchorTotal) {
 		const key = `mass_reconstructed:${currency}`;
 		if (store.getMeta(key)) return 0;
-		const r = store.reconstructMass(
-			currency,
-			anchorTs,
-			anchorTotal,
-			MASS_EXCLUDED_REASONS[currency] || []
-		);
+		const r = store.reconstructMass(currency, anchorTs, anchorTotal, massExcludedReasons(currency));
 		store.setMeta(key, JSON.stringify({ anchorTs, ...r }));
 		// Lido pelo painel: a conferência de moeda sem origem ignora os retratos reconstruídos (antes disto)
 		store.setMeta(`mass_reconstructed_before:${currency}`, anchorTs);
@@ -621,19 +667,22 @@ class EconomyAnalyticsService {
 		if (from === null) return { ok: true, skipped: true };
 		const windows = dayWindows(from, hourNow);
 		const out = { ok: true, days: 0, rows: 0 };
-		let localPayloads = null;
+		// Runas: saldo no início da primeira janela uma vez; depois um dia por vez, andando para a frente
+		let runasState = null;
 		const idOf = (id) => rawId(id) || null;
 		for (let i = 0; i < windows.length; i++) {
 			if (this._stopping) return { ...out, stopped: true };
+			// Cede o laço de eventos entre os dias (stop, RPC do bot e timers seguem respondendo)
+			if (i > 0) await new Promise((r) => setImmediate(r));
 			const w = windows[i];
 			try {
 				if (w.to - w.from > PLAYERS_MAX_WINDOW_MS) throw new Error("janela maior que 8 dias");
 				let payload;
 				if (source.local) {
-					if (!localPayloads) {
-						localPayloads = this._withBank((q) => runasPlayerDays(q, windows, this.now()));
-					}
-					payload = localPayloads[i];
+					payload = this._withBank((q) => {
+						if (!runasState) runasState = runasPlayerStart(q, windows[0].from);
+						return runasPlayerDay(q, w, runasState, this.now());
+					});
 				} else {
 					payload = await source.fetchPlayers(w.from, w.to);
 				}
@@ -707,6 +756,15 @@ class EconomyAnalyticsService {
 		const out = store
 			.listPlayerIds()
 			.map((playerId) => ({ playerId, ...resolver.resolve(playerId) }));
+		// Sem nome no memory.db: o maior nome que algum serviço mandou para qualquer ID da pessoa (o mesmo
+		// que o painel calculava com uma subconsulta correlata), gravado em todas as linhas dela
+		const serviceName = store.playerNames();
+		const byPerson = new Map();
+		for (const r of out) {
+			const n = serviceName.get(r.playerId);
+			if (n && !(byPerson.get(r.person) >= n)) byPerson.set(r.person, n);
+		}
+		for (const r of out) if (!r.name) r.name = byPerson.get(r.person) || null;
 		return store.writeIdentities(out);
 	}
 
@@ -755,7 +813,8 @@ class EconomyAnalyticsService {
 
 	/**
 	 * Recarga de uma janela de fluxos (scripts/economy-reload.js): pede de novo os fluxos ao serviço
-	 * (balances=0) ou ao bank.db e regrava só flows_hourly daquela janela, de forma idempotente.
+	 * (balances=0) ou ao bank.db e regrava só flows_hourly daquela janela, de forma idempotente. Não
+	 * refaz o detalhe por jogador (player_daily): esse é refeito só para o dia corrente a cada hora.
 	 * NUNCA mexe em balances, exceto com runasBalances (só Runas): preenche os retratos diários da janela
 	 * que faltam, a partir do bank.db (só leitura), sem sobrescrever os que existem.
 	 * A janela precisa estar inteira dentro do que já foi carregado e ter no máximo 90 dias.
@@ -799,7 +858,7 @@ class EconomyAnalyticsService {
 				rows += snapshots;
 			}
 			store.recordRun({ ts: runTs, source: name, ok: true, from, to, rows });
-			store.publish();
+			await store.publish();
 			return { ok: true, flows: flows.length, snapshots };
 		} catch (err) {
 			store.recordRun({

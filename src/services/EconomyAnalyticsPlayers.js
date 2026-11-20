@@ -20,7 +20,8 @@ const {
 	DAY_OFFSET_MS,
 	economicDayStart,
 	classifyRunasTx,
-	firstIdFrom
+	firstIdFrom,
+	txRows
 } = require("./EconomyAnalyticsRunas");
 
 /** Parte do ID antes do @ ou do : (sufixo de JID, dispositivo). */
@@ -126,96 +127,104 @@ function dayWindows(from, hourNow) {
 }
 
 /**
- * Runas por jogador para várias janelas diárias com uma leitura só do extrato: lê de `windows[0].from`
- * até agora, soma os fluxos de cada janela e reconstrói o saldo no fim de cada uma andando para trás a
- * partir do saldo atual (como balancesAt).
+ * Ponto de partida do detalhe de Runas por jogador: saldo atual de cada conta e saldo no instante
+ * `start` (atual menos o extrato desde `start`, lido em fluxo com query.iterate quando existe, sem montar
+ * a lista inteira na memória).
  * @param {(sql:string, params:any[]) => object[]} query leitura síncrona do bank.db
- * @returns {object[]} uma resposta por janela, no formato de /internal/economy/players
+ * @returns {{current: Map<string,number>, balance: Map<string,number>}}
  */
-function runasPlayerDays(query, windows, now) {
-	if (!windows.length) return [];
-	const start = windows[0].from;
-	const rows = query(
-		`SELECT user_id, type, game, runas_amount, details_json, timestamp
+function runasPlayerStart(query, start) {
+	const current = new Map();
+	for (const r of query("SELECT user_id, runas FROM bank_accounts", [])) {
+		current.set(String(r.user_id), Number(r.runas) || 0);
+	}
+	const balance = new Map(current);
+	const rows = (query.iterate || query)(
+		`SELECT user_id, type, game, runas_amount, details_json
 		 FROM bank_transactions
 		 WHERE id >= ? AND timestamp >= ?
-		   AND (status IS NULL OR status IN ('COMPLETED', 'UNDONE'))
-		 ORDER BY timestamp DESC, id DESC`,
+		   AND (status IS NULL OR status IN ('COMPLETED', 'UNDONE'))`,
 		[start > 0 ? firstIdFrom(query, start) : 0, start]
 	);
-	const balance = new Map();
-	for (const r of query("SELECT user_id, runas FROM bank_accounts", [])) {
-		balance.set(String(r.user_id), Number(r.runas) || 0);
+	for (const row of rows) {
+		const { amountIn, amountOut } = classifyRunasTx(row);
+		const u = String(row.user_id);
+		balance.set(u, (balance.get(u) || 0) - amountIn + amountOut);
 	}
-	const current = new Map(balance);
-	const out = new Array(windows.length);
-	let i = 0; // linhas já "desfeitas" (timestamp >= fim da janela atual)
-	for (let w = windows.length - 1; w >= 0; w--) {
-		const win = windows[w];
-		// Desfaz tudo com timestamp >= win.to: saldo no fim da janela
-		while (i < rows.length && Number(rows[i].timestamp) >= win.to) {
-			const { amountIn, amountOut } = classifyRunasTx(rows[i]);
-			const u = String(rows[i].user_id);
-			balance.set(u, (balance.get(u) || 0) - amountIn + amountOut);
-			i++;
+	return { current, balance };
+}
+
+/**
+ * Runas por jogador de uma janela diária, no formato de /internal/economy/players: lê só o extrato da
+ * janela e anda o saldo para a frente (state.balance passa a ser o saldo no fim da janela). As janelas
+ * precisam vir em ordem e contíguas, começando no `start` de runasPlayerStart.
+ */
+function runasPlayerDay(query, win, state, now) {
+	const flows = new Map();
+	for (const row of txRows(query, win.from, win.to)) {
+		const { reason, amountIn, amountOut } = classifyRunasTx(row);
+		const u = String(row.user_id);
+		state.balance.set(u, (state.balance.get(u) || 0) + amountIn - amountOut);
+		const key = `${u}|${reason}`;
+		let f = flows.get(key);
+		if (!f) {
+			f = { id: u, reason, amountIn: 0, amountOut: 0, count: 0 };
+			flows.set(key, f);
 		}
-		const atEnd = new Map(balance);
-		const flows = new Map();
-		let j = i;
-		while (j < rows.length && Number(rows[j].timestamp) >= win.from) {
-			const { reason, amountIn, amountOut } = classifyRunasTx(rows[j]);
-			const u = String(rows[j].user_id);
-			const key = `${u}|${reason}`;
-			let f = flows.get(key);
-			if (!f) {
-				f = { id: u, reason, amountIn: 0, amountOut: 0, count: 0 };
-				flows.set(key, f);
-			}
-			f.amountIn += amountIn;
-			f.amountOut += amountOut;
-			f.count += 1;
-			j++;
-		}
-		const active = new Set([...flows.values()].map((f) => f.id));
-		const players = [];
-		for (const [id, bal] of current) {
-			if (Math.round(bal) === 0 && !active.has(id)) continue;
+		f.amountIn += amountIn;
+		f.amountOut += amountOut;
+		f.count += 1;
+	}
+	const atEnd = state.balance;
+	const active = new Set([...flows.values()].map((f) => f.id));
+	const players = [];
+	for (const [id, bal] of state.current) {
+		if (Math.round(bal) === 0 && !active.has(id)) continue;
+		players.push({
+			id,
+			name: null,
+			platform: null,
+			balance: Math.round(bal),
+			balanceAtWindowEnd: Math.round(atEnd.get(id) || 0),
+			lastActiveAt: null
+		});
+	}
+	for (const id of active) {
+		if (!state.current.has(id)) {
 			players.push({
 				id,
 				name: null,
 				platform: null,
-				balance: Math.round(bal),
+				balance: 0,
 				balanceAtWindowEnd: Math.round(atEnd.get(id) || 0),
 				lastActiveAt: null
 			});
 		}
-		for (const id of active) {
-			if (!current.has(id)) {
-				players.push({
-					id,
-					name: null,
-					platform: null,
-					balance: 0,
-					balanceAtWindowEnd: Math.round(atEnd.get(id) || 0),
-					lastActiveAt: null
-				});
-			}
-		}
-		out[w] = {
-			currency: "runas",
-			schemaVersion: 1,
-			generatedAt: now,
-			window: { from: win.from, to: win.to },
-			ledger: { available: true },
-			players,
-			flows: [...flows.values()].map((f) => ({
-				...f,
-				amountIn: Math.round(f.amountIn),
-				amountOut: Math.round(f.amountOut)
-			}))
-		};
 	}
-	return out;
+	return {
+		currency: "runas",
+		schemaVersion: 1,
+		generatedAt: now,
+		window: { from: win.from, to: win.to },
+		ledger: { available: true },
+		players,
+		flows: [...flows.values()].map((f) => ({
+			...f,
+			amountIn: Math.round(f.amountIn),
+			amountOut: Math.round(f.amountOut)
+		}))
+	};
+}
+
+/**
+ * Runas por jogador para várias janelas diárias (contíguas, em ordem): todas de uma vez. A carga usa
+ * runasPlayerStart + runasPlayerDay, um dia por vez.
+ * @returns {object[]} uma resposta por janela, no formato de /internal/economy/players
+ */
+function runasPlayerDays(query, windows, now) {
+	if (!windows.length) return [];
+	const state = runasPlayerStart(query, windows[0].from);
+	return windows.map((w) => runasPlayerDay(query, w, state, now));
 }
 
 // Mesmo filtro do resumo semanal (WeeklyGameDigestService): sem comandos automáticos nem interações
@@ -256,6 +265,8 @@ module.exports = {
 	IdentityResolver,
 	readIdentities,
 	dayWindows,
+	runasPlayerStart,
+	runasPlayerDay,
 	runasPlayerDays,
 	readActivity
 };

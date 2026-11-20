@@ -6,8 +6,13 @@
  *     carga. Fica FORA de data/sqlites de propósito: o DatabaseBackup e o !sa-sqlite (SuperAdmin) varrem
  *     data/sqlites inteiro, e este arquivo é derivado (dá para recriar com uma carga do zero).
  *   - publicado (ECONOMY_ANALYTICS_PUBLISH_DIR, padrão data/economia/analytics.db): retrato consistente
- *     gerado ao fim de cada rodada com VACUUM INTO num temporário + rename atômico. O Grafana monta só
- *     esse diretório, só-leitura, e abre com immutable=1 (nunca vê arquivo pela metade nem -wal).
+ *     gerado ao fim de cada rodada com a API de backup do SQLite (db.backup, assíncrona) num temporário
+ *     + rename atômico. O Grafana monta só esse diretório, só-leitura, e abre com immutable=1 (nunca vê
+ *     arquivo pela metade nem -wal).
+ *
+ * Os dois arquivos levam a marca PRAGMA application_id = APP_ID: é ela que diz que um SQLite existente é
+ * do painel (a guarda aceita tabelas que esta versão não conhece, de uma versão mais nova). Banco sem a
+ * marca só é aceito se todas as tabelas forem do painel (criado por versão anterior à marca); aí é marcado.
  *
  * Não usa a classe Database (caminho fixo em data/sqlites e backup). Guarda também o detalhe por
  * jogador (página Jogadores): saldo, fluxo por motivo e comandos por dia, com nome e telefone, por
@@ -63,10 +68,12 @@ CREATE TABLE IF NOT EXISTS reason_labels (
   currency TEXT NOT NULL, reason TEXT NOT NULL, label TEXT NOT NULL, kind TEXT NOT NULL,
   PRIMARY KEY (currency, reason)
 );
--- Ciclo cotas → alma gêmea → divórcio (waifuletes: soulmateCycle do resumo), por hora
+-- Ciclo cotas → alma gêmea → divórcio (waifuletes: soulmateCycle do resumo), por hora. above_cost: só
+-- divórcios com quota_cost > 0 e pago > custo; without_quota: divórcios sem cotas (NULL = waifuletes
+-- anterior ao campo, que não manda; coluna criada por ADD COLUMN em _migrate nos bancos antigos)
 CREATE TABLE IF NOT EXISTS soulmate_cycle_hourly (
   hour INTEGER PRIMARY KEY, divorces INTEGER NOT NULL, paid INTEGER NOT NULL, quota_cost INTEGER NOT NULL,
-  above_cost INTEGER NOT NULL, max_return REAL
+  above_cost INTEGER NOT NULL, max_return REAL, without_quota INTEGER
 );
 -- Atividade (cmd_usage.db): comandos e pessoas distintas por hora; por dia e comando
 CREATE TABLE IF NOT EXISTS activity_hourly (
@@ -110,14 +117,22 @@ CREATE INDEX IF NOT EXISTS idx_identities_person ON identities(person);
 CREATE INDEX IF NOT EXISTS idx_flows_currency_hour ON flows_hourly(currency, hour);
 CREATE INDEX IF NOT EXISTS idx_balances_currency_ts ON balances(currency, ts);
 CREATE INDEX IF NOT EXISTS idx_load_runs_source ON load_runs(source, ok, window_to);
+CREATE INDEX IF NOT EXISTS idx_players_player ON players(player_id);
 `;
+
+/** Marca do painel no cabeçalho do SQLite (PRAGMA application_id): "ECON". */
+const APP_ID = 0x45434f4e;
 
 function resolvePath(p, fallback) {
 	const v = p || fallback;
 	return path.isAbsolute(v) ? v : path.join(ROOT, v);
 }
 
-const OUR_TABLES = new Set([
+/**
+ * Tabelas criadas por versões anteriores à marca (APP_ID). Só servem para reconhecer e marcar um banco
+ * antigo; com a marca, tabela desconhecida (de versão mais nova) é aceita. Não precisa crescer.
+ */
+const LEGACY_TABLES = new Set([
 	"flows_hourly",
 	"balances",
 	"received_by_quintile",
@@ -134,7 +149,8 @@ const OUR_TABLES = new Set([
 	"player_balance_daily",
 	"player_activity_daily",
 	"identities",
-	"features"
+	"features",
+	"params_current"
 ]);
 
 /** Caminho real (resolve links simbólicos do trecho que já existe). */
@@ -158,20 +174,28 @@ function isInside(child, parent) {
 	return rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel));
 }
 
-/** Tabelas de um SQLite existente que não são do painel (lido só-leitura). */
-function foreignTables(file) {
-	if (!fs.existsSync(file)) return [];
-	if (!fs.statSync(file).isFile()) return ["(não é arquivo)"];
+/**
+ * De quem é um SQLite existente (lido só-leitura): null = do painel (ou não existe); senão o motivo da
+ * recusa. Do painel = tem a marca APP_ID, ou não tem marca nenhuma e só tabelas de LEGACY_TABLES (banco
+ * criado antes da marca; vazio também). Qualquer outra marca ou tabela alheia sem a marca = recusado.
+ */
+function foreignReason(file) {
+	if (!fs.existsSync(file)) return null;
+	if (!fs.statSync(file).isFile()) return "não é arquivo";
 	let db;
 	try {
 		db = new BetterSQLite(file, { readonly: true, fileMustExist: true });
-		return db
+		const appId = db.pragma("application_id", { simple: true });
+		if (appId === APP_ID) return null;
+		if (appId !== 0) return `application_id ${appId}`;
+		const alien = db
 			.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
 			.all()
 			.map((r) => r.name)
-			.filter((n) => !OUR_TABLES.has(n));
+			.filter((n) => !LEGACY_TABLES.has(n));
+		return alien.length ? `tabelas: ${alien.join(", ")}` : null;
 	} catch (_) {
-		return ["(não é SQLite)"];
+		return "não é SQLite";
 	} finally {
 		if (db) db.close();
 	}
@@ -180,7 +204,7 @@ function foreignTables(file) {
 /**
  * Garante que a carga nunca escreve fora dos próprios arquivos: recusa banco de trabalho ou diretório
  * publicado dentro de data/sqlites (bancos do bot, inclusive o bank.db), apontando para o bank.db, ou
- * por cima de um SQLite que tenha qualquer tabela que não seja do painel.
+ * por cima de um SQLite que não seja do painel (ver foreignReason).
  */
 function assertSafePaths(dbPath, publishDir) {
 	const sqlites = realish(path.join(ROOT, "data/sqlites"));
@@ -199,13 +223,54 @@ function assertSafePaths(dbPath, publishDir) {
 		throw new Error("ECONOMY_ANALYTICS_DB não pode ficar no diretório publicado");
 	}
 	for (const f of [work, pubFile]) {
-		const foreign = foreignTables(f);
-		if (foreign.length) {
-			throw new Error(
-				`recusado: ${f} já existe e não é do painel (tabelas: ${foreign.join(", ")})`
-			);
-		}
+		const foreign = foreignReason(f);
+		if (foreign) throw new Error(`recusado: ${f} já existe e não é do painel (${foreign})`);
 	}
+}
+
+const TMP_PREFIX = `.${PUBLISHED_NAME}.tmp-`;
+
+/** O processo com esse PID existe? (EPERM = existe, de outro usuário) */
+function pidAlive(pid) {
+	if (!Number.isInteger(pid) || pid <= 0) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (err) {
+		return err.code === "EPERM";
+	}
+}
+
+/**
+ * Remove a trava de publicação se ela for de processo morto (PID gravado não existe) ou tiver mais de
+ * staleMs (PID de outro namespace, arquivo sem PID). Confere o inode antes de apagar para não remover
+ * uma trava nova criada entre a leitura e a remoção. @returns {boolean} removeu (ou já tinha sumido)
+ */
+function removeStaleLock(lock, staleMs) {
+	let st;
+	let content;
+	try {
+		st = fs.statSync(lock);
+		content = fs.readFileSync(lock, "utf8");
+	} catch (_) {
+		return true; // sumiu entre o open e a leitura
+	}
+	const pid = Number(String(content).split(" ")[0]);
+	const dead = content && Number.isInteger(pid) && pid > 0 && !pidAlive(pid);
+	if (!dead && Date.now() - st.mtimeMs <= staleMs) return false;
+	try {
+		if (fs.statSync(lock).ino === st.ino) fs.rmSync(lock, { force: true });
+	} catch (_) {}
+	return true;
+}
+
+/**
+ * Permissão do retrato publicado. O Grafana (imagem oficial) roda como uid 472 e grupo 0 (root): se o
+ * arquivo saiu com grupo 0 (a ravena roda como root no contêiner), 0640 basta; senão (ravena fora do
+ * Docker, como usuário comum) precisa de 0644 para o Grafana ler.
+ */
+function publishedMode(file) {
+	return fs.statSync(file).gid === 0 ? 0o640 : 0o644;
 }
 
 function toIntOrNull(v) {
@@ -232,6 +297,11 @@ class EconomyAnalyticsStore {
 		this.db.pragma("synchronous = NORMAL");
 		this.db.pragma("busy_timeout = 5000");
 		this.db.exec(SCHEMA);
+		this._migrate();
+		// Marca o banco como do painel (novo ou criado antes da marca; a guarda acima já conferiu)
+		if (this.db.pragma("application_id", { simple: true }) !== APP_ID) {
+			this.db.pragma(`application_id = ${APP_ID}`);
+		}
 
 		this._upsertFlow = this.db.prepare(
 			`INSERT OR REPLACE INTO flows_hourly (hour, currency, reason, kind, amount_in, amount_out, tx_count, users)
@@ -256,6 +326,20 @@ class EconomyAnalyticsStore {
 		);
 	}
 
+	/** Colunas novas em bancos criados por versões anteriores (só ADD COLUMN; nada é apagado). */
+	_migrate() {
+		const cols = (t) =>
+			new Set(
+				this.db
+					.prepare(`PRAGMA table_info(${t})`)
+					.all()
+					.map((c) => c.name)
+			);
+		if (!cols("soulmate_cycle_hourly").has("without_quota")) {
+			this.db.exec("ALTER TABLE soulmate_cycle_hourly ADD COLUMN without_quota INTEGER");
+		}
+	}
+
 	/** `to` da última carga bem-sucedida da fonte, ou null se nunca houve. */
 	getLastSuccessfulTo(source) {
 		const row = this.db
@@ -269,6 +353,24 @@ class EconomyAnalyticsStore {
 		return !!this.db
 			.prepare("SELECT 1 FROM load_runs WHERE source = ? AND ok = 1 AND window_to = ? LIMIT 1")
 			.get(source, to);
+	}
+
+	/**
+	 * Por fonte de load_runs: `to` da última carga ok, a última tentativa (instante, ok, erro).
+	 * @returns {{source:string, okTo:number|null, lastTs:number, lastOk:boolean, lastError:string|null}[]}
+	 */
+	loadStatus() {
+		return this.db
+			.prepare(
+				`SELECT s.source,
+				   (SELECT MAX(window_to) FROM load_runs o WHERE o.source = s.source AND o.ok = 1) AS okTo,
+				   l.ts AS lastTs, l.ok AS lastOk, l.error AS lastError
+				 FROM (SELECT source, MAX(ts) AS ts FROM load_runs GROUP BY source) s
+				 JOIN load_runs l ON l.source = s.source AND l.ts = s.ts
+				 ORDER BY s.source`
+			)
+			.all()
+			.map((r) => ({ ...r, lastOk: r.lastOk === 1 }));
 	}
 
 	getLedgerAvailable(currency) {
@@ -348,7 +450,7 @@ class EconomyAnalyticsStore {
 
 	/**
 	 * Alinha o banco ao mapeamento atual, a cada subida: regrava reason_labels e o kind de toda linha de
-	 * flows_hourly cujo tipo difere do mapeamento atual (só este banco; nenhum dado de jogo). Não depende
+	 * flows_hourly e de player_daily cujo tipo difere do mapeamento atual (só este banco; nenhum dado de jogo). Não depende
 	 * de alguém subir MAPPING_VERSION: qualquer mudança no mapeamento é aplicada ao histórico inteiro.
 	 * meta.mapping_version fica só como registro.
 	 * @returns {{remapped:number, previous:string|null}}
@@ -364,14 +466,17 @@ class EconomyAnalyticsStore {
 			for (const r of labelRows) ins.run(r.currency, r.reason, r.label, r.kind);
 			const row = this.db.prepare("SELECT value FROM meta WHERE key = 'mapping_version'").get();
 			previous = row ? row.value : null;
-			const upd = this.db.prepare(
-				"UPDATE flows_hourly SET kind = ? WHERE currency = ? AND reason = ? AND kind <> ?"
-			);
-			for (const { currency, reason } of this.db
-				.prepare("SELECT DISTINCT currency, reason FROM flows_hourly")
-				.all()) {
-				const k = kindFor(currency, reason);
-				remapped += upd.run(k, currency, reason, k).changes;
+			// Mesma regra nos fluxos por hora e no detalhe por jogador (mesma transação)
+			for (const table of ["flows_hourly", "player_daily"]) {
+				const upd = this.db.prepare(
+					`UPDATE ${table} SET kind = ? WHERE currency = ? AND reason = ? AND kind <> ?`
+				);
+				for (const { currency, reason } of this.db
+					.prepare(`SELECT DISTINCT currency, reason FROM ${table}`)
+					.all()) {
+					const k = kindFor(currency, reason);
+					remapped += upd.run(k, currency, reason, k).changes;
+				}
 			}
 			this.db
 				.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('mapping_version', ?)")
@@ -388,8 +493,9 @@ class EconomyAnalyticsStore {
 				.prepare("DELETE FROM soulmate_cycle_hourly WHERE hour >= ? AND hour < ?")
 				.run(from, to);
 			const ins = this.db.prepare(
-				`INSERT OR REPLACE INTO soulmate_cycle_hourly (hour, divorces, paid, quota_cost, above_cost, max_return)
-				 VALUES (?, ?, ?, ?, ?, ?)`
+				`INSERT OR REPLACE INTO soulmate_cycle_hourly
+				   (hour, divorces, paid, quota_cost, above_cost, max_return, without_quota)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`
 			);
 			for (const r of rows) {
 				ins.run(
@@ -398,7 +504,9 @@ class EconomyAnalyticsStore {
 					toIntOrNull(r.paid) || 0,
 					toIntOrNull(r.quotaCost) || 0,
 					toIntOrNull(r.aboveCost) || 0,
-					r.maxReturn === null || r.maxReturn === undefined ? null : Number(r.maxReturn)
+					r.maxReturn === null || r.maxReturn === undefined ? null : Number(r.maxReturn),
+					// waifuletes antigo não manda: NULL (desconhecido), não 0
+					toIntOrNull(r.withoutQuota)
 				);
 			}
 		});
@@ -528,6 +636,18 @@ class EconomyAnalyticsStore {
 			.map((r) => r.player_id);
 	}
 
+	/** Nome mandado pelos serviços por ID cru (o maior entre as moedas). */
+	playerNames() {
+		return new Map(
+			this.db
+				.prepare(
+					"SELECT player_id, MAX(name) AS name FROM players WHERE name IS NOT NULL GROUP BY player_id"
+				)
+				.all()
+				.map((r) => [r.player_id, r.name])
+		);
+	}
+
 	/** IDs que um serviço marcou como Telegram. */
 	listTelegramIds() {
 		return this.db
@@ -655,62 +775,66 @@ class EconomyAnalyticsStore {
 	}
 
 	/**
-	 * Trava de publicação entre processos (a carga no bot e o scripts/economy-annotate.js): arquivo
-	 * criado com O_EXCL ao lado do banco de trabalho. Trava com mais de staleMs é de processo morto e
-	 * é removida. Espera no máximo waitMs (síncrono; a publicação inteira já é síncrona).
+	 * Trava de publicação entre processos (a carga, no worker do bot, e os scripts): arquivo criado com
+	 * O_EXCL ao lado do banco de trabalho, com "<pid> <aleatório>". A trava é de processo morto (removida)
+	 * se o PID gravado não existe mais (process.kill(pid, 0)) ou se tem mais de staleMs. Espera sem
+	 * bloquear a thread (tentativas a cada 100 ms) no máximo waitMs. Devolve a função que libera, que só
+	 * apaga a trava se ela ainda for a própria.
 	 */
-	_acquirePublishLock(waitMs, staleMs) {
+	async _acquirePublishLock(waitMs, staleMs) {
 		const lock = `${this.dbPath}.publish.lock`;
+		const token = `${process.pid} ${Math.random().toString(36).slice(2)}`;
 		const start = Date.now();
-		const sleeper = new Int32Array(new SharedArrayBuffer(4));
 		for (;;) {
 			try {
 				const fd = fs.openSync(lock, "wx");
-				fs.writeSync(fd, String(process.pid));
-				fs.closeSync(fd);
-				return () => fs.rmSync(lock, { force: true });
+				try {
+					fs.writeSync(fd, token);
+				} finally {
+					fs.closeSync(fd);
+				}
+				return () => {
+					try {
+						if (fs.readFileSync(lock, "utf8") === token) fs.rmSync(lock, { force: true });
+					} catch (_) {}
+				};
 			} catch (err) {
 				if (err.code !== "EEXIST") throw err;
 			}
-			let age = 0;
-			try {
-				age = Date.now() - fs.statSync(lock).mtimeMs;
-			} catch (_) {
-				continue; // sumiu entre o open e o stat
-			}
-			if (age > staleMs) {
-				fs.rmSync(lock, { force: true });
-				continue;
-			}
+			if (removeStaleLock(lock, staleMs)) continue;
 			if (Date.now() - start >= waitMs) {
 				throw new Error("outra publicação em andamento (trava ocupada)");
 			}
-			Atomics.wait(sleeper, 0, 0, 100);
+			await new Promise((r) => setTimeout(r, 100));
 		}
 	}
 
 	/**
-	 * Publica um retrato consistente: VACUUM INTO num temporário no mesmo diretório (mesmo sistema de
-	 * arquivos) e rename atômico por cima do anterior. Quem já está lendo continua no arquivo antigo.
-	 * Serializado entre processos pela trava acima.
+	 * Publica um retrato consistente: cópia pela API de backup do SQLite (assíncrona, em passos) num
+	 * temporário no mesmo diretório (mesmo sistema de arquivos), journal_mode=DELETE no temporário e
+	 * rename atômico por cima do anterior. Quem já está lendo continua no arquivo antigo. Serializado
+	 * entre processos pela trava acima; com ela na mão, temporário que sobrou de publicação interrompida
+	 * é apagado.
 	 */
-	publish({ waitMs = 5000, staleMs = 120000 } = {}) {
+	async publish({ waitMs = 5000, staleMs = 120000 } = {}) {
 		fs.mkdirSync(this.publishDir, { recursive: true });
-		const release = this._acquirePublishLock(waitMs, staleMs);
-		const tmp = path.join(this.publishDir, `.${PUBLISHED_NAME}.tmp-${process.pid}`);
+		const release = await this._acquirePublishLock(waitMs, staleMs);
+		const tmp = path.join(this.publishDir, `${TMP_PREFIX}${process.pid}`);
 		try {
-			fs.rmSync(tmp, { force: true });
-			this.db.prepare("VACUUM INTO ?").run(tmp);
+			for (const f of fs.readdirSync(this.publishDir)) {
+				if (f.startsWith(TMP_PREFIX)) fs.rmSync(path.join(this.publishDir, f), { force: true });
+			}
+			await this.db.backup(tmp);
 			const snap = new BetterSQLite(tmp);
 			try {
 				snap.pragma("journal_mode = DELETE");
 			} finally {
 				snap.close();
 			}
-			fs.chmodSync(tmp, 0o644); // o Grafana roda como outro usuário (uid 472)
+			fs.chmodSync(tmp, publishedMode(tmp));
 			// nunca sobrescreve um arquivo que não seja um retrato do painel
-			const foreign = foreignTables(this.publishedPath);
-			if (foreign.length) throw new Error(`recusado: ${this.publishedPath} não é do painel`);
+			const foreign = foreignReason(this.publishedPath);
+			if (foreign) throw new Error(`recusado: ${this.publishedPath} não é do painel (${foreign})`);
 			fs.renameSync(tmp, this.publishedPath);
 		} catch (err) {
 			fs.rmSync(tmp, { force: true });
@@ -737,6 +861,8 @@ module.exports = {
 	DEFAULT_DB_PATH,
 	DEFAULT_PUBLISH_DIR,
 	SCHEMA,
+	APP_ID,
 	resolvePath,
-	assertSafePaths
+	assertSafePaths,
+	foreignReason
 };

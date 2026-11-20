@@ -632,7 +632,17 @@ async function main() {
 					const h = R.hourStart(Math.max(from, DAY0 + D));
 					body.soulmateCycle =
 						h < to
-							? [{ hour: h, divorces: 2, paid: 900, quotaCost: 1000, aboveCost: 1, maxReturn: 1.5 }]
+							? [
+									{
+										hour: h,
+										divorces: 2,
+										paid: 900,
+										quotaCost: 1000,
+										aboveCost: 1,
+										maxReturn: 1.5,
+										withoutQuota: 1
+									}
+								]
 							: [];
 				}
 			} else if (u.pathname === "/internal/economy/players") {
@@ -819,9 +829,12 @@ async function main() {
 				]
 			);
 			// Ciclo da alma gêmea gravado e marcado como disponível
-			assert.strictEqual(
-				readAll(pdb, "SELECT SUM(above_cost) n FROM soulmate_cycle_hourly")[0].n,
-				1
+			assert.deepStrictEqual(
+				readAll(
+					pdb,
+					"SELECT SUM(above_cost) a, SUM(without_quota) w FROM soulmate_cycle_hourly"
+				)[0],
+				{ a: 1, w: 1 }
 			);
 			const feats = Object.fromEntries(
 				readAll(pdb, "SELECT key, available FROM features").map((x) => [x.key, x.available])
@@ -1287,15 +1300,46 @@ async function main() {
 			);
 		});
 
-		await test("publicação serializada por trava (O_EXCL), trava velha é removida", () => {
+		await test("publicação: backup assíncrono, trava por PID sem bloquear a thread, temporário órfão some", async () => {
 			const lock = `${dbPath}.publish.lock`;
-			fs.writeFileSync(lock, "999999");
-			assert.throws(() => svc.store.publish({ waitMs: 200 }), /trava ocupada/);
+			// Trava de processo vivo (o pai deste processo) e recente: espera e desiste
+			fs.writeFileSync(lock, `${process.ppid} outro`);
+			let ticks = 0;
+			const timer = setInterval(() => ticks++, 20);
+			await assert.rejects(svc.store.publish({ waitMs: 300 }), /trava ocupada/);
+			clearInterval(timer);
+			assert.ok(ticks >= 5, `a espera não pode bloquear o laço de eventos (ticks=${ticks})`);
+			assert.strictEqual(
+				fs.readFileSync(lock, "utf8"),
+				`${process.ppid} outro`,
+				"trava alheia intacta"
+			);
+			// Processo vivo mas trava velha (PID de outro namespace): removida
 			const old = (Date.now() - 10 * 60 * 1000) / 1000;
 			fs.utimesSync(lock, old, old);
-			svc.store.publish({ waitMs: 200 });
+			await svc.store.publish({ waitMs: 200 });
 			assert.ok(!fs.existsSync(lock), "trava liberada depois de publicar");
+			// PID morto, trava recente: removida na hora; temporário órfão de publicação interrompida some
+			fs.writeFileSync(lock, "999999999 morto");
+			fs.writeFileSync(path.join(publishDir, ".analytics.db.tmp-424242"), "lixo");
+			await svc.store.publish({ waitMs: 200 });
 			assert.deepStrictEqual(fs.readdirSync(publishDir), ["analytics.db"]);
+			// Liberar só apaga a própria trava
+			const release = await svc.store._acquirePublishLock(200, 120000);
+			fs.writeFileSync(lock, "1 de-outro");
+			release();
+			assert.ok(fs.existsSync(lock), "trava de outro não é apagada");
+			fs.rmSync(lock);
+			// Retrato: marca do painel, sem WAL, permissão conforme o grupo
+			const pdb = new BetterSQLite(pubFile, { readonly: true });
+			assert.strictEqual(pdb.pragma("journal_mode", { simple: true }), "delete");
+			assert.strictEqual(
+				pdb.pragma("application_id", { simple: true }),
+				require("../services/EconomyAnalyticsStore").APP_ID
+			);
+			pdb.close();
+			const st = fs.statSync(pubFile);
+			assert.strictEqual(st.mode & 0o777, st.gid === 0 ? 0o640 : 0o644);
 		});
 
 		await test("scripts economy-annotate (gravar, exportar, importar) e economy-status", () => {
@@ -1879,6 +1923,175 @@ async function main() {
 			assert.strictEqual(sNo.balances, null);
 			assert.ok(sNo.ledger.flows.length > 0);
 			assert.ok(!seen.some((q) => /bank_accounts/.test(q)));
+		});
+
+		await test("marca do painel (application_id): banco antigo é marcado, tabela desconhecida aceita, alheio recusado", () => {
+			const St = require("../services/EconomyAnalyticsStore");
+			const dir = path.join(tmpRoot, "marca");
+			fs.mkdirSync(dir, { recursive: true });
+			// Banco de versão anterior à marca: só tabelas do painel, sem application_id
+			const legacy = path.join(dir, "antigo.db");
+			const l = new BetterSQLite(legacy);
+			l.exec("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)");
+			l.exec(
+				"CREATE TABLE soulmate_cycle_hourly (hour INTEGER PRIMARY KEY, divorces INTEGER NOT NULL, paid INTEGER NOT NULL, quota_cost INTEGER NOT NULL, above_cost INTEGER NOT NULL, max_return REAL)"
+			);
+			l.prepare("INSERT INTO soulmate_cycle_hourly VALUES (?, 3, 10, 5, 1, 2)").run(DAY0);
+			l.close();
+			assert.strictEqual(St.foreignReason(legacy), null);
+			const st = new St.EconomyAnalyticsStore(legacy, path.join(dir, "pub1"));
+			assert.strictEqual(st.db.pragma("application_id", { simple: true }), St.APP_ID);
+			// Coluna nova por ADD COLUMN, linha antiga intacta com NULL (waifuletes antigo)
+			assert.deepStrictEqual(st.db.prepare("SELECT * FROM soulmate_cycle_hourly").all(), [
+				{
+					hour: DAY0,
+					divorces: 3,
+					paid: 10,
+					quota_cost: 5,
+					above_cost: 1,
+					max_return: 2,
+					without_quota: null
+				}
+			]);
+			// Versão mais nova criou uma tabela que esta não conhece: aceita (volta de versão sem recusa)
+			st.db.exec("CREATE TABLE tabela_do_futuro (x)");
+			st.close();
+			assert.strictEqual(St.foreignReason(legacy), null);
+			new St.EconomyAnalyticsStore(legacy, path.join(dir, "pub1")).close();
+			// Sem marca e com tabela alheia, ou com outra marca: recusado
+			const alien = path.join(dir, "alheio.db");
+			const a = new BetterSQLite(alien);
+			a.exec("CREATE TABLE meta (k); CREATE TABLE bank_accounts (x)");
+			a.close();
+			assert.match(St.foreignReason(alien), /bank_accounts/);
+			const other = path.join(dir, "outra-marca.db");
+			const o = new BetterSQLite(other);
+			o.pragma("application_id = 1234");
+			o.exec("CREATE TABLE meta (k)");
+			o.close();
+			assert.match(St.foreignReason(other), /application_id 1234/);
+			assert.throws(
+				() => new St.EconomyAnalyticsStore(other, path.join(dir, "pub2")),
+				/não é do painel/
+			);
+		});
+
+		await test("massa histórica desconta os motivos non_monetary do mapeamento; índice players(player_id)", () => {
+			const { nonMonetaryReasons } = require("../services/EconomyAnalyticsMapping");
+			const nm = Object.entries(MAPPING.zinthos)
+				.filter(([, k]) => k === "non_monetary")
+				.map(([r]) => r);
+			assert.deepStrictEqual(nonMonetaryReasons("zinthos"), nm);
+			assert.ok(nm.includes("HOSTING_FEE_WAIFU"));
+			const idx = readAll(dbPath, "PRAGMA index_list(players)").map((r) => r.name);
+			assert.ok(idx.includes("idx_players_player"), idx.join(","));
+		});
+
+		await test("subida regrava o tipo também em player_daily; identities.name cai no nome do serviço", () => {
+			const wdb = path.join(tmpRoot, "remap2", "a.db");
+			const pdir = path.join(tmpRoot, "remap2-pub");
+			const s1 = new EconomyAnalyticsService({
+				dbPath: wdb,
+				publishDir: pdir,
+				sources: [],
+				memoryQuery: () => []
+			});
+			const st = s1._getStore();
+			st.db
+				.prepare(
+					"INSERT INTO player_daily VALUES (?, 'zinthos', '5511900000001', 'DAILY_REWARD', 'unknown', 5, 0, 1)"
+				)
+				.run(DAY0);
+			const pl = st.db.prepare(
+				"INSERT INTO players (currency, player_id, name, balance, updated_ts) VALUES (?, ?, ?, 0, 0)"
+			);
+			pl.run("zinthos", "5511900000001", "Bia");
+			pl.run("runas", "551100000001", null); // mesma pessoa (12 dígitos) sem nome
+			st.close();
+			s1.store = null;
+			const s2 = new EconomyAnalyticsService({
+				dbPath: wdb,
+				publishDir: pdir,
+				sources: [],
+				memoryQuery: () => []
+			});
+			const st2 = s2._getStore();
+			assert.strictEqual(st2.db.prepare("SELECT kind FROM player_daily").get().kind, "creation");
+			s2._refreshIdentities(st2);
+			assert.deepStrictEqual(
+				st2.db.prepare("SELECT player_id, person, name FROM identities ORDER BY player_id").all(),
+				[
+					{ player_id: "551100000001", person: "5511900000001", name: "Bia" },
+					{ player_id: "5511900000001", person: "5511900000001", name: "Bia" }
+				]
+			);
+			st2.close();
+			s2.store = null;
+		});
+
+		await test("worker: sobe, roda a rodada da subida com fontes falsas, responde estado e para", async () => {
+			const Host = require("../services/EconomyAnalyticsWorkerHost");
+			const wpub = path.join(tmpRoot, "worker-pub");
+			const host = new Host({
+				serviceOpts: {
+					dbPath: path.join(tmpRoot, "worker", "analytics.db"),
+					publishDir: wpub,
+					bankDbPath: path.join(tmpRoot, "bank.db"),
+					memoryDbPath: path.join(tmpRoot, "nao-existe.db"),
+					cmdUsageDbPath: path.join(tmpRoot, "cmd_usage.db"),
+					waifuletesUrl: base,
+					waifuletesKey: "test-waifu-key",
+					jardimUrl: base,
+					jardimKey: "test-jardim-key",
+					playerDays: 2,
+					backfillStart: R.hourStart(Date.now()) - 2 * D,
+					startDelayMs: 10
+				}
+			});
+			host.start();
+			assert.strictEqual(await host.ready(), true);
+			const pub = path.join(wpub, "analytics.db");
+			for (let i = 0; i < 200 && !fs.existsSync(pub); i++) {
+				await new Promise((r) => setTimeout(r, 50));
+			}
+			assert.ok(fs.existsSync(pub), "rodada da subida publicou o retrato");
+			const st = await host.status();
+			const hourNow = R.hourStart(Date.now());
+			for (const src of ["zinthos", "petalitas", "runas"]) {
+				const l = st.loads.find((x) => x.source === src);
+				assert.ok(l && l.lastOk && l.okTo === hourNow, `${src}: ${JSON.stringify(l)}`);
+			}
+			assert.strictEqual(st.scheduled, true);
+			// Rodar agora: começa sem esperar; outra chamada durante a rodada não duplica
+			const a = await host.runNow();
+			const b = await host.runNow();
+			assert.strictEqual(a.started, true);
+			assert.strictEqual(b.started, false);
+			const t0 = Date.now();
+			assert.strictEqual(await host.stop(), true);
+			assert.ok(Date.now() - t0 < 3000, `stop demorou ${Date.now() - t0} ms`);
+			assert.strictEqual(host.running, false);
+			await assert.rejects(host.status(), /não está rodando/);
+		});
+
+		await test("worker que não para a tempo é encerrado em no máximo stopWaitMs", async () => {
+			const Host = require("../services/EconomyAnalyticsWorkerHost");
+			const host = new Host({
+				stopWaitMs: 0,
+				serviceOpts: {
+					dbPath: path.join(tmpRoot, "worker2", "analytics.db"),
+					publishDir: path.join(tmpRoot, "worker2-pub"),
+					sources: [],
+					runOnStart: false
+				}
+			});
+			host.start();
+			await host.ready();
+			// Prazo zero: não espera a saída e encerra com terminate()
+			const t0 = Date.now();
+			assert.strictEqual(await host.stop(), false);
+			assert.ok(Date.now() - t0 < 1000, `stop demorou ${Date.now() - t0} ms`);
+			assert.strictEqual(host.running, false);
 		});
 
 		await test("todas as consultas do painel rodam no retrato publicado", () => {

@@ -370,9 +370,10 @@ async function main() {
 			groupMediaRetentionService.start();
 		}
 
-		// Carga horária do painel da economia (analytics.db, minuto 5). Ver OBSERVABILITY.md
+		// Carga horária do painel da economia (analytics.db, minuto 5), num worker_threads próprio para
+		// não pesar na thread do bot. Ver OBSERVABILITY.md
 		if (!disableActivity && process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
-			require("./src/services/EconomyAnalyticsService").getInstance().start();
+			require("./src/services/EconomyAnalyticsWorkerHost").getInstance().start();
 		}
 
 		// Inicializa servidor da API
@@ -426,8 +427,8 @@ async function main() {
 		// Para a carga do painel da economia
 		if (process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
 			try {
-				// aborta a rodada em andamento e espera no máximo 3 s (nunca segura o encerramento)
-				await require("./src/services/EconomyAnalyticsService").getInstance().stop();
+				// pede parada ao worker (aborta a rodada) e espera no máximo 3 s; depois, terminate()
+				await require("./src/services/EconomyAnalyticsWorkerHost").getInstance().stop();
 			} catch (_e) {}
 		}
 

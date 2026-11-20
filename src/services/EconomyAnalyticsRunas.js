@@ -275,6 +275,40 @@ function receivedInWindow(query, from, to) {
 const DAILY_MIN_COVERAGE = 0.9;
 
 /**
+ * Estatísticas de saldo por data de bank_daily_quotas.initial_runas, como balanceStats: total de todas
+ * as linhas, e entre quem tem saldo > 0 (posição i a partir de 0, n por data) os percentis nearest-rank
+ * (p50 na posição ceil(n/2)-1, p90 em ceil(0,9n)-1), o top 10% (as ceil(n/10) maiores) e os quintos
+ * [floor((q-1)n/5), floor(qn/5)). Divisão inteira do SQLite.
+ */
+const QUINTILE_COLS = [1, 2, 3, 4, 5]
+	.map((q) => {
+		const c = `i >= (${q - 1} * n) / 5 AND i < (${q} * n) / 5`;
+		return `SUM(CASE WHEN ${c} THEN 1 ELSE 0 END) AS q${q}_n, SUM(CASE WHEN ${c} THEN x END) AS q${q}_sum,
+    MIN(CASE WHEN ${c} THEN x END) AS q${q}_min, MAX(CASE WHEN ${c} THEN x END) AS q${q}_max`;
+	})
+	.join(",\n    ");
+const DAILY_STATS_SQL = `
+WITH v AS (
+  SELECT date, initial_runas AS x FROM bank_daily_quotas
+  WHERE date >= ? AND date <= ? AND initial_runas IS NOT NULL
+),
+t AS (SELECT date, COUNT(*) AS rows_n, SUM(x) AS total FROM v GROUP BY date),
+h AS (
+  SELECT date, x, ROW_NUMBER() OVER (PARTITION BY date ORDER BY x) - 1 AS i,
+    COUNT(*) OVER (PARTITION BY date) AS n
+  FROM v WHERE x > 0
+),
+s AS (
+  SELECT date AS d, MAX(n) AS holders, SUM(x) AS htotal,
+    MAX(CASE WHEN i = (n + 1) / 2 - 1 THEN x END) AS p50,
+    MAX(CASE WHEN i = (9 * n + 9) / 10 - 1 THEN x END) AS p90,
+    SUM(CASE WHEN i >= n - (n + 9) / 10 THEN x END) AS top10,
+    ${QUINTILE_COLS}
+  FROM h GROUP BY date
+)
+SELECT t.date, t.rows_n, t.total, s.* FROM t LEFT JOIN s ON s.d = t.date ORDER BY t.date`;
+
+/**
  * Primeira e última data (YYYY-MM-DD) cujo início do dia econômico (07:00 UTC) cai em [from, to), ou
  * null se não houver nenhuma.
  */
@@ -302,32 +336,49 @@ function boundaryDates(from, to) {
  * cheia é reconstruído (balancesAt) e tem prioridade sobre o diário no mesmo instante.
  *
  * Sem virada na janela, não lê nada: na carga horária essa leitura (varredura, a PK começa por user_id)
- * acontece uma vez por dia.
+ * acontece uma vez por dia. As estatísticas (total, quintos, percentis, top 10%) saem agregadas do SQLite
+ * por data (DAILY_STATS_SQL), sem trazer as linhas de cada conta; o resultado é o mesmo de balanceStats.
  * @returns {{ts:number, balances:object}[]}
  */
 function dailySnapshots(query, from, to) {
 	const range = boundaryDates(from, to);
 	if (!range) return [];
-	const byDate = new Map();
-	for (const r of query(
-		`SELECT date, initial_runas FROM bank_daily_quotas
-		 WHERE date >= ? AND date <= ? AND initial_runas IS NOT NULL`,
-		[range.first, range.last]
-	)) {
-		if (!byDate.has(r.date)) byDate.set(r.date, []);
-		byDate.get(r.date).push(Number(r.initial_runas) || 0);
-	}
-	if (byDate.size === 0) return [];
-	const created = query("SELECT created_at FROM bank_accounts", []).map((r) =>
-		r.created_at === null || r.created_at === undefined ? 0 : Number(r.created_at)
-	);
+	const rows = query(DAILY_STATS_SQL, [range.first, range.last]);
+	if (!rows.length) return [];
 	const out = [];
-	for (const [date, values] of [...byDate.entries()].sort()) {
-		const ts = Date.parse(`${date}T07:00:00.000Z`);
+	for (const r of rows) {
+		const ts = Date.parse(`${r.date}T07:00:00.000Z`);
 		if (!Number.isFinite(ts)) continue;
-		const accounts = created.filter((c) => c <= ts).length;
-		if (values.length < DAILY_MIN_COVERAGE * accounts) continue;
-		out.push({ ts, balances: balanceStats(values) });
+		const accounts = query(
+			"SELECT COUNT(*) AS n FROM bank_accounts WHERE COALESCE(created_at, 0) <= ?",
+			[ts]
+		)[0].n;
+		if (r.rows_n < DAILY_MIN_COVERAGE * accounts) continue;
+		const n = Number(r.holders) || 0;
+		const htotal = Number(r.htotal) || 0;
+		out.push({
+			ts,
+			balances: {
+				total: round(Number(r.total) || 0),
+				holders: n,
+				accounts: Number(r.rows_n),
+				p50: round(r.p50),
+				p90: round(r.p90),
+				top10Share:
+					n > 0 && htotal > 0 ? Number(((Number(r.top10) || 0) / htotal).toFixed(4)) : null,
+				quintiles: [1, 2, 3, 4, 5].map((q) => {
+					const size = Number(r[`q${q}_n`]) || 0;
+					if (size === 0) return { q, n: 0, min: null, max: null, sum: null };
+					return {
+						q,
+						n: size,
+						min: round(r[`q${q}_min`]),
+						max: round(r[`q${q}_max`]),
+						sum: round(r[`q${q}_sum`])
+					};
+				})
+			}
+		});
 	}
 	return out;
 }
