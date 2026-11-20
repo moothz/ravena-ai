@@ -173,6 +173,9 @@ const DASHBOARD_JOGADORES = path.join(
 	__dirname,
 	"../../observability/grafana/dashboards/jogador.json"
 );
+const REPO_ROOT = path.join(__dirname, "../..");
+// Com as mudanças automáticas (EconomyAnalyticsChanges.js) a ficha ganha a coluna Origem e "confirmar?"
+const AUTO_CHANGES = fs.existsSync(path.join(REPO_ROOT, "src/services/EconomyAnalyticsChanges.js"));
 
 /** Painéis do dashboard (formato v2 do Grafana: spec.elements), num formato plano para os testes. */
 function dashboardPanels(file = DASHBOARD) {
@@ -1668,7 +1671,7 @@ async function main() {
 			);
 			assert.strictEqual(rows.length, 2);
 			const [poss, auto] = rows;
-			assert.strictEqual(auto.Origem, "automática");
+			if (AUTO_CHANGES) assert.strictEqual(auto.Origem, "automática");
 			assert.strictEqual(auto["Situação"], "acompanhando (2 de 7 dias)");
 			assert.strictEqual(auto["Criado/dia antes"], 110); // 770 / 7
 			// depois: 1050 em 2,04 dias (última hora carregada = T + 2 d + 2 h + 1 h)
@@ -1676,8 +1679,13 @@ async function main() {
 			assert.match(auto["Criado/dia: Δ"], /^▲ \+\d+\.\d% \(normal ±20%\)$/);
 			assert.match(auto["Motivos que mais mudaram"], /Divórcio \+\d+\/dia/);
 			assert.ok(auto["Semanas no normal"] >= 7);
-			assert.strictEqual(poss.Origem, "possível");
-			assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia) · confirmar?");
+			if (AUTO_CHANGES) {
+				assert.strictEqual(poss.Origem, "possível");
+				assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia) · confirmar?");
+			} else {
+				assert.strictEqual(poss.Origem, undefined);
+				assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia)");
+			}
 			// Moeda sem extrato (Petalitas): o "depois" avança pela carga registrada, não fica "cedo demais"
 			const { file: f3, db: db3 } = freshDb("mudancas-pet.db");
 			db3
@@ -1886,6 +1894,34 @@ async function main() {
 				if (!p.targets.length) continue;
 				const rows = readAll(file, dashboardSql(p.title, { from: 0, to }));
 				assert.ok(!JSON.stringify(rows).includes("99999"), `${p.title} somou non_monetary`);
+			}
+		});
+
+		await test("dashboards commitados = saída do gerador (observability/grafana/tools/mkdash.py)", () => {
+			const { spawnSync } = require("child_process");
+			const py = spawnSync("python3", ["--version"]);
+			if (py.error || py.status !== 0) {
+				console.warn("  (aviso: python3 ausente, comparação com o gerador pulada)");
+				return;
+			}
+			const out = fs.mkdtempSync(path.join(tmpRoot, "mkdash-"));
+			const gen = spawnSync(
+				"python3",
+				["-B", path.join(REPO_ROOT, "observability/grafana/tools/mkdash.py"), REPO_ROOT, out],
+				{ encoding: "utf8" }
+			);
+			assert.strictEqual(gen.status, 0, gen.stderr);
+			for (const f of [
+				"dashboards/economia.json",
+				"dashboards/jogador.json",
+				"provisioning/alerting/economia.yaml"
+			]) {
+				const a = fs.readFileSync(path.join(REPO_ROOT, "observability/grafana", f));
+				const b = fs.readFileSync(path.join(out, "observability/grafana", f));
+				assert.ok(
+					a.equals(b),
+					`${f} difere da saída do gerador: rode python3 observability/grafana/tools/mkdash.py .`
+				);
 			}
 		});
 
