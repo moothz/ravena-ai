@@ -62,7 +62,7 @@ services:
       retries: 3
     deploy:
       resources:
-        limits: { cpus: "1.0", memory: 1G }
+        limits: { cpus: "1.0", memory: 3G }
     depends_on:
       prometheus:
         condition: service_started

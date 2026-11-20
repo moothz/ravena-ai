@@ -155,7 +155,7 @@ async function describeCharacter(character, targetPhotoUrl = null) {
 			systemContext:
 				"You are an expert at describing anime characters for image generation prompts.",
 			image: originalBase64,
-			maxTokens: 300,
+			maxTokens: 1024,
 			priority: 5,
 			timeout: 30000
 		});
@@ -244,7 +244,7 @@ async function describeUser(bot, userId, message) {
 			systemContext:
 				"You are an assistant describing human avatars for image generation prompts. Respond in English.",
 			image: profileMedia.data,
-			maxTokens: 250,
+			maxTokens: 1024,
 			priority: 5,
 			timeout: 30000
 		});

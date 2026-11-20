@@ -1592,17 +1592,17 @@ class LLMService {
 						completionOptions.toolCalling = toolCalling;
 					}
 
+					const attachUsageMeta = (err, responseObj = null) => {
+						err.isFormatError = true;
+						if (responseObj && typeof responseObj === "object") {
+							err.usageTracked = Boolean(responseObj._usageTracked);
+							err.usageStatId = responseObj._usageStatId || null;
+						}
+						return err;
+					};
+
 					const validateJsonResponse = (content, responseObj = null) => {
 						if (!content || typeof content !== "string") return content;
-
-						const attachUsageMeta = (err) => {
-							err.isFormatError = true;
-							if (responseObj && typeof responseObj === "object") {
-								err.usageTracked = Boolean(responseObj._usageTracked);
-								err.usageStatId = responseObj._usageStatId || null;
-							}
-							return err;
-						};
 
 						const hasImages =
 							(completionOptions.images && completionOptions.images.length > 0) ||
@@ -1712,7 +1712,18 @@ class LLMService {
 									response.choices[0] &&
 									response.choices[0].message
 								) {
-									return validateJsonResponse(response.choices[0].message.content, response);
+									const choice = response.choices[0];
+									const rawContent = choice.message.content;
+									if (
+										(!rawContent || typeof rawContent !== "string" || rawContent.trim() === "") &&
+										choice.finish_reason === "length"
+									) {
+										const lengthErr = new Error(
+											`Provedor (${config.name}) atingiu o limite de tokens (finish_reason: length) sem gerar conteúdo final visível`
+										);
+										throw attachUsageMeta(lengthErr, response);
+									}
+									return validateJsonResponse(rawContent, response);
 								}
 								return response;
 							}
@@ -2251,64 +2262,73 @@ class LLMService {
 	 * @private
 	 */
 	async _postWithContextRetry(endpoint, payload, headers, timeout, providerName = "OpenAI") {
-		try {
-			return await axios.post(endpoint, payload, { headers, timeout });
-		} catch (error) {
-			const errMsg =
-				error.response?.data?.error?.message ||
-				(typeof error.response?.data === "string" ? error.response.data : "") ||
-				"";
+		const maxRetries = 2;
+		let attempt = 0;
 
-			// Caso 1: Estouro de tokens de saída somados ao prompt
-			// Ex: "This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains at least 14385 input tokens..."
-			const tokenMatch = errMsg.match(
-				/maximum context length is (\d+) tokens.*?(?:requested|request) (\d+) output tokens.*?prompt contains (?:at least )?(\d+) input tokens/i
-			);
+		while (attempt <= maxRetries) {
+			try {
+				return await axios.post(endpoint, payload, { headers, timeout });
+			} catch (error) {
+				attempt++;
+				if (attempt > maxRetries) throw error;
 
-			if (tokenMatch) {
-				const maxContext = parseInt(tokenMatch[1], 10);
-				const requestedTokens = parseInt(tokenMatch[2], 10);
-				const inputTokens = parseInt(tokenMatch[3], 10);
-				const availableTokens = maxContext - inputTokens - 100;
+				const errMsg =
+					error.response?.data?.error?.message ||
+					(typeof error.response?.data === "string" ? error.response.data : "") ||
+					"";
 
-				if (availableTokens >= 30) {
-					this.logger.warn(
-						`[LLMService][${providerName}] Contexto excedido: modelo suporta ${maxContext} tokens, prompt tem ${inputTokens} tokens. Ajustando max_tokens de ${requestedTokens} para ${availableTokens} e retentando...`
-					);
-					payload.max_tokens = availableTokens;
-					return await axios.post(endpoint, payload, { headers, timeout });
-				}
-			}
-
-			// Caso 2: Prompt excede limite de caracteres
-			// Ex: "This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains 604962 characters (more than 445904 characters, which is the upper bound for 14384 input tokens)..."
-			const charMatch = errMsg.match(
-				/maximum context length is (\d+) tokens.*?(?:requested|request) (\d+) output tokens.*?prompt contains (\d+) characters.*?upper bound for (\d+) input tokens/i
-			);
-
-			if (charMatch && Array.isArray(payload.messages) && payload.messages.length > 0) {
-				const maxContext = parseInt(charMatch[1], 10);
-				const boundTokens = parseInt(charMatch[4], 10);
-				this.logger.warn(
-					`[LLMService][${providerName}] Prompt em caracteres excede limite do contexto (${charMatch[3]} chars). Truncando mensagens do prompt e retentando...`
+				// Caso 1: Estouro de tokens de saída somados ao prompt
+				// Ex: "This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains at least 14385 input tokens..."
+				const tokenMatch = errMsg.match(
+					/maximum context length is (\d+) tokens.*?(?:requested|request) (\d+) output tokens.*?prompt contains (?:at least )?(\d+) input tokens/i
 				);
 
-				const charBudget = Math.floor(boundTokens * 2.5);
-				for (let i = payload.messages.length - 1; i >= 0; i--) {
-					const msg = payload.messages[i];
-					if (msg.role === "user" && typeof msg.content === "string") {
-						if (msg.content.length > charBudget) {
-							msg.content = msg.content.slice(-charBudget);
-						}
-						break;
+				if (tokenMatch) {
+					const maxContext = parseInt(tokenMatch[1], 10);
+					const requestedTokens = parseInt(tokenMatch[2], 10);
+					const inputTokens = parseInt(tokenMatch[3], 10);
+					// Margem de 300 tokens para comportar chat template, overhead de tools e tokens especiais do tokenizer
+					const availableTokens = maxContext - inputTokens - 300;
+
+					if (availableTokens >= 30) {
+						this.logger.warn(
+							`[LLMService][${providerName}] Contexto excedido: modelo suporta ${maxContext} tokens, prompt tem ${inputTokens} tokens. Ajustando max_tokens de ${requestedTokens} para ${availableTokens} e retentando (tentativa ${attempt}/${maxRetries})...`
+						);
+						payload.max_tokens = availableTokens;
+						continue;
 					}
 				}
 
-				payload.max_tokens = Math.max(100, maxContext - boundTokens - 100);
-				return await axios.post(endpoint, payload, { headers, timeout });
-			}
+				// Caso 2: Prompt excede limite de caracteres
+				// Ex: "This model's maximum context length is 16384 tokens. However, you requested 2000 output tokens and your prompt contains 604962 characters (more than 445904 characters, which is the upper bound for 14384 input tokens)..."
+				const charMatch = errMsg.match(
+					/maximum context length is (\d+) tokens.*?(?:requested|request) (\d+) output tokens.*?prompt contains (\d+) characters.*?upper bound for (\d+) input tokens/i
+				);
 
-			throw error;
+				if (charMatch && Array.isArray(payload.messages) && payload.messages.length > 0) {
+					const maxContext = parseInt(charMatch[1], 10);
+					const boundTokens = parseInt(charMatch[4], 10);
+					this.logger.warn(
+						`[LLMService][${providerName}] Prompt em caracteres excede limite do contexto (${charMatch[3]} chars). Truncando mensagens do prompt e retentando (tentativa ${attempt}/${maxRetries})...`
+					);
+
+					const charBudget = Math.floor(boundTokens * 2.5);
+					for (let i = payload.messages.length - 1; i >= 0; i--) {
+						const msg = payload.messages[i];
+						if (msg.role === "user" && typeof msg.content === "string") {
+							if (msg.content.length > charBudget) {
+								msg.content = msg.content.slice(-charBudget);
+							}
+							break;
+						}
+					}
+
+					payload.max_tokens = Math.max(100, maxContext - boundTokens - 300);
+					continue;
+				}
+
+				throw error;
+			}
 		}
 	}
 
@@ -2443,7 +2463,11 @@ class LLMService {
 						? 0.1
 						: 0.7);
 
-			let maxTokens = options.maxTokens ?? 4096;
+			const maxTokens = options.maxTokens ?? 4096;
+			// Modelos com raciocínio (reasoning/thinking) como Qwen 3.8 / DeepSeek R1 consomem tokens
+			// na fase de pensamento antes de produzir a resposta. Garantimos um piso no payload
+			// enviado à API para evitar que o orçamento seja esgotado apenas pelo reasoning.
+			let apiMaxTokens = Math.max(maxTokens, 1200);
 
 			// Ajusta dinamicamente caso o contextLength do modelo seja conhecido e o prompt esteja próximo do limite
 			const contextLength = options.contextLength;
@@ -2473,18 +2497,18 @@ class LLMService {
 				}
 
 				const available = contextLength - estimatedPromptTokens - 100;
-				if (available > 30 && available < maxTokens) {
+				if (available > 30 && available < apiMaxTokens) {
 					this.logger.warn(
-						`[LLMService][${providerName}] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${maxTokens} para ${available}.`
+						`[LLMService][${providerName}] Contexto do modelo (${contextLength} tokens) próximo do limite. Ajustando max_tokens de ${apiMaxTokens} para ${available}.`
 					);
-					maxTokens = available;
+					apiMaxTokens = available;
 				}
 			}
 
 			const payload = {
 				model,
 				messages,
-				max_tokens: maxTokens,
+				max_tokens: apiMaxTokens,
 				temperature: initialTemperature,
 				stream: false
 			};

@@ -364,7 +364,7 @@ async function getImageDescriptionForPrompt(message, llmSvc, userPrompt) {
 			systemContext:
 				"You are an expert at describing images for AI image generation prompts. Be detailed, specific and visual.",
 			image: imageData,
-			maxTokens: 300,
+			maxTokens: 1024,
 			priority: 4
 		});
 
@@ -387,7 +387,7 @@ async function getImageDescriptionForPrompt(message, llmSvc, userPrompt) {
 			prompt: `Rewrite the description of this image:\n${baseDescription}\n\nModifications to apply:\n${userPrompt}`,
 			systemContext:
 				"You are an expert at writing image generation prompts. Rewrite the image description incorporating the requested modifications naturally, keeping a cohesive and detailed prompt. Answer in English.",
-			maxTokens: 350,
+			maxTokens: 1024,
 			priority: 4
 		});
 
