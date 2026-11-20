@@ -8,7 +8,9 @@
  *
  * Rotas registradas (todas com authenticateBasic e generalLimiter):
  * - GET  /api/economy/admin/status               - estado por fonte, agendamento, rodada em andamento
- * - POST /api/economy/admin/schedule             - { everyHours: 1|2|3|6|12|24 } → cron "5 *\/N * * *"
+ * - POST /api/economy/admin/schedule             - { everyHours: 1|2|3|6|12|24 } → cron "5 *\/N * * *";
+ *                                                  { useDefault: true } volta ao padrão do .env
+ *                                                  (ECONOMY_ANALYTICS_EVERY_HOURS, ou 1 h)
  * - POST /api/economy/admin/pause                - pausa o agendamento
  * - POST /api/economy/admin/resume               - retoma o agendamento
  * - POST /api/economy/admin/run                  - rodar agora (202 na hora; não duplica rodada)
@@ -97,8 +99,9 @@ function registerEconomyRoutes(api, host = null) {
 	});
 
 	api.app.post(`${base}/schedule`, ...write, async (req, res) => {
-		const everyHours = Number(req.body && req.body.everyHours);
-		if (!PRESETS.includes(everyHours)) {
+		const useDefault = !!req.body && req.body.useDefault === true;
+		const everyHours = useDefault ? null : Number(req.body && req.body.everyHours);
+		if (!useDefault && !PRESETS.includes(everyHours)) {
 			return res
 				.status(400)
 				.json({ status: "error", message: `everyHours precisa ser ${PRESETS.join(", ")}` });
@@ -178,6 +181,15 @@ function registerEconomyRoutes(api, host = null) {
 			return res
 				.status(400)
 				.json({ status: "error", message: "decision precisa ser confirmada ou descartada" });
+		}
+		if (
+			b.texto !== undefined &&
+			b.texto !== null &&
+			(typeof b.texto !== "string" || b.texto.length > 300)
+		) {
+			return res
+				.status(400)
+				.json({ status: "error", message: "texto precisa ser string (até 300)" });
 		}
 		try {
 			const r = await getHost().decideAnnotation(id, b.decision, b.texto || null);

@@ -370,27 +370,41 @@ class EconomyAnalyticsService {
 	/**
 	 * Agendamento em vigor: intervalo (horas) e pausa. Precedência: meta do banco (gravado pelo admin,
 	 * /banco/admin) > ECONOMY_ANALYTICS_EVERY_HOURS > 1 h. Intervalo fora de EVERY_HOURS_PRESETS vira 1.
-	 * @returns {{everyHours:number, paused:boolean, updatedAt:number|null, from:string, cron:string}}
+	 * defaultEveryHours = o que vale sem a escolha do admin (.env ou 1 h).
+	 * @returns {{everyHours:number, defaultEveryHours:number, paused:boolean, updatedAt:number|null,
+	 *   from:string, cron:string}}
 	 */
 	scheduleState(store = this._getStore()) {
 		const metaHours = Number(store.getMeta("schedule.every_hours"));
 		const envHours = Number(process.env.ECONOMY_ANALYTICS_EVERY_HOURS);
-		let everyHours = 1;
-		let from = "padrão";
+		const envValid = EVERY_HOURS_PRESETS.includes(envHours);
+		const defaultEveryHours = envValid ? envHours : 1;
+		let everyHours = defaultEveryHours;
+		let from = envValid ? "env" : "padrão";
 		if (EVERY_HOURS_PRESETS.includes(metaHours)) {
 			everyHours = metaHours;
 			from = "admin";
-		} else if (EVERY_HOURS_PRESETS.includes(envHours)) {
-			everyHours = envHours;
-			from = "env";
 		}
 		return {
 			everyHours,
+			defaultEveryHours,
 			paused: store.getMeta("schedule.paused") === "1",
 			updatedAt: Number(store.getMeta("schedule.updated_at")) || null,
 			from,
 			cron: cronFor(everyHours)
 		};
+	}
+
+	/**
+	 * Grava o intervalo em vigor em meta (schedule.effective_every_hours), que o painel e o alerta de carga
+	 * atrasada leem: schedule.every_hours só existe quando o admin escolhe, e o intervalo do .env não
+	 * chegaria ao retrato. @returns {boolean} o valor gravado mudou
+	 */
+	_recordEffectiveSchedule(store, state) {
+		const key = "schedule.effective_every_hours";
+		if (store.getMeta(key) === String(state.everyHours)) return false;
+		store.setMeta(key, state.everyHours);
+		return true;
 	}
 
 	/** (Re)cria a tarefa do cron conforme o agendamento; pausado, fica sem tarefa. */
@@ -409,8 +423,14 @@ class EconomyAnalyticsService {
 		if (this._started) return;
 		this._started = true;
 		let state;
+		let effectiveChanged = false;
 		try {
 			state = this.scheduleState();
+			const store = this._getStore();
+			// Só republica se já existe retrato (sem ele, a primeira rodada publica)
+			effectiveChanged =
+				this._recordEffectiveSchedule(store, state) &&
+				require("fs").existsSync(store.publishedPath);
 		} catch (err) {
 			// Banco recusado ou ilegível: agenda pelo env; cada rodada vai registrar o erro
 			logger.error(`[economy] Falha ao ler o agendamento: ${err.message}`);
@@ -432,7 +452,8 @@ class EconomyAnalyticsService {
 			}, this.startDelayMs);
 			if (this._startTimer.unref) this._startTimer.unref();
 		}
-		this._publishIfSchemaChanged();
+		// Intervalo em vigor mudou (ex.: .env novo) ou schema novo: o retrato reflete já, mesmo pausada
+		this._publishIfSchemaChanged(effectiveChanged);
 		logger.info(
 			`[economy] Carga do painel ${state.paused ? "PAUSADA" : `ligada a cada ${state.everyHours} h`} (fontes: ${this.sources.map((s) => s.name).join(", ")}; mapeamento v${MAPPING_VERSION}).`
 		);
@@ -449,26 +470,34 @@ class EconomyAnalyticsService {
 		}
 	}
 
+	/** Grava as chaves de agendamento (null apaga a chave) e reaplica o cron. */
 	_saveSchedule(changes) {
 		const store = this._getStore();
-		for (const [k, v] of Object.entries(changes)) store.setMeta(k, v);
+		for (const [k, v] of Object.entries(changes)) {
+			if (v === null) store.deleteMeta(k);
+			else store.setMeta(k, v);
+		}
 		store.setMeta("schedule.updated_at", this.now());
 		const state = this.scheduleState(store);
+		this._recordEffectiveSchedule(store, state);
 		if (this._started) this._applySchedule(state);
 		return state;
 	}
 
 	/**
-	 * Muda o intervalo (admin). Só os presets de EVERY_HOURS_PRESETS (cron "5 *\/N * * *").
+	 * Muda o intervalo (admin). Só os presets de EVERY_HOURS_PRESETS (cron "5 *\/N * * *"); null apaga a
+	 * escolha do admin e volta ao padrão (ECONOMY_ANALYTICS_EVERY_HOURS, ou 1 h).
 	 * @returns {Promise<object>} agendamento em vigor
 	 */
 	async reschedule(everyHours) {
-		const h = Number(everyHours);
-		if (!EVERY_HOURS_PRESETS.includes(h)) {
+		const h = everyHours === null ? null : Number(everyHours);
+		if (h !== null && !EVERY_HOURS_PRESETS.includes(h)) {
 			throw new Error(`intervalo inválido: use ${EVERY_HOURS_PRESETS.join(", ")} horas`);
 		}
 		const state = this._saveSchedule({ "schedule.every_hours": h });
-		logger.info(`[economy] Agendamento: a cada ${h} h (${state.cron}).`);
+		logger.info(
+			`[economy] Agendamento: a cada ${state.everyHours} h (${state.cron}${h === null ? `, padrão: ${state.from}` : ""}).`
+		);
 		await this._publishQuiet();
 		return state;
 	}
@@ -546,7 +575,7 @@ class EconomyAnalyticsService {
 	 * Banco antigo que ganhou tabela ou coluna ao abrir (store.schemaChanged): publica uma vez já, para o
 	 * retrato do Grafana ter o schema novo sem esperar a próxima rodada. Falha só vai para o log.
 	 */
-	_publishIfSchemaChanged() {
+	_publishIfSchemaChanged(force = false) {
 		let store;
 		try {
 			store = this._getStore();
@@ -554,7 +583,7 @@ class EconomyAnalyticsService {
 			logger.error(`[economy] Falha ao abrir o banco da carga: ${err.message}`);
 			return;
 		}
-		if (!store.schemaChanged) return;
+		if (!store.schemaChanged && !force) return;
 		store.schemaChanged = false;
 		// stop() espera esta publicação como espera a rodada (não fecha o banco no meio do backup)
 		this._schemaPublish = store
@@ -659,6 +688,11 @@ class EconomyAnalyticsService {
 	async _run() {
 		const store = this._getStore();
 		const runTs = this.now();
+		try {
+			this._recordEffectiveSchedule(store, this.scheduleState(store));
+		} catch (err) {
+			logger.warn(`[economy] Falha ao gravar o intervalo em vigor: ${err.message}`);
+		}
 		const results = {};
 		for (const source of this.sources) {
 			if (this._stopping) return { ...results, stopped: true };

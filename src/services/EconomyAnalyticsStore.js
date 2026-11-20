@@ -841,6 +841,10 @@ class EconomyAnalyticsStore {
 		return row ? row.value : null;
 	}
 
+	deleteMeta(key) {
+		this.db.prepare("DELETE FROM meta WHERE key = ?").run(key);
+	}
+
 	setMeta(key, value) {
 		this.db
 			.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)")

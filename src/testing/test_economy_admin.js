@@ -173,6 +173,7 @@ async function main() {
 			);
 			pub.close();
 			assert.strictEqual(meta["schedule.every_hours"], "6");
+			assert.strictEqual(meta["schedule.effective_every_hours"], "6");
 			assert.ok(Number(meta["schedule.updated_at"]) > 0);
 		});
 
@@ -238,6 +239,14 @@ async function main() {
 				400,
 				"manual não se decide"
 			);
+			for (const texto of [{ a: 1 }, ["x"], 5, true]) {
+				assert.strictEqual(
+					(await post("/annotations/decide", { id: list[0].id, decision: "confirmada", texto }))
+						.status,
+					400,
+					`texto ${JSON.stringify(texto)}`
+				);
+			}
 			r = await post("/annotations/decide", {
 				id: list[0].id,
 				decision: "confirmada",
@@ -296,9 +305,34 @@ async function main() {
 				await host.ready();
 				let st = await (await call("/status")).json();
 				assert.deepStrictEqual([st.schedule.everyHours, st.schedule.from], [12, "env"]);
+				// O intervalo do .env chega ao banco na subida (o painel e o alerta leem a chave efetiva)
+				const metaOf = (file) => {
+					const db = new BetterSQLite(file, { readonly: true });
+					const m = Object.fromEntries(
+						db
+							.prepare("SELECT key, value FROM meta WHERE key LIKE 'schedule.%'")
+							.all()
+							.map((x) => [x.key, x.value])
+					);
+					db.close();
+					return m;
+				};
+				const work = path.join(tmpRoot, "b", "analytics.db");
+				const pubB = path.join(tmpRoot, "b-pub", "analytics.db");
+				assert.strictEqual(metaOf(work)["schedule.effective_every_hours"], "12");
+				assert.strictEqual(metaOf(work)["schedule.every_hours"], undefined);
 				await post("/schedule", { everyHours: 3 });
 				st = await (await call("/status")).json();
 				assert.deepStrictEqual([st.schedule.everyHours, st.schedule.from], [3, "admin"]);
+				assert.strictEqual(st.schedule.defaultEveryHours, 12);
+				// "Usar o padrão do .env": apaga a escolha do admin e volta aos 12 h
+				const back = await (await post("/schedule", { useDefault: true })).json();
+				assert.deepStrictEqual([back.schedule.everyHours, back.schedule.from], [12, "env"]);
+				assert.strictEqual(back.schedule.cron, "5 */12 * * *");
+				const pm = metaOf(pubB);
+				assert.strictEqual(pm["schedule.every_hours"], undefined);
+				assert.strictEqual(pm["schedule.effective_every_hours"], "12");
+				await post("/schedule", { everyHours: 3 });
 				process.env.ECONOMY_ANALYTICS_EVERY_HOURS = "7"; // fora dos presets: ignorado
 				await host.stop();
 				host = mkHost("c");

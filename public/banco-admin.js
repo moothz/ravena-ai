@@ -755,9 +755,13 @@ document.addEventListener("DOMContentLoaded", () => {
             ` · definido por ${sch.from === "admin" ? "este painel" : sch.from === "env" ? "ECONOMY_ANALYTICS_EVERY_HOURS" : "padrão"}` +
             `${sch.updatedAt ? ` em ${fmtDateTime(sch.updatedAt)}` : ""}.` +
             `${sch.paused ? " Pausada: nada roda sozinho; \"Rodar agora\" continua valendo." : ""}`;
-        econ.every.innerHTML = (st.presets || [1, 2, 3, 6, 12, 24])
-            .map((h) => `<option value="${h}" ${h === sch.everyHours ? "selected" : ""}>${h} h</option>`)
-            .join("");
+        // Primeira opção: sem escolha do admin (vale ECONOMY_ANALYTICS_EVERY_HOURS do .env, ou 1 h)
+        const fromAdmin = sch.from === "admin";
+        econ.every.innerHTML =
+            `<option value="" ${fromAdmin ? "" : "selected"}>padrão do .env (${sch.defaultEveryHours || 1} h)</option>` +
+            (st.presets || [1, 2, 3, 6, 12, 24])
+                .map((h) => `<option value="${h}" ${fromAdmin && h === sch.everyHours ? "selected" : ""}>${h} h</option>`)
+                .join("");
         econ.btnPause.innerHTML = sch.paused
             ? `<i class="fas fa-play-circle"></i> Retomar`
             : `<i class="fas fa-pause"></i> Pausar`;
@@ -816,7 +820,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     econ.btnRefresh.addEventListener("click", () => loadEconPanel());
     econ.btnSchedule.addEventListener("click", () =>
-        econAction(econ.btnSchedule, () => econRequest("/schedule", { everyHours: Number(econ.every.value) }), "Intervalo salvo.")
+        econAction(
+            econ.btnSchedule,
+            () => econRequest("/schedule", econ.every.value === "" ? { useDefault: true } : { everyHours: Number(econ.every.value) }),
+            econ.every.value === "" ? "Intervalo de volta ao padrão do .env." : "Intervalo salvo."
+        )
     );
     econ.btnPause.addEventListener("click", () => {
         const paused = econ.state && econ.state.schedule && econ.state.schedule.paused;
