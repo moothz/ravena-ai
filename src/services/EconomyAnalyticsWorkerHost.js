@@ -3,7 +3,8 @@
  *
  * Lado da thread principal do bot da carga do painel da economia: sobe um worker_threads
  * (EconomyAnalyticsWorker.js) que instancia o EconomyAnalyticsService e roda o agendamento lá dentro, e
- * guarda só um proxy com pedidos por mensagem (estado, rodar agora). Toda leitura de SQLite, cálculo e
+ * guarda só um proxy com pedidos por mensagem (estado, rodar agora, agendamento e anotações, usados
+ * pelas rotas do /banco/admin em BotAPI/routes/economyRoutes.js). Toda leitura de SQLite, cálculo e
  * publicação ficam fora da thread que atende o WhatsApp.
  *
  * - start(): sobe o worker (não segura o processo vivo: unref). Se o worker cair sem stop(), sobe de
@@ -132,6 +133,30 @@ class EconomyAnalyticsWorkerHost {
 
 	runNow() {
 		return this.call("runNow");
+	}
+
+	pause() {
+		return this.call("pause");
+	}
+
+	resume() {
+		return this.call("resume");
+	}
+
+	reschedule(everyHours) {
+		return this.call("reschedule", everyHours);
+	}
+
+	listAnnotations(opts) {
+		return this.call("listAnnotations", opts);
+	}
+
+	addAnnotation(input) {
+		return this.call("addAnnotation", input);
+	}
+
+	decideAnnotation(id, decision, text) {
+		return this.call("decideAnnotation", id, decision, text);
 	}
 
 	/**

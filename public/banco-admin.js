@@ -139,6 +139,7 @@ document.addEventListener("DOMContentLoaded", () => {
             loadTransactions(state.txCurrentPage);
         } else if (tabId === "tab-config") {
             loadConfigData();
+            loadEconPanel();
         }
     }
 
@@ -633,6 +634,230 @@ document.addEventListener("DOMContentLoaded", () => {
             btnRecalculateRates.innerHTML = originalHtml;
             btnRecalculateRates.disabled = false;
         }
+    });
+
+    // 9. Painel da economia (carga do Grafana): estado, agendamento e mudanças
+    const ECON_API = "/api/economy/admin";
+    const econ = {
+        pill: document.getElementById("econ-state-pill"),
+        summary: document.getElementById("econ-summary"),
+        sources: document.getElementById("econ-sources-body"),
+        badge: document.getElementById("econ-schedule-badge"),
+        detail: document.getElementById("econ-schedule-detail"),
+        every: document.getElementById("econ-every"),
+        btnSchedule: document.getElementById("econ-btn-schedule"),
+        btnPause: document.getElementById("econ-btn-pause"),
+        btnRun: document.getElementById("econ-btn-run"),
+        btnRefresh: document.getElementById("econ-btn-refresh"),
+        possible: document.getElementById("econ-possible-body"),
+        possibleCount: document.getElementById("econ-possible-count"),
+        form: document.getElementById("econ-annotation-form"),
+        text: document.getElementById("econ-ann-text"),
+        currency: document.getElementById("econ-ann-currency"),
+        when: document.getElementById("econ-ann-when"),
+        state: null
+    };
+    const ECON_SOURCE_NAMES = {
+        zinthos: "Zinthos",
+        petalitas: "Petalitas",
+        runas: "Runas",
+        "zinthos.players": "Zinthos por jogador",
+        "petalitas.players": "Petalitas por jogador",
+        "runas.players": "Runas por jogador",
+        "zinthos.received": "Zinthos: quem recebe",
+        "petalitas.received": "Petalitas: quem recebe",
+        "runas.received": "Runas: quem recebe",
+        atividade: "Atividade (comandos)"
+    };
+    const CURRENCY_NAMES = { zinthos: "Zinthos", petalitas: "Petalitas", runas: "Runas" };
+
+    function fmtDateTime(ms) {
+        if (!ms) return "—";
+        return new Date(ms).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
+    }
+
+    function fmtHours(ms) {
+        if (ms === null || ms === undefined) return "—";
+        const h = ms / 3600000;
+        return h < 48 ? `${formatPtBr(h, 1)} h` : `${formatPtBr(h / 24, 1)} dias`;
+    }
+
+    async function econRequest(path, body) {
+        const opts = body === undefined
+            ? {}
+            : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+        const res = await fetch(`${ECON_API}${path}`, opts);
+        let json = {};
+        try {
+            json = await res.json();
+        } catch (_) {}
+        if (!res.ok) throw new Error(json.message || `HTTP ${res.status}`);
+        return json;
+    }
+
+    function setPill(cls, text) {
+        econ.pill.className = `econ-pill ${cls}`;
+        econ.pill.textContent = text;
+    }
+
+    function setEconButtons(enabled) {
+        for (const b of [econ.btnSchedule, econ.btnPause, econ.btnRun]) b.disabled = !enabled;
+        for (const el of econ.form.querySelectorAll("button, textarea, select, input")) el.disabled = !enabled;
+    }
+
+    function renderEconStatus(st) {
+        econ.state = st;
+        if (!st.enabled || !st.worker) {
+            setPill("off", st.enabled ? "carga parada" : "desligada");
+            econ.summary.textContent = st.enabled
+                ? "A carga não está rodando neste processo (ex.: DISABLE_ACTIVITY=true)."
+                : "Carga desligada: ECONOMY_ANALYTICS_ENABLED diferente de true no .env.";
+            econ.sources.innerHTML = `<tr><td colspan="4">—</td></tr>`;
+            econ.badge.textContent = "—";
+            econ.detail.textContent = "—";
+            setEconButtons(false);
+            return;
+        }
+        setEconButtons(true);
+        const sch = st.schedule || {};
+        const now = st.now || Date.now();
+        const main = (st.loads || []).filter((l) => (st.sources || []).includes(l.source));
+        const worstLag = main.reduce((m, l) => Math.max(m, l.okTo ? now - l.okTo : Infinity), 0);
+        const hasError = main.some((l) => !l.lastOk);
+        const limit = (sch.everyHours || 1) * 3600000 + 2 * 3600000;
+        if (sch.paused) setPill("warn", "pausada");
+        else if (hasError) setPill("err", "com erro");
+        else if (worstLag > limit) setPill("warn", "atrasada");
+        else setPill("ok", st.running ? "rodando agora" : "em dia");
+        econ.summary.textContent =
+            `${st.running ? `Rodada em andamento desde ${fmtDateTime(st.runningSince)}. ` : ""}` +
+            `Retrato do Grafana publicado em ${fmtDateTime(st.published)}.`;
+        const loads = (st.loads || []).filter((l) => !l.source.endsWith(".reload"));
+        econ.sources.innerHTML = loads.length
+            ? loads
+                  .map((l) => {
+                      const lag = l.okTo ? now - l.okTo : null;
+                      const isMain = (st.sources || []).includes(l.source);
+                      const cls = !l.lastOk ? "err" : isMain && lag > limit ? "warn" : "ok";
+                      const err = l.lastOk ? "" : `<div class="econ-muted" style="color: var(--accent-red);">${escapeHtml(l.lastError || "erro")}</div>`;
+                      return `<tr>
+                        <td>${escapeHtml(ECON_SOURCE_NAMES[l.source] || l.source)}</td>
+                        <td>${fmtDateTime(l.okTo)}</td>
+                        <td>${isMain ? fmtHours(lag) : "—"}</td>
+                        <td><span class="econ-pill ${cls}">${l.lastOk ? "ok" : "erro"}</span> ${fmtDateTime(l.lastTs)}${err}</td>
+                      </tr>`;
+                  })
+                  .join("")
+            : `<tr><td colspan="4">Nenhuma carga ainda.</td></tr>`;
+        econ.badge.textContent = sch.paused ? "pausada" : `a cada ${sch.everyHours} h`;
+        econ.detail.textContent =
+            `cron ${sch.cron} (minuto 5)` +
+            ` · definido por ${sch.from === "admin" ? "este painel" : sch.from === "env" ? "ECONOMY_ANALYTICS_EVERY_HOURS" : "padrão"}` +
+            `${sch.updatedAt ? ` em ${fmtDateTime(sch.updatedAt)}` : ""}.` +
+            `${sch.paused ? " Pausada: nada roda sozinho; \"Rodar agora\" continua valendo." : ""}`;
+        econ.every.innerHTML = (st.presets || [1, 2, 3, 6, 12, 24])
+            .map((h) => `<option value="${h}" ${h === sch.everyHours ? "selected" : ""}>${h} h</option>`)
+            .join("");
+        econ.btnPause.innerHTML = sch.paused
+            ? `<i class="fas fa-play-circle"></i> Retomar`
+            : `<i class="fas fa-pause"></i> Pausar`;
+    }
+
+    function renderPossible(list) {
+        econ.possibleCount.textContent = String(list.length);
+        econ.possible.innerHTML = list.length
+            ? list
+                  .map(
+                      (a) => `<tr>
+                        <td>${new Date(a.ts).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                        <td>${escapeHtml(CURRENCY_NAMES[a.currency] || "Todas")}</td>
+                        <td>${escapeHtml(a.label)}</td>
+                        <td style="white-space: nowrap;">
+                          <button type="button" class="econ-btn confirm" data-econ-decide="confirmada" data-id="${a.id}" title="Confirmar (pode trocar o texto)"><i class="fas fa-check"></i></button>
+                          <button type="button" class="econ-btn discard" data-econ-decide="descartada" data-id="${a.id}" title="Descartar"><i class="fas fa-times"></i></button>
+                        </td>
+                      </tr>`
+                  )
+                  .join("")
+            : `<tr><td colspan="4">Nada a decidir.</td></tr>`;
+    }
+
+    async function loadEconPanel() {
+        try {
+            const st = await econRequest("/status");
+            renderEconStatus(st);
+            if (st.enabled && st.worker) {
+                const r = await econRequest("/annotations?possiveis=1");
+                renderPossible(r.annotations || []);
+            } else {
+                renderPossible([]);
+            }
+        } catch (err) {
+            setPill("err", "erro");
+            econ.summary.textContent = `Falha ao consultar a carga: ${err.message}`;
+        }
+    }
+
+    async function econAction(button, fn, okMessage) {
+        const original = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = `<i class="fas fa-spinner fa-spin"></i>`;
+        try {
+            await fn();
+            if (okMessage) showToast(okMessage, "success");
+        } catch (err) {
+            showToast(err.message, "error");
+        } finally {
+            button.innerHTML = original;
+            button.disabled = false;
+            await loadEconPanel();
+        }
+    }
+
+    econ.btnRefresh.addEventListener("click", () => loadEconPanel());
+    econ.btnSchedule.addEventListener("click", () =>
+        econAction(econ.btnSchedule, () => econRequest("/schedule", { everyHours: Number(econ.every.value) }), "Intervalo salvo.")
+    );
+    econ.btnPause.addEventListener("click", () => {
+        const paused = econ.state && econ.state.schedule && econ.state.schedule.paused;
+        econAction(econ.btnPause, () => econRequest(paused ? "/resume" : "/pause", {}), paused ? "Carga retomada." : "Carga pausada.");
+    });
+    econ.btnRun.addEventListener("click", () =>
+        econAction(
+            econ.btnRun,
+            async () => {
+                const r = await econRequest("/run", {});
+                if (!r.started) showToast("Já há uma rodada em andamento.", "info");
+            },
+            "Rodada iniciada; o estado atualiza ao terminar."
+        )
+    );
+    econ.possible.addEventListener("click", (e) => {
+        const btn = e.target.closest("[data-econ-decide]");
+        if (!btn) return;
+        const decision = btn.dataset.econDecide;
+        let texto = null;
+        if (decision === "confirmada") {
+            texto = prompt("Texto da mudança (deixe como está ou explique o porquê):", btn.closest("tr").children[2].textContent);
+            if (texto === null) return;
+        } else if (!confirm("Descartar esta possível mudança? Ela some do painel, mas fica registrada.")) {
+            return;
+        }
+        econAction(btn, () => econRequest("/annotations/decide", { id: Number(btn.dataset.id), decision, texto }), decision === "confirmada" ? "Mudança confirmada." : "Possível mudança descartada.");
+    });
+    econ.form.addEventListener("submit", (e) => {
+        e.preventDefault();
+        const submit = econ.form.querySelector("button[type=submit]");
+        const hora = econ.when.value ? new Date(econ.when.value).toISOString() : null;
+        econAction(
+            submit,
+            async () => {
+                await econRequest("/annotations", { texto: econ.text.value, moeda: econ.currency.value, hora });
+                econ.text.value = "";
+                econ.when.value = "";
+            },
+            "Mudança registrada."
+        );
     });
 
     // ==========================================

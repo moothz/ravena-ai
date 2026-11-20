@@ -372,7 +372,14 @@ async function main() {
 
 		// Carga horária do painel da economia (analytics.db, minuto 5), num worker_threads próprio para
 		// não pesar na thread do bot. Ver OBSERVABILITY.md
-		if (!disableActivity && process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
+		// ECONOMY_ANALYTICS_RUN_WITH_DISABLE_ACTIVITY=true liga mesmo com DISABLE_ACTIVITY=true: só para
+		// instância de demonstração/teste com bancos próprios (a carga só lê os SQLites do bot)
+		const economyWithoutActivity =
+			process.env.ECONOMY_ANALYTICS_RUN_WITH_DISABLE_ACTIVITY === "true";
+		if (
+			(!disableActivity || economyWithoutActivity) &&
+			process.env.ECONOMY_ANALYTICS_ENABLED === "true"
+		) {
 			require("./src/services/EconomyAnalyticsWorkerHost").getInstance().start();
 		}
 

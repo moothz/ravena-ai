@@ -26,7 +26,13 @@ const svc = new EconomyAnalyticsService({ ...((workerData && workerData.opts) ||
 /** Operações que a thread principal pode pedir (lista fechada). */
 const OPS = {
 	status: () => svc.status(),
-	runNow: () => svc.runNow()
+	runNow: () => svc.runNow(),
+	pause: () => svc.pause(),
+	resume: () => svc.resume(),
+	reschedule: (everyHours) => svc.reschedule(everyHours),
+	listAnnotations: (opts) => svc.listAnnotations(opts),
+	addAnnotation: (input) => svc.addManualAnnotation(input),
+	decideAnnotation: (id, decision, text) => svc.decideAnnotation(id, decision, text)
 };
 
 let stopping = false;

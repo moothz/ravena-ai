@@ -54,6 +54,7 @@ const { registerWebhooksRoutes } = require("./BotAPI/routes/webhooksRoutes");
 const { registerFeaturesRoutes } = require("./BotAPI/routes/featuresRoutes");
 const { registerGamesRoutes } = require("./BotAPI/routes/gamesRoutes");
 const registerEventsRoutes = require("./BotAPI/routes/eventsRoutes");
+const { registerEconomyRoutes } = require("./BotAPI/routes/economyRoutes");
 
 /**
  * Servidor API para o ecossistema do bot WhatsApp Ravena
@@ -71,6 +72,7 @@ const registerEventsRoutes = require("./BotAPI/routes/eventsRoutes");
  * - src/BotAPI/routes/webhooksRoutes.js: Webhooks de doação (Tipa.ai), telemetria UPS e Copa
  * - src/BotAPI/routes/featuresRoutes.js: Jogos e coleções (Pesca, Waifuletes e API de Analytics)
  * - src/BotAPI/routes/gamesRoutes.js: Integração de minigames com serviços externos (webhook de colheita do Jardim)
+ * - src/BotAPI/routes/economyRoutes.js: Admin da carga do painel da economia (estado, agendamento, anotações)
  */
 class BotAPI {
 	/**
@@ -346,6 +348,7 @@ class BotAPI {
 		registerFeaturesRoutes(this);
 		registerGamesRoutes(this);
 		registerEventsRoutes(this);
+		registerEconomyRoutes(this);
 
 		// Middleware global de tratamento de erros para rotas da API
 		this.app.use((err, req, res, next) => {
