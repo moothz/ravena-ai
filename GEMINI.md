@@ -91,17 +91,22 @@ Todo comando, rota, serviço ou fluxo novo (ou alterado) deve sair instrumentado
 - **Documentação:** acrescente o span novo na tabela "Spans de negócio" do `OBSERVABILITY.md`.
 - **Validar:** com `OTEL_EXPORTER_OTLP_ENDPOINT` ligado localmente, gere tráfego (`src/testing/otel_traffic.js` ou FakeBot) e confira o span no Jaeger (`http://localhost:16686`).
 
-## Mudanças de balanceamento da economia: registrar depois do deploy (OBRIGATÓRIO)
-O painel da economia (Grafana, aba **Mudanças**) compara os 7 dias antes e depois de cada mudança. Para isso, toda mudança que altere quanto de Runas (ou, por comando da ravena, Zinthos e Petalitas) entra ou sai precisa estar registrada **no instante em que passou a valer em produção**.
-- **O que conta:** recompensa, preço, taxa, limite diário, chance, cotação, multiplicador, cooldown que limita ganho, evento com prêmio, compensação, give-all e script retroativo que credita ou debita moeda.
-- **Prefira constante a número solto no código.** Nas Runas, os valores de câmbio, cotas e loja ficam no `BankService` e saem em `getEconomyParams()`; valor novo de economia deve entrar ali. Constante que está na rota `GET /internal/economy/params` é registrada sozinha pela ravena no deploy, com o valor antigo e o novo. Constante nova nos arquivos cobertos precisa entrar na rota ou na lista de ignoradas, ou o teste de guarda falha.
-- **Registre depois do deploy, nunca no commit nem na abertura do PR.** O commit pode levar dias para ir ao ar, e a ficha mediria a semana errada.
-- **No PR**, inclua uma seção "Registro pós-deploy" com o comando pronto para quem fizer o deploy:
-  `docker exec ravena-ai node scripts/economy-annotate.js "<o que mudou e por quê>" <zinthos|petalitas|runas|todas> [hora ISO do deploy]`
-  Sem a hora, o registro vale para agora. Se o deploy já aconteceu, passe a hora dele.
-- **Se você fizer ou acompanhar o deploy**, rode o comando assim que a versão nova estiver no ar. Antes, confira com `docker exec ravena-ai node scripts/economy-annotate.js --listar` se a mudança já entrou como automática. Se entrou, não registre de novo: o porquê fica no PR.
-- **Script retroativo, compensação ou give-all:** registre depois da execução, com a hora em que rodou.
-- **Possíveis mudanças** (marca âmbar, detectadas nos dados): decida com `--confirmar <ts> "texto"` ou `--descartar <ts> "texto"` (o `ts` sai do `--listar`).
+## Mudanças de balanceamento da economia: registro depois do deploy (OBRIGATÓRIO)
+O painel da economia (Grafana, aba **Mudanças**) compara os 7 dias antes e depois de cada mudança. Para isso, toda mudança que altere quanto de Runas (ou, por comando da ravena, Zinthos e Petalitas) entra ou sai precisa estar registrada **na hora em que passou a valer em produção**, nunca na hora do commit ou do PR.
+
+**O que conta:** recompensa, preço, taxa, limite diário, chance, cotação, multiplicador, cooldown que limita ganho, evento com prêmio, compensação, give-all e script que credita ou debita moeda. Refatoração, renomeação e mudança sem efeito em valores não contam.
+
+**1. No PR (é o que um agente faz):** inclua uma seção "Registro pós-deploy" dizendo qual caso abaixo se aplica e, no caso B, o comando pronto. Sem impacto na economia, escreva "Registro pós-deploy: não se aplica". O agente **nunca** executa o registro (nem `economy-annotate.js` nem o admin): quem faz o deploy ou roda o script registra, depois que a mudança estiver valendo.
+
+**2. Caso A: o valor está numa constante exposta na rota `GET /internal/economy/params`.** Nas Runas, os valores de câmbio, cotas e loja ficam em `src/services/economyConstants.js` e saem em `BankService.getEconomyParams()`; a guarda fica em `src/testing/test_economy_analytics.js`. Para saber se é o caso A, procure o nome da constante em `src/services/economyConstants.js` (Runas) ou em `api/src/utils/economyParams.ts` do waifuletes e do Jardim (Zinthos e Petalitas); se não estiver lá, é o caso B. A ravena registra sozinha, na primeira carga depois do deploy, com o valor antigo e o novo, e a anotação já nasce valendo (não precisa confirmar). **Não registre à mão:** daria uma ficha duplicada. No PR, peça a quem fizer o deploy que confira depois da próxima carga se a anotação automática apareceu. Constante nova nos arquivos cobertos precisa entrar na rota ou na lista de ignoradas com o motivo, ou o teste de guarda falha.
+
+**3. Caso B: número solto no código, evento, compensação, give-all ou script.** Não é detectado sozinho. Quem fizer o deploy (ou rodar o script) registra assim que a mudança estiver valendo:
+- `docker exec ravena-ai node scripts/economy-annotate.js "<o que mudou e por quê>" <moeda> [hora]`, ou o cartão "Painel da economia" do admin do RavenaBank (`/banco/admin` → Configurações & Economia), se a ravena tiver esse cartão.
+- `<moeda>`: a moeda cujo fluxo muda (`zinthos`, `petalitas` ou `runas`); se mudar mais de uma, `todas`.
+- `[hora]`: sem ela, vale agora (deploy). Para evento ou script, passe o início real do efeito em ISO com fuso, ex.: `2026-11-21T14:30:00-03:00`.
+Melhor ainda: transforme o número solto em constante exposta na rota (vira caso A e se registra sozinho). Ao expor constante nova, atualize a documentação da rota; a ravena aceita chave nova sem quebrar e não a trata como mudança.
+
+**4. Conferir e decidir (quem faz o deploy):** `docker exec ravena-ai node scripts/economy-annotate.js --listar` (ou o cartão no admin) mostra as anotações com um id. Só as **possíveis mudanças** (marca cinza nos gráficos e a tabela "Possíveis mudanças a decidir" na aba Mudanças, detectadas nos dados) precisam de decisão: `--confirmar <id> ["texto com o porquê"]` ou `--descartar <id>`.
 
 ## Harness de Testes e Mocks (`src/testing/`)
 O projeto conta com uma infraestrutura própria para testes em `src/testing/`, permitindo testar comandos e regras do `EventHandler` sem abrir conexões reais de rede:
