@@ -16,6 +16,11 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else REPO
 # Mudanças automáticas (rota /internal/economy/params, detecção de possíveis mudanças, --listar/--confirmar/--descartar):
 # o texto e a anotação que dependem delas só entram quando o repo tem o serviço.
 AUTO = os.path.exists(os.path.join(REPO, "src/services/EconomyAnalyticsChanges.js"))
+# Admin da carga no /banco/admin da ravena (agendar, pausar, rodar agora, registrar e decidir mudanças): só com a rota.
+# O endereço da ravena não é o do Grafana, por isso vai como texto (descrição), não como link relativo.
+ADMIN = os.path.exists(os.path.join(REPO, "src/BotAPI/routes/economyRoutes.js"))
+ADMIN_NOTE = (" Para pausar, mudar o intervalo ou rodar a carga agora: admin do RavenaBank na ravena (/banco/admin → Configurações "
+              "& Economia → Painel da economia)." if ADMIN else "")
 
 DS = {"type": "frser-sqlite-datasource", "uid": "economia-sqlite"}
 TO = "$__to"
@@ -193,7 +198,7 @@ FROM cur ORDER BY cur.ordem
     desc="Até que hora cheia cada fonte está carregada. A carga roda no minuto 5, então o atraso normal fica entre ~0,1 e ~1,1 h; "
          f"acima de {LATE_H} h a carga está falhando (ver Último erro, vazio quando a última carga deu certo). "
          "Motivos sem mapear: motivos do extrato que a ravena ainda não sabe classificar (Diagnóstico mostra quais). "
-         "Petalitas: o Jardim ainda não tem extrato, só o saldo." + PROV,
+         "Petalitas: o Jardim ainda não tem extrato, só o saldo." + PROV + ADMIN_NOTE,
     time_cols=["Dados até"], defaults={"noValue": "—"},
     overrides=when("Dados até") + [by_name("Dados até", ("noValue", "nunca")), by_name("Atraso (h)", ("decimals", 1)),
                cell("Atraso (h)", steps((None, OKC), (LATE_H, CRIT)), "color-text"),
@@ -316,7 +321,7 @@ FROM v WHERE currency IN ({MS}) ORDER BY ordem
          "(mesmo limite do alerta; com a carga pausada, nunca; ver Diagnóstico → Confiança). Carga = agendamento atual (a cada N h ou pausada). "
          "Dobra em = semanas para a massa dobrar no ritmo desta semana (ln 2 / ln(1+g)); só aparece com crescimento de pelo menos 0,5% "
          "por semana e até 104 semanas. Sem origem = Δ massa − Σ(entradas − saídas) do extrato: positivo apareceu sem linha no extrato, "
-         "negativo sumiu; mostra o critério pior, os dois valores e a maior fonte ficam em colunas ocultas (Inspecionar → Dados)." + PROV,
+         "negativo sumiu; mostra o critério pior, os dois valores e a maior fonte ficam em colunas ocultas (Inspecionar → Dados)." + PROV + ADMIN_NOTE,
     defaults={"noValue": "—"},
     overrides=[
         by_name("Situação", ("mappings", SIT_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 230)),
@@ -772,7 +777,8 @@ ORDER BY ts DESC LIMIT 50
 """, 0, 13, 24, 8,
         desc="Detectadas nos dados (motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro), ainda "
              "sem decisão: não entram nas fichas nem nas Últimas mudanças. Aparecem como marca cinza nos gráficos (Possíveis mudanças). "
-             "Decidir: docker exec ravena-ai node scripts/economy-annotate.js --confirmar <Id> [\"texto novo\"] ou --descartar <Id>.",
+             "Decidir: docker exec ravena-ai node scripts/economy-annotate.js --confirmar <Id> [\"texto novo\"] ou --descartar <Id>"
+             + (", ou no admin do RavenaBank (/banco/admin → Configurações & Economia → Painel da economia)." if ADMIN else "."),
         time_cols=["Quando"], defaults={"noValue": "nenhuma possível mudança a decidir"},
         overrides=when("Quando") + [by_name("Id", ("custom.width", 70)), by_name("Quando", ("custom.width", 95)),
                                     by_name("Moeda", ("custom.width", 90)), by_name("O que pode ter mudado", ("custom.width", 700))],
@@ -783,7 +789,9 @@ mud_p.append(panel("text", "Como registrar e ler", "", 0, 21 if AUTO else 19, 24
      "elas ficam na tabela acima até alguém decidir: `docker exec ravena-ai node scripts/economy-annotate.js --confirmar <id> [\"texto novo\"]` "
      "(entra nas fichas) ou `--descartar <id>` (some), com o Id da tabela (ou do `--listar --possiveis`). **Manuais**: " if AUTO else "**Registrar**: ")
     + "`docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" "
-    "[zinthos|petalitas|runas|todas] [data ISO]`.\n\n"
+    "[zinthos|petalitas|runas|todas] [data ISO]`"
+    + (" ou o cartão Painel da economia no admin do RavenaBank (`/banco/admin` da ravena → Configurações & Economia), que também "
+       "decide as possíveis e agenda, pausa ou roda a carga" if ADMIN else "") + ".\n\n"
     "Leitura antes/depois, não causal. Até 1 dia depois a linha fica \"cedo demais\"; até 7 dias, \"acompanhando\" e os números ainda mudam.")}}))
 
 # ============================================================================ Ciclo da alma gêmea (recolhido)
