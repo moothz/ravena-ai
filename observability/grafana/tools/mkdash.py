@@ -313,8 +313,13 @@ m AS (
     (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + {WEEK}) AS des_d_tot,
     (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,
     (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + {WEEK} ORDER BY b.ts DESC LIMIT 1) AS massa_dep,
-    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts - {WEEK} AND d.day < a.ts) / 7.0 AS jog_a,
-    (SELECT COUNT(DISTINCT player_id) FROM player_daily d WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + {WEEK}) AS jog_d_tot
+    {AVAIL.format(c="a.c")} AS avail,
+    -- jogadores/dia = média dos distintos de cada dia (o "depois" só com dias inteiros já carregados)
+    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d
+       WHERE d.currency = a.c AND d.day >= a.ts - {WEEK} AND d.day < a.ts GROUP BY d.day)) AS jog_a,
+    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d
+       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + {WEEK} AND d.day + 86400000 <= COALESCE({LAST_H}, 0)
+       GROUP BY d.day)) AS jog_d
   FROM a
 ),
 rm AS (
@@ -330,7 +335,9 @@ top AS (
   GROUP BY id
 ),
 r AS (
-  SELECT m.*, CASE WHEN dias >= 1 THEN cri_d_tot / dias END AS cri_d, CASE WHEN dias >= 1 THEN des_d_tot / dias END AS des_d,
+  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato
+  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,
+    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,
     noise.ruido, noise.semanas, top.motivos
   FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id
 ),
@@ -341,7 +348,9 @@ rs AS (
       {"|| CASE WHEN origin = 'possivel' THEN ' · confirmar?' ELSE '' END " if AUTO else ""}AS situacao
   FROM r
 )"""
+# Δ só ganha ▲▼ (e cor) com a ficha fechada (7 dias); antes disso, texto neutro "parcial"
 DCRI_TXT = """CASE WHEN dcri IS NULL THEN '—'
+    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)
     WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)
     WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%)', dcri, ruido)
     ELSE printf('dentro do normal: %+.1f%% (±%.0f%%)', dcri, ruido) END"""
@@ -538,7 +547,7 @@ SELECT ts / 1000 AS "Quando", {ORIGIN_COL}{CUR_NAME} || CASE WHEN currency IS NU
   ROUND(cri_a) AS "Criado/dia antes", ROUND(cri_d) AS "Criado/dia depois", {DCRI_TXT} AS "Criado/dia: Δ",
   ROUND(des_a) AS "Destruído/dia antes", ROUND(des_d) AS "Destruído/dia depois",
   ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS "Massa: Δ em 7 dias (%)",
-  ROUND(jog_a, 1) AS "Jogadores/dia antes", CASE WHEN dias >= 1 THEN ROUND(jog_d_tot / dias, 1) END AS "Jogadores/dia depois",
+  ROUND(jog_a, 1) AS "Jogadores/dia antes", ROUND(jog_d, 1) AS "Jogadores/dia depois",
   COALESCE(motivos, '—') AS "Motivos que mais mudaram", semanas AS "Semanas no normal"
 FROM rs ORDER BY ts DESC
 """, 0, 2, 24, 12, desc=MUD_DESC + " Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois.",

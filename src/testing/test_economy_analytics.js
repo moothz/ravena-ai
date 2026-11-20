@@ -1675,8 +1675,8 @@ async function main() {
 			assert.strictEqual(auto["Situação"], "acompanhando (2 de 7 dias)");
 			assert.strictEqual(auto["Criado/dia antes"], 110); // 770 / 7
 			// depois: 1050 em 2,04 dias (última hora carregada = T + 2 d + 2 h + 1 h)
-			// normal = média de |Δ%| entre semanas seguidas (770/630 alternados ≈ 20%)
-			assert.match(auto["Criado/dia: Δ"], /^▲ \+\d+\.\d% \(normal ±20%\)$/);
+			// ficha ainda aberta: Δ parcial, sem ▲▼ nem cor
+			assert.match(auto["Criado/dia: Δ"], /^parcial: \+\d+\.\d%$/);
 			assert.match(auto["Motivos que mais mudaram"], /Divórcio \+\d+\/dia/);
 			assert.ok(auto["Semanas no normal"] >= 7);
 			if (AUTO_CHANGES) {
@@ -1686,6 +1686,42 @@ async function main() {
 				assert.strictEqual(poss.Origem, undefined);
 				assert.strictEqual(poss["Situação"], "cedo demais (< 1 dia)");
 			}
+			// Ficha fechada: recurso desligado depois da mudança (nenhuma linha de criação) → criado 0, ▼ −100%;
+			// normal = média de |Δ%| entre semanas seguidas (770/630 alternados ≈ 20%).
+			// Jogadores/dia = média dos distintos de cada dia (2 e 1 → 1,5), não distintos da semana ÷ 7.
+			const { file: f4, db: db4 } = freshDb("mudancas-fechada.db");
+			const fl4 = db4.prepare("INSERT INTO flows_hourly VALUES (?, 'zinthos', ?, ?, ?, ?, 1, 1)");
+			for (let w = 1; w <= 9; w++) {
+				fl4.run(T - w * 7 * D + H, "DAILY_REWARD", "creation", w % 2 ? 770 : 630, 0);
+			}
+			const pd4 = db4.prepare(
+				"INSERT INTO player_daily VALUES (?, 'zinthos', ?, 'DAILY_REWARD', 'creation', 1, 0, 1)"
+			);
+			pd4.run(T - 2 * D, "A");
+			pd4.run(T - 2 * D, "B");
+			pd4.run(T - D, "A");
+			pd4.run(T + D, "A");
+			db4.prepare("INSERT INTO ledger_status VALUES ('zinthos', 1, 0)").run();
+			db4
+				.prepare(
+					"INSERT INTO load_runs (ts, source, ok, window_from, window_to, rows) VALUES (1, 'zinthos', 1, 0, ?, 1)"
+				)
+				.run(T + 10 * D);
+			db4
+				.prepare(
+					"INSERT INTO annotations (ts, currency, label) VALUES (?, 'zinthos', 'desligou o diário')"
+				)
+				.run(T);
+			db4.close();
+			const [fech] = readAll(
+				f4,
+				dashboardSql("Ficha de antes e depois (últimas 20)", { from: 0, to: T + 30 * D })
+			);
+			assert.strictEqual(fech["Situação"], "fechada");
+			assert.strictEqual(fech["Criado/dia depois"], 0);
+			assert.strictEqual(fech["Criado/dia: Δ"], "▼ -100.0% (normal ±20%)");
+			assert.strictEqual(fech["Jogadores/dia antes"], 1.5);
+			assert.strictEqual(fech["Jogadores/dia depois"], 1);
 			// Moeda sem extrato (Petalitas): o "depois" avança pela carga registrada, não fica "cedo demais"
 			const { file: f3, db: db3 } = freshDb("mudancas-pet.db");
 			db3
@@ -2054,7 +2090,8 @@ async function main() {
 							"des_d",
 							"des_d_tot",
 							"jog_a",
-							"jog_d_tot",
+							"jog_d",
+							"n",
 							"massa_na",
 							"massa_dep",
 							"id",
