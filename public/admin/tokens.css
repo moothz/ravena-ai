@@ -66,7 +66,8 @@
 	/* Alturas. */
 	--topbar-h: 2.75rem;
 	--control-h: 1.75rem;
-	--touch-min: 2.5rem; /* alvo mínimo de toque no celular (40px) */
+	--touch-min: 2.75rem; /* alvo mínimo de toque no celular (44px, WCAG 2.5.5 / Apple HIG) */
+	--bottombar-h: 3.5rem; /* barra inferior do celular, sem a área segura */
 }
 
 :root[data-theme="light"] {

@@ -51,7 +51,8 @@
 		dossies: "M4 2.5h6l2.5 2.5v8.5H4zM10 2.5V5h2.5M6 8h4.5M6 10.5h4.5",
 		legado: "M6.5 3H3v10h10V9.5M9 3h4v4M13 3 7.5 8.5",
 		externo: "M6.5 3H3v10h10V9.5M9 3h4v4M13 3 7.5 8.5",
-		recarregar: "M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5h-2.5"
+		recarregar: "M13 8a5 5 0 1 1-1.5-3.5M13 3v2.5h-2.5",
+		mais: "M3.5 8h.01M8 8h.01M12.5 8h.01"
 	};
 
 	function icon(name) {
@@ -288,13 +289,13 @@
 						}
 					},
 					icon("recarregar"),
-					"Recarregar"
+					h("span", { class: "btn-label", text: "Recarregar" })
 				),
 				h(
 					"a",
 					{ class: "btn", href: src, target: "_blank", rel: "noopener" },
 					icon("externo"),
-					"Abrir em nova aba"
+					h("span", { class: "btn-label", text: "Abrir em nova aba" })
 				)
 			),
 			frame
@@ -453,12 +454,19 @@
 				href: "#/instancias"
 			});
 		}
-		for (const [k] of svcDown) {
+		// Mais de 3 serviços fora viram uma linha só (no celular, 8 linhas iguais empurram o resto).
+		const svcName = ([k]) => SERVICE_NAMES[k] || k;
+		if (svcDown.length > 3) {
 			needs.push({
 				state: "down",
-				what: `${SERVICE_NAMES[k] || k} fora do ar`,
+				what: `${svcDown.length} de ${services.length} serviços fora do ar`,
+				detail: svcDown.map(svcName).join(", "),
 				href: "#/provedores"
 			});
+		} else {
+			for (const entry of svcDown) {
+				needs.push({ state: "down", what: `${svcName(entry)} fora do ar`, href: "#/provedores" });
+			}
 		}
 		if (llmFailing(llm)) {
 			needs.push({
@@ -476,12 +484,17 @@
 				href: "#/eventos"
 			});
 		}
-		for (const [k] of svcUnknown) {
+		if (svcUnknown.length > 3) {
 			needs.push({
 				state: "off",
-				what: `${SERVICE_NAMES[k] || k}: sem dado`,
+				what: `${svcUnknown.length} serviços sem dado`,
+				detail: svcUnknown.map(svcName).join(", "),
 				href: "#/provedores"
 			});
+		} else {
+			for (const entry of svcUnknown) {
+				needs.push({ state: "off", what: `${svcName(entry)}: sem dado`, href: "#/provedores" });
+			}
 		}
 
 		const errors = [d.botsError, d.servicesError, d.eventsError].filter(Boolean);
@@ -932,6 +945,72 @@
 		}
 	}
 
+	/* ── Barra inferior (celular) ─────────────────────────────────── */
+
+	/** As áreas do uso no celular (caiu? reinicia, olha o log, banco); o resto fica em "Mais". */
+	const PRIMARY_AREAS = ["geral", "instancias", "logs", "banco"];
+	const SHORT_TITLE = { geral: "Geral" };
+
+	function buildBottomNav() {
+		const sheet = document.getElementById("more-sheet");
+		const bar = h(
+			"nav",
+			{ class: "bottombar", id: "bottombar", "aria-label": "Áreas principais" },
+			PRIMARY_AREAS.map((id) => {
+				const a = AREAS.find((x) => x.id === id);
+				return h(
+					"a",
+					{ class: "bottom-item", href: `#/${a.id}`, "data-area": a.id },
+					icon(a.id),
+					h("span", { class: "bottom-text", text: SHORT_TITLE[a.id] || a.title }),
+					h("span", { class: "bottom-badge", hidden: true })
+				);
+			}),
+			h(
+				"button",
+				{
+					type: "button",
+					class: "bottom-item",
+					id: "more-open",
+					"aria-haspopup": "dialog",
+					"aria-controls": "more-sheet",
+					onclick: () => sheet.showModal()
+				},
+				icon("mais"),
+				h("span", { class: "bottom-text", text: "Mais" })
+			)
+		);
+		document.body.append(bar);
+
+		const others = AREAS.filter((a) => !PRIMARY_AREAS.includes(a.id));
+		sheet
+			.querySelector(".sheet-areas")
+			.append(
+				...others.map((a) =>
+					h(
+						"li",
+						null,
+						h(
+							"a",
+							{ class: "sheet-item", href: `#/${a.id}`, "data-area": a.id },
+							icon(a.id),
+							h("span", { text: a.title }),
+							a.tabs.every((t) => t.embed) ? h("span", { class: "nav-meta", text: "antiga" }) : null
+						)
+					)
+				)
+			);
+		// Escolheu uma área ou tocou fora da folha: fecha.
+		sheet.addEventListener("click", (ev) => {
+			if (
+				ev.target === sheet ||
+				(ev.target instanceof Element && ev.target.closest("a[href^='#/']"))
+			) {
+				sheet.close();
+			}
+		});
+	}
+
 	/* ── Abas compactas (padrão de tablist com setas) ─────────────── */
 
 	function buildTabs(area, activeTab) {
@@ -1005,13 +1084,20 @@
 			this.cleanup = null;
 			this.areaId = area.id;
 
-			document.querySelectorAll(".nav-item").forEach((a) => {
+			document.body.dataset.view = tab.embed ? "embed" : area.id;
+			document.querySelectorAll(".nav-item, .bottom-item[data-area], .sheet-item").forEach((a) => {
 				if (a.dataset.area === area.id) {
 					a.setAttribute("aria-current", "page");
-					a.scrollIntoView({ block: "nearest", inline: "nearest" });
+					if (a.classList.contains("nav-item"))
+						a.scrollIntoView({ block: "nearest", inline: "nearest" });
 				} else a.removeAttribute("aria-current");
 			});
 			document.title = `${area.title} · Ravena Admin`;
+			const more = document.getElementById("more-open");
+			if (more) {
+				if (PRIMARY_AREAS.includes(area.id)) more.removeAttribute("aria-current");
+				else more.setAttribute("aria-current", "page");
+			}
 
 			const main = document.getElementById("main");
 			const multi = area.tabs.length > 1;
@@ -1094,6 +1180,12 @@
 		if (d.bots) {
 			const bots = d.bots.filter((b) => b.enabled !== false);
 			const off = bots.filter((b) => !b.connected).length;
+			const badge = document.querySelector('.bottom-item[data-area="instancias"] .bottom-badge');
+			if (badge) {
+				badge.hidden = !off;
+				badge.textContent = off ? fmt(off) : "";
+				badge.setAttribute("aria-label", off ? `${off} fora` : "");
+			}
 			parts.push(
 				off
 					? summaryItem(
@@ -1152,8 +1244,10 @@
 		document.querySelectorAll("[data-theme-choice]").forEach((b) => {
 			b.setAttribute("aria-pressed", String(b.dataset.themeChoice === theme));
 		});
-		const cycle = document.getElementById("theme-cycle");
-		if (cycle) cycle.textContent = `Tema: ${THEME_LABEL[theme]}`;
+		for (const id of ["theme-cycle", "theme-cycle-sheet"]) {
+			const cycle = document.getElementById(id);
+			if (cycle) cycle.textContent = `Tema: ${THEME_LABEL[theme]}`;
+		}
 		if (!save) return;
 		try {
 			if (theme === "auto") localStorage.removeItem(THEME_KEY);
@@ -1177,9 +1271,14 @@
 			const btn = ev.target.closest("[data-theme-choice]");
 			if (btn) applyTheme(btn.dataset.themeChoice);
 		});
-		document.getElementById("theme-cycle").addEventListener("click", () => {
-			applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]);
-		});
+		for (const id of ["theme-cycle", "theme-cycle-sheet"]) {
+			const btn = document.getElementById(id);
+			if (btn) {
+				btn.addEventListener("click", () => {
+					applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]);
+				});
+			}
+		}
 	}
 
 	/* ── Início ─────────────────────────────────────────────────── */
@@ -1196,6 +1295,7 @@
 
 	initTheme();
 	buildSidebar();
+	buildBottomNav();
 	router.render();
 	startSummary();
 })();

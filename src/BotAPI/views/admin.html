@@ -2,7 +2,7 @@
 <html lang="pt-BR">
 	<head>
 		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 		<meta name="robots" content="noindex, nofollow" />
 		<title>Ravena Admin</title>
 		<link rel="icon" href="/favicon-32x32.png" type="image/png" />
@@ -61,6 +61,19 @@
 			<nav class="sidebar" id="sidebar" aria-label="Áreas do painel"></nav>
 			<main class="main" id="main" tabindex="-1"></main>
 		</div>
+
+		<!-- Celular: as áreas fora da barra inferior, o tema e o Sair. -->
+		<dialog class="sheet" id="more-sheet" aria-labelledby="more-title">
+			<div class="sheet-body">
+				<p class="label" id="more-title">Mais áreas</p>
+				<ul class="sheet-areas"></ul>
+				<div class="sheet-actions">
+					<button type="button" class="btn" id="theme-cycle-sheet">Tema: Auto</button>
+					<a class="btn" href="/logout">Sair</a>
+					<form method="dialog"><button class="btn btn-quiet" type="submit">Fechar</button></form>
+				</div>
+			</div>
+		</dialog>
 
 		<script src="/admin/admin.js?v=1"></script>
 	</body>
