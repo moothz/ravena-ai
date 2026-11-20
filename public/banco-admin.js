@@ -741,10 +741,10 @@ document.addEventListener("DOMContentLoaded", () => {
                       const cls = !l.lastOk ? "err" : isMain && lag > limit ? "warn" : "ok";
                       const err = l.lastOk ? "" : `<div class="econ-muted" style="color: var(--accent-red);">${escapeHtml(l.lastError || "erro")}</div>`;
                       return `<tr>
-                        <td>${escapeHtml(ECON_SOURCE_NAMES[l.source] || l.source)}</td>
-                        <td>${fmtDateTime(l.okTo)}</td>
-                        <td>${isMain ? fmtHours(lag) : "—"}</td>
-                        <td><span class="econ-pill ${cls}">${l.lastOk ? "ok" : "erro"}</span> ${fmtDateTime(l.lastTs)}${err}</td>
+                        <td class="econ-title">${escapeHtml(ECON_SOURCE_NAMES[l.source] || l.source)}</td>
+                        <td data-label="Dados até">${fmtDateTime(l.okTo)}</td>
+                        <td data-label="Atraso">${isMain ? fmtHours(lag) : "—"}</td>
+                        <td data-label="Última tentativa"><span><span class="econ-pill ${cls}">${l.lastOk ? "ok" : "erro"}</span> ${fmtDateTime(l.lastTs)}${err}</span></td>
                       </tr>`;
                   })
                   .join("")
@@ -773,12 +773,12 @@ document.addEventListener("DOMContentLoaded", () => {
             ? list
                   .map(
                       (a) => `<tr>
-                        <td>${new Date(a.ts).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
-                        <td>${escapeHtml(CURRENCY_NAMES[a.currency] || "Todas")}</td>
-                        <td>${escapeHtml(a.label)}</td>
-                        <td style="white-space: nowrap;">
-                          <button type="button" class="econ-btn confirm" data-econ-decide="confirmada" data-id="${a.id}" title="Confirmar (pode trocar o texto)"><i class="fas fa-check"></i></button>
-                          <button type="button" class="econ-btn discard" data-econ-decide="descartada" data-id="${a.id}" title="Descartar"><i class="fas fa-times"></i></button>
+                        <td class="econ-title" data-day>${new Date(a.ts).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}</td>
+                        <td data-label="Moeda">${escapeHtml(CURRENCY_NAMES[a.currency] || "Todas")}</td>
+                        <td data-label="O que">${escapeHtml(a.label)}</td>
+                        <td class="econ-actions" style="white-space: nowrap;">
+                          <button type="button" class="econ-btn confirm" data-econ-decide="confirmada" data-id="${a.id}" title="Confirmar (pode trocar o texto)" aria-label="Confirmar"><i class="fas fa-check"></i></button>
+                          <button type="button" class="econ-btn discard" data-econ-decide="descartada" data-id="${a.id}" title="Descartar" aria-label="Descartar"><i class="fas fa-times"></i></button>
                         </td>
                       </tr>`
                   )
