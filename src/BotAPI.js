@@ -24,6 +24,7 @@ const {
 	createAuthenticateUPS
 } = require("./BotAPI/middleware/auth");
 const { createRateLimiters } = require("./BotAPI/middleware/rateLimiters");
+const { createFrameAncestorsGuard } = require("./BotAPI/middleware/security");
 const {
 	upload,
 	uploadNsfw,
@@ -62,6 +63,7 @@ const { registerEconomyRoutes } = require("./BotAPI/routes/economyRoutes");
  * Arquitetura Modular:
  * - src/BotAPI/middleware/auth.js: Autenticação de admin, sessão via cookie, Basic Auth e UPS Secret
  * - src/BotAPI/middleware/rateLimiters.js: Limitadores de taxa geral e restrito
+ * - src/BotAPI/middleware/security.js: frame-ancestors e checagem de origem nas escritas
  * - src/BotAPI/middleware/upload.js: Configuração de upload via Multer (geral e fotos NSFW)
  * - src/BotAPI/services/analyticsHelper.js: Agregação analítica, estatísticas e cache de comandos
  * - src/BotAPI/services/webhookManager.js: Servidor de webhooks de grupos e fila de bufferização
@@ -103,6 +105,9 @@ class BotAPI {
 				}
 			})
 		);
+
+		// Só a própria origem pode pôr as páginas da Ravena num iframe
+		this.app.use(createFrameAncestorsGuard());
 
 		// Injeta referência do botApi nos bots
 		this.bots.forEach((bot) => {
