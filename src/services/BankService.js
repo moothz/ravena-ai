@@ -33,35 +33,17 @@ const waifuApi = axios.create({
 	timeout: 8000
 });
 
-// Constantes econômicas base (1.000 Runas = 800 kg = 3.500 Z = 8.000 Ptl)
-const BASE_RUNAS_PER_KG_FISH = 1000 / 800; // 1.25 Runas / kg
-const BASE_RUNAS_PER_ZINTHOS = 1000 / 3500; // ~0.2857 Runas / Zinthos
-const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Petalita (Ptl)
-
-// Cotas diárias de economia: venda para ganhar Runas (300k/dia unificado) e caminho inverso para jogos (base 500k Zinthos, 300k Petalitas, 300 moedas, 200 iscas)
-const DAILY_LIMITS = {
-	venda_runas: 300000, // 300.000 ᚱ/dia (limite unificado para ganhar Runas vendendo peixes, zinthos ou petalitas)
-	compra_zinthos: 500000, // Base de 500.000 Zinthos/dia (progressivo diário com inflação, inicia ~600k)
-	compra_jardim: 300000, // Base de 300.000 Petalitas/dia (progressivo diário com inflação, inicia ~320k)
-	compra_moedas: 300, // 300 moedas/dia no SlotsGame
-	compra_iscas: 200, // 200 iscas/dia no FishingGame
-	// Legado para compatibilidade:
-	pesca: 300000,
-	zinthos: 500000,
-	jardim: 300000,
-	compra: 300000
-};
-
-// Configurações da Loja do RavenaBank (compra de consumíveis com Runas)
-const STORE_PRICES = {
-	moeda: 55, // 55 Runas por moedinha de Slots
-	isca: 45 // 45 Runas por isca de Pesca
-};
-
-const STORE_LIMITS = {
-	dailySlotsCoins: 300, // Limite diário de 300 moedas compradas
-	dailyFishingBaits: 200 // Limite diário de 200 iscas compradas
-};
+// Parâmetros de balanceamento (câmbio, cotas, loja): ficam em economyConstants.js, lido também pela
+// carga do painel da economia para registrar mudanças sozinha
+const {
+	BASE_RUNAS_PER_KG_FISH,
+	BASE_RUNAS_PER_ZINTHOS,
+	BASE_RUNAS_PER_JARDIM,
+	DAILY_LIMITS,
+	STORE_PRICES,
+	STORE_LIMITS,
+	economyParams
+} = require("./economyConstants");
 
 // Duração da sessão web (3 dias em milissegundos)
 const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -93,16 +75,9 @@ class BankService {
 		this._setupCron();
 	}
 
-	/**
-	 * Parâmetros de balanceamento das Runas, só leitura, para o registro automático de mudanças do painel
-	 * da economia (EconomyAnalyticsChanges). Não muda nada.
-	 */
+	/** Parâmetros de balanceamento das Runas (economyConstants.js), só leitura. */
 	getEconomyParams() {
-		return {
-			cambio: { BASE_RUNAS_PER_KG_FISH, BASE_RUNAS_PER_ZINTHOS, BASE_RUNAS_PER_JARDIM },
-			cotas: { DAILY_LIMITS },
-			loja: { STORE_PRICES, STORE_LIMITS }
-		};
+		return economyParams();
 	}
 
 	_initDatabase() {

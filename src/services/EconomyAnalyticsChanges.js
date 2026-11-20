@@ -3,7 +3,7 @@
  *
  * Registro automático de mudanças do painel da economia (aba Mudanças):
  *   - parâmetros: lê os parâmetros de balanceamento em produção (GET /internal/economy/params no
- *     waifuletes e no Jardim; as Runas vêm das constantes do BankService já carregado pelo bot),
+ *     waifuletes e no Jardim; as Runas vêm de economyConstants.js, o mesmo módulo que o BankService usa),
  *     compara com a leitura anterior e devolve o que mudou (vira anotação com origin = 'auto');
  *   - possíveis mudanças: no último dia econômico completo de cada moeda com extrato, procura motivo
  *     novo, motivo que sumiu e valor médio por transação diferente do normal (origin = 'possivel',
@@ -12,6 +12,10 @@
 "use strict";
 
 const { DAY_MS, DAY_OFFSET_MS } = require("./EconomyAnalyticsRunas");
+const economyConstants = require("./economyConstants");
+
+/** Chaves das Runas cuja mudança vale para todas as moedas (câmbio). */
+const RUNAS_ALL_CURRENCIES_PREFIXES = economyConstants.ALL_CURRENCIES_GROUPS.map((g) => `${g}.`);
 
 /** Achata um objeto de parâmetros em chaves `a.b.0` com valores number | string | boolean. */
 function flattenParams(obj, prefix = "", out = {}) {
@@ -86,28 +90,21 @@ async function fetchParams(baseUrl, headers, timeoutMs, abort = null) {
 	return {
 		params: flattenParams(body.params),
 		startedAt: Number.isFinite(Number(body.startedAt)) ? Number(body.startedAt) : null,
-		version: body.version ? String(body.version) : null
+		version: body.version ? String(body.version) : null,
+		schemaVersion: body.schemaVersion ?? null
 	};
 }
 
 /**
- * Parâmetros das Runas: constantes do BankService, só se o bot já o carregou (require.cache). A carga
- * nunca carrega o BankService por conta própria: ele abre o bank.db e agenda cron ao ser carregado.
+ * Parâmetros das Runas: economyConstants.js (módulo puro, o mesmo que o BankService importa; ler não abre
+ * banco nem agenda nada). startedAt = subida do processo do bot, quando as constantes foram carregadas.
  */
-function runasParamsFromBot() {
-	let id;
-	try {
-		id = require.resolve("./BankService");
-	} catch (_) {
-		return null;
-	}
-	const mod = require.cache[id];
-	const exp = mod && mod.exports;
-	if (!exp || typeof exp.getEconomyParams !== "function") return null;
+function runasParams() {
 	return {
-		params: flattenParams(exp.getEconomyParams()),
+		params: flattenParams(economyConstants.economyParams()),
 		startedAt: Math.round(Date.now() - process.uptime() * 1000),
-		version: null
+		version: null,
+		schemaVersion: null
 	};
 }
 
@@ -117,7 +114,9 @@ function dayOf(hour) {
 }
 
 const DETECT = {
-	lookbackDays: 28, // motivo "novo" = sem nenhuma linha nesses dias
+	lookbackDays: 35, // motivo "novo" = sem nenhuma linha nesses dias (e com esse histórico carregado)
+	medianDays: 28, // dia "sem dados" = total de transações abaixo de minDayShare da mediana desses dias
+	minDayShare: 0.25,
 	steadyDays: 7, // motivo "sumiu" = presente em todos esses dias e ausente no dia
 	minDailyTx: 3, // ... com pelo menos isso de transações por dia
 	minTxDay: 20, // valor por transação: transações no dia
@@ -127,12 +126,35 @@ const DETECT = {
 };
 
 /**
+ * Dia sem dados para a detecção: total de transações 0 ou abaixo de minDayShare da mediana dos totais
+ * diários (dias com dados) dos medianDays antes (serviço fora do ar, extrato incompleto).
+ */
+function isLowDataDay(rows, day, opts = DETECT) {
+	const totals = new Map();
+	for (const r of rows) {
+		const d = Number(r.day);
+		totals.set(d, (totals.get(d) || 0) + (Number(r.n) || 0));
+	}
+	const today = totals.get(day) || 0;
+	if (today <= 0) return true;
+	const before = [...totals.entries()]
+		.filter(([d, n]) => d < day && d >= day - opts.medianDays * DAY_MS && n > 0)
+		.map(([, n]) => n)
+		.sort((a, b) => a - b);
+	if (!before.length) return false;
+	const m = before.length;
+	const med = m % 2 ? before[(m - 1) / 2] : (before[m / 2 - 1] + before[m / 2]) / 2;
+	return today < opts.minDayShare * med;
+}
+
+/**
  * Possíveis mudanças no dia econômico `day` a partir das linhas por dia e motivo.
  * @param {{day:number, reason:string, n:number, vol:number}[]} rows dias [day − lookback, day]
  * @param {(reason:string) => string} labelOf nome legível
+ * @param {object} [flags] allowNew=false: não procura motivo novo (histórico menor que lookbackDays)
  * @returns {{label:string, detail:object}[]}
  */
-function detectPossible(rows, day, labelOf, opts = DETECT) {
+function detectPossible(rows, day, labelOf, opts = DETECT, { allowNew = true } = {}) {
 	const byReason = new Map();
 	for (const r of rows) {
 		if (!byReason.has(r.reason)) byReason.set(r.reason, new Map());
@@ -149,6 +171,7 @@ function detectPossible(rows, day, labelOf, opts = DETECT) {
 		);
 		const name = labelOf(reason);
 		if (today.n > 0 && !anyBefore) {
+			if (!allowNew) continue;
 			out.push({
 				label: `motivo novo: ${name}`,
 				detail: { kind: "new_reason", reason, tx: today.n, volume: today.vol }
@@ -185,8 +208,10 @@ module.exports = {
 	diffParams,
 	changeLabel,
 	fetchParams,
-	runasParamsFromBot,
+	runasParams,
+	isLowDataDay,
 	detectPossible,
+	RUNAS_ALL_CURRENCIES_PREFIXES,
 	dayOf,
 	DETECT
 };

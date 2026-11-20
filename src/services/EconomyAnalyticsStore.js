@@ -814,6 +814,17 @@ class EconomyAnalyticsStore {
 		return r ? r.label : reason;
 	}
 
+	/** Anotações 'auto' com ts em [from, to) da moeda ou de todas (currency NULL). */
+	autoAnnotations(currency, from, to) {
+		return this.db
+			.prepare(
+				`SELECT rowid AS id, ts, currency, label FROM annotations
+				 WHERE origin = 'auto' AND ts >= ? AND ts < ? AND (currency = ? OR currency IS NULL)
+				 ORDER BY ts`
+			)
+			.all(from, to, currency);
+	}
+
 	hasAnnotation(ts, label) {
 		return !!this.db.prepare("SELECT 1 FROM annotations WHERE ts = ? AND label = ?").get(ts, label);
 	}
@@ -949,16 +960,89 @@ class EconomyAnalyticsStore {
 		return this.publishedPath;
 	}
 
-	listAnnotations() {
+	/**
+	 * Anotações em ordem de hora. Com withId, cada uma traz `id` (rowid: curto, estável enquanto a
+	 * anotação não é regravada); o --export não leva o id.
+	 * @param {{withId?:boolean, origin?:string}} [opts]
+	 */
+	listAnnotations({ withId = false, origin = null } = {}) {
 		return this.db
-			.prepare("SELECT ts, currency, label, origin, detail FROM annotations ORDER BY ts")
-			.all()
+			.prepare(
+				`SELECT ${withId ? "rowid AS id, " : ""}ts, currency, label, origin, detail FROM annotations
+				 ${origin ? "WHERE origin = ?" : ""} ORDER BY ts`
+			)
+			.all(...(origin ? [origin] : []))
 			.map((a) => ({ ...a, detail: a.detail ? JSON.parse(a.detail) : null }));
 	}
 
 	/** Libera a trava de publicação se ela estiver com este store (encerramento no meio da publicação). */
 	releasePublishLock() {
 		if (this._releaseLock) this._releaseLock();
+	}
+
+	/** Uma anotação pelo id (rowid) ou por (ts, label). */
+	findAnnotation(ref) {
+		const row =
+			ref && ref.id !== undefined && ref.id !== null
+				? this.db
+						.prepare(
+							"SELECT rowid AS id, ts, currency, label, origin, detail FROM annotations WHERE rowid = ?"
+						)
+						.get(Number(ref.id))
+				: this.db
+						.prepare(
+							"SELECT rowid AS id, ts, currency, label, origin, detail FROM annotations WHERE ts = ? AND label = ?"
+						)
+						.get(Number(ref.ts), String(ref.label));
+		return row ? { ...row, detail: row.detail ? JSON.parse(row.detail) : null } : null;
+	}
+
+	/**
+	 * Decide uma possível mudança: 'confirmada' ou 'descartada', com texto novo opcional (o original fica
+	 * no detail.originalLabel). Só vale para anotação detectada nos dados (possivel, ou já decidida):
+	 * manual e automática são recusadas.
+	 * @returns {{ok:true, annotation:object}|{ok:false, error:string}}
+	 */
+	decideAnnotation(ref, decision, text = null) {
+		if (!["confirmada", "descartada"].includes(decision)) {
+			return { ok: false, error: "decisão precisa ser confirmada ou descartada" };
+		}
+		const a = this.findAnnotation(ref);
+		if (!a) return { ok: false, error: "anotação não encontrada" };
+		if (!["possivel", "confirmada", "descartada"].includes(a.origin)) {
+			return {
+				ok: false,
+				error: `anotação ${a.origin === "auto" ? "automática" : "manual"} não se confirma nem descarta`
+			};
+		}
+		const label = text && String(text).trim() ? String(text).trim().slice(0, 300) : a.label;
+		const detail = label !== a.label ? { ...(a.detail || {}), originalLabel: a.label } : a.detail;
+		try {
+			this.db
+				.prepare("UPDATE annotations SET origin = ?, label = ?, detail = ? WHERE rowid = ?")
+				.run(decision, label, detail ? JSON.stringify(detail) : null, a.id);
+		} catch (err) {
+			if (/UNIQUE|constraint/i.test(err.message)) {
+				return { ok: false, error: "já existe uma anotação com esse texto nessa hora" };
+			}
+			throw err;
+		}
+		return { ok: true, annotation: this.findAnnotation({ id: a.id }) };
+	}
+
+	/** Grava uma anotação só se não existir (ts, label); nunca sobrescreve origem nem detalhe. */
+	insertAnnotationIfMissing(ts, currency, label, origin = null, detail = null) {
+		return this.db
+			.prepare(
+				"INSERT OR IGNORE INTO annotations (ts, currency, label, origin, detail) VALUES (?, ?, ?, ?, ?)"
+			)
+			.run(
+				ts,
+				currency || null,
+				label,
+				origin || null,
+				detail === null || detail === undefined ? null : JSON.stringify(detail)
+			).changes;
 	}
 
 	close() {
