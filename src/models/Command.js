@@ -37,6 +37,7 @@ class Command {
 
 		// Controle de tempo e limitação
 		this.cooldown = data.cooldown ?? 0; // Tempo mínimo entre usos (segundos)
+		this.cooldownPV = data.cooldownPV !== undefined ? data.cooldownPV : undefined; // Cooldown específico para PV (fallback para cooldown se undefined)
 		this.cooldownGrupo = data.cooldownGrupo ?? false; // Cooldown compartilhado por grupo (padrão false)
 		this.timeout = data.timeout ?? 30; // Tempo máximo de execução (segundos)
 

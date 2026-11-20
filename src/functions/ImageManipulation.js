@@ -802,7 +802,8 @@ const commands = [
 
 	new Command({
 		name: "stickerbg",
-		cooldown: 20,
+		cooldown: 5,
+		cooldownPV: 0,
 		description: "Cria um sticker após remover o fundo",
 		category: "stickers",
 		group: "stickerbg",
@@ -817,7 +818,8 @@ const commands = [
 	}),
 	new Command({
 		name: "sbg",
-		cooldown: 20,
+		cooldown: 5,
+		cooldownPV: 0,
 		description: "Envia sticker sem fundo",
 		category: "stickers",
 		group: "stickerbg",

@@ -183,6 +183,8 @@ class WhatsAppBotGo {
 		// vCard/lembrete de contato vai depois do lote de mensagens (debounce por chat)
 		this.pvVcardDebounceMs = options.pvVcardDebounceMs ?? 2000;
 		this._pvVcardTimers = new Map();
+		this._pvStickerQueues = new Map();
+		this._pvLastStickerSent = new Map();
 		this.isConnected = false;
 		this.safeMode =
 			options.safeMode !== undefined ? options.safeMode : process.env.SAFE_MODE === "true";
@@ -3688,6 +3690,57 @@ class WhatsAppBotGo {
 	}
 
 	/**
+	 * Enfileira e aplica espaçamento orgânico aleatório (2s a 3s) entre figurinhas
+	 * consecutivas enviadas para o mesmo chat no PV. Evita rajadas/flood ao converter
+	 * álbuns ou múltiplas imagens em stickers.
+	 * @param {string} chatId
+	 * @param {Function} sendFn
+	 * @returns {Promise<any>}
+	 */
+	async _enqueuePvStickerSpacing(chatId, sendFn) {
+		const queueKey = PhoneUtils.cleanPhone(chatId) || String(chatId);
+		if (!this._pvStickerQueues) this._pvStickerQueues = new Map();
+		if (!this._pvLastStickerSent) this._pvLastStickerSent = new Map();
+
+		const lastPromise = this._pvStickerQueues.get(queueKey) || Promise.resolve();
+
+		const currentPromise = (async () => {
+			await lastPromise.catch(() => {});
+
+			const lastSent = this._pvLastStickerSent.get(queueKey) || 0;
+			const now = Date.now();
+			const elapsed = now - lastSent;
+			const targetDelay = Math.floor(Math.random() * 1001) + 2000;
+
+			if (lastSent > 0 && elapsed < targetDelay) {
+				const waitMs = targetDelay - elapsed;
+				this.logger.debug(
+					`[${this.id}] [pvStickerSpacing] Aguardando ${waitMs}ms antes de enviar próximo sticker para ${queueKey}`
+				);
+				await sleep(waitMs);
+			}
+
+			try {
+				return await sendFn();
+			} finally {
+				this._pvLastStickerSent.set(queueKey, Date.now());
+			}
+		})();
+
+		this._pvStickerQueues.set(queueKey, currentPromise);
+
+		currentPromise
+			.finally(() => {
+				if (this._pvStickerQueues.get(queueKey) === currentPromise) {
+					this._pvStickerQueues.delete(queueKey);
+				}
+			})
+			.catch(() => {});
+
+		return currentPromise;
+	}
+
+	/**
 	 * Envia vCard do bot e lembrete de salvar nos contatos no PV a cada 45 dias (apenas bots não-privados).
 	 * @param {string} chatId
 	 * @param {Object} [options={}]
@@ -3821,7 +3874,7 @@ class WhatsAppBotGo {
 				}
 			}
 
-			let isGroup = false;
+			let isGroup = Boolean(chatId && chatId.includes("@g.us"));
 
 			const maxChars = options.maxChars !== undefined ? options.maxChars : 0;
 			const maxLines = options.maxLines !== undefined ? options.maxLines : 0;
@@ -4177,9 +4230,8 @@ class WhatsAppBotGo {
 			}
 
 			let response;
-			try {
-				// Throttling progressivo de saída (peso 1.0 = mensagem normal)
-				response = await this.throttler.enqueue(async () => {
+			const executeSend = async () =>
+				await this.throttler.enqueue(async () => {
 					try {
 						return await this.apiClient.post(endpoint, payload);
 					} catch (postErr) {
@@ -4194,6 +4246,24 @@ class WhatsAppBotGo {
 						}
 					}
 				}, 1.0);
+
+			const isPvChat = this.pvSafetyService
+				? this.pvSafetyService.isPvTarget(chatId)
+				: Boolean(
+						chatId &&
+						typeof chatId === "string" &&
+						!chatId.includes("@g.us") &&
+						!chatId.includes("broadcast") &&
+						!chatId.includes("newsletter")
+					);
+			const isStickerMsg = endpoint === "/send/sticker" || Boolean(options.sendMediaAsSticker);
+
+			try {
+				if (isPvChat && isStickerMsg && !options.skipPvStickerSpacing) {
+					response = await this._enqueuePvStickerSpacing(chatId, executeSend);
+				} else {
+					response = await executeSend();
+				}
 			} catch (throttleErr) {
 				if (throttleErr.message && throttleErr.message.startsWith("THROTTLE_TIMEOUT")) {
 					this.logger.warn(

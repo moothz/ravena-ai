@@ -171,14 +171,22 @@ class CommandHandler {
 	 * Verifica se um comando está em cooldown
 	 * @param {Command|string} command - Comando ou nome do comando
 	 * @param {string} groupId - ID do grupo ou chat
+	 * @param {string} botId - ID do bot
+	 * @param {string} userKey - Identificador do usuário
+	 * @param {boolean} [isPrivate] - Indica se o contexto é PV (opcional, inferido por padrão)
 	 * @returns {Promise<Object>} - Informações sobre o cooldown
 	 */
-	async checkCooldown(command, groupId, botId, userKey) {
+	async checkCooldown(command, groupId, botId, userKey, isPrivate) {
 		const commandName =
 			typeof command === "string" ? command : (command.name ?? command.startsWith);
 		let cooldownValue = 0;
 		if (typeof command === "object") {
-			cooldownValue = command.cooldown ?? 0;
+			const isPv = isPrivate !== undefined ? Boolean(isPrivate) : !groupId?.includes("@g.us");
+			if (isPv && command.cooldownPV !== undefined) {
+				cooldownValue = command.cooldownPV;
+			} else {
+				cooldownValue = command.cooldown ?? 0;
+			}
 		}
 		const cooldownMs = cooldownValue * 1000;
 		if (cooldownMs === 0) {
@@ -276,9 +284,20 @@ class CommandHandler {
 		}
 	}
 
-	async updateCooldown(command, groupId, botId, userKey) {
+	async updateCooldown(command, groupId, botId, userKey, isPrivate) {
 		const commandName =
 			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		const isPv = isPrivate !== undefined ? Boolean(isPrivate) : !groupId?.includes("@g.us");
+		let cooldownValue = 0;
+		if (typeof command === "object") {
+			if (isPv && command.cooldownPV !== undefined) {
+				cooldownValue = command.cooldownPV;
+			} else {
+				cooldownValue = command.cooldown ?? 0;
+			}
+		}
+		if (cooldownValue <= 0) return;
+
 		const now = Date.now();
 
 		// Chave por usuário (sempre)
@@ -1638,9 +1657,10 @@ class CommandHandler {
 			}
 
 			// Verifica cooldown
+			const isPrivate = !message.group;
 			const groupId = message.group ?? message.author;
 			const userKey = this.getLimitUserKey(bot, message);
-			const cooldownInfo = await this.checkCooldown(command, groupId, bot.id, userKey);
+			const cooldownInfo = await this.checkCooldown(command, groupId, bot.id, userKey, isPrivate);
 
 			if (cooldownInfo.inCooldown) {
 				this.logger.debug(`Comando ${command.name} em cooldown por mais ${cooldownInfo.timeLeft}s`);
@@ -1672,7 +1692,7 @@ class CommandHandler {
 
 			// Executa método do comando
 			if (typeof command.method === "function") {
-				this.updateCooldown(command, groupId, bot.id, userKey);
+				this.updateCooldown(command, groupId, bot.id, userKey, isPrivate);
 				this.recordCommandLimitUsage(commandLimit, message);
 				//this.logger.debug(`Comando ${command.name} tem method, executando`);
 				telemetry.addEvent("command.checks_passed");
@@ -2021,18 +2041,21 @@ class CommandHandler {
 			}
 
 			// Verifica cooldown (passa objeto inteiro para que o cooldown personalizado do comando seja respeitado)
+			const isPrivate = !message.group;
 			const userKey = this.getLimitUserKey(bot, message);
 			const cooldownCheckCmd = {
 				name: command.startsWith,
 				startsWith: command.startsWith,
 				cooldown: command.cooldown ?? 0,
+				cooldownPV: command.cooldownPV,
 				cooldownGrupo: command.cooldownGrupo ?? false
 			};
 			const cooldownInfo = await this.checkCooldown(
 				cooldownCheckCmd,
 				message.group ?? message.author,
 				bot.id,
-				userKey
+				userKey,
+				isPrivate
 			);
 
 			if (cooldownInfo.inCooldown) {
@@ -2101,7 +2124,13 @@ class CommandHandler {
 				}
 			}
 
-			this.updateCooldown(cooldownCheckCmd, message.group ?? message.author, bot.id, userKey);
+			this.updateCooldown(
+				cooldownCheckCmd,
+				message.group ?? message.author,
+				bot.id,
+				userKey,
+				isPrivate
+			);
 			this.recordCommandLimitUsage(commandLimit, message);
 
 			let finalResult = null;
