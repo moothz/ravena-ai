@@ -7,6 +7,7 @@ const Database = require("../utils/Database");
 const Queue = require("./Queue");
 const ServiceProviderService = require("./ServiceProviderService");
 const CommandsHelper = require("../utils/CommandsHelper");
+const HumanizerHelper = require("../utils/HumanizerHelper");
 
 const TOOL_CALLING_POLICY = `### POLÍTICA OBRIGATÓRIA DE USO DE FERRAMENTAS:
 1. SEMPRE que o usuário fizer uma pergunta ou solicitação que possa ser respondida, enriquecida ou executada por uma ferramenta disponível (ex: previsão do tempo, horário/data, pesquisas na web, notícias, cotações/preços, wikipedia, filmes/séries no IMDb, animes, dados de placa de veículo, letras de música, jogos grátis, horóscopo, rankings do chat ou executar comandos nativos do bot via execute_bot_command), você DEVE chamar a ferramenta correspondente diretamente.
@@ -3340,6 +3341,16 @@ class LLMService {
 	}
 
 	/**
+	 * Reescreve um texto removendo vícios de IA e aplicando o estilo humanizer (Two-Pass).
+	 * @param {string} text - Texto a ser reescrito
+	 * @param {Object} [options={}] - Opções adicionais
+	 * @returns {Promise<string>}
+	 */
+	async humanizeText(text, options = {}) {
+		return HumanizerHelper.humanizeText(this, text, options);
+	}
+
+	/**
 	 * Obtém completion de texto de qualquer LLM configurado
 	 * @param {Object} options - Opções de solicitação
 	 * @param {string} options.prompt - O texto do prompt
@@ -3348,6 +3359,7 @@ class LLMService {
 	 * @param {number} [options.maxTokens=5000] - Número máximo de tokens a gerar
 	 * @param {number} [options.temperature=0.7] - Temperatura de amostragem
 	 * @param {number} [options.priority=0] - Prioridade da requisição (0-5)
+	 * @param {boolean} [options.humanize=true] - Se deve aplicar diretrizes e sanitização do estilo humanizer
 	 * @returns {Promise<string>} - O texto gerado
 	 */
 	async getCompletion(options) {
@@ -3363,6 +3375,18 @@ class LLMService {
 		if (Array.isArray(options.messages)) {
 			options.messages = this._sanitizeUtf8(options.messages);
 		}
+
+		const allowHumanize = options.humanize !== false && !options.response_format;
+		if (allowHumanize) {
+			const baseCtx =
+				typeof options.systemContext === "string" && options.systemContext.trim().length > 0
+					? options.systemContext
+					: "Você é ravena, um bot de whatsapp criado por moothz. Não se apresente, a menos que solicitado pelo usuário.";
+			if (!baseCtx.includes("DIRETRIZES DE ESTILO DE ESCRITA HUMANA")) {
+				options.systemContext = `${baseCtx}\n\n${HumanizerHelper.HUMANIZER_DIRECTIVE}`;
+			}
+		}
+
 		const priority = options.priority ?? 0;
 		const maxQueueRetries = 2; // Até 2 re-enfileiramentos na fila (3 tentativas totais)
 
@@ -3377,6 +3401,10 @@ class LLMService {
 				else {
 					const response = await this.getCompletionFromProviders(options, priority);
 					result = this._cleanResponse(response);
+				}
+
+				if (allowHumanize && typeof result === "string") {
+					result = HumanizerHelper.sanitizeHumanizerResidue(result);
 				}
 
 				if (options.maxChars !== undefined || options.truncate === true) {
@@ -3652,7 +3680,8 @@ class LLMService {
 					"ravena.llm.queued": !(options.bypassQueue || options.isSubRequest),
 					"ravena.llm.provider_pinned": options.provider || undefined,
 					"ravena.llm.has_image": Boolean(options.image || options.images?.length),
-					"ravena.llm.tool_calling": options.toolCalling === true
+					"ravena.llm.tool_calling": options.toolCalling === true,
+					"ravena.llm.humanize": options.humanize !== false && !options.response_format
 				}
 			},
 			() => {

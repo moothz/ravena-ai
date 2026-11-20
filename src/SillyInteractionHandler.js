@@ -254,7 +254,8 @@ class SillyInteractionHandler {
 				prompt,
 				priority: 5,
 				systemContext:
-					"Sua personalidade: Atrevida se for xingada, fofa e gentil se for elogiada. Não use muitas emojis."
+					"Sua personalidade: Atrevida se for xingada, fofa e gentil se for elogiada. Não use muitas emojis.",
+				humanize: true
 			});
 
 			let replyContent = response;

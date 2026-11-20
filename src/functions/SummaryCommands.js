@@ -322,6 +322,7 @@ Discussão técnica sobre manutenção e modificação de carros, especificament
 Regras importantes:
 - Não inclua saudações, introduções ou títulos adicionais (como "Resumo da conversa:" ou "Resumo:"). Comece diretamente pela frase de panorama geral.
 - Se houver apenas um assunto debatido, liste-o nos tópicos detalhando os pontos discutidos.
+- Estilo humano e direto: não use travessões (— ou –), não use conclusões clichês de autoajuda ao final e evite jargões corporativos vazios.
 
 Conversa:
 ${formattedMessages}
@@ -329,7 +330,7 @@ ${formattedMessages}
 Resumo:`;
 
 		// Obtém resumo do LLM
-		const summary = await llmService.getCompletion({ prompt, priority: 4 });
+		const summary = await llmService.getCompletion({ prompt, priority: 4, humanize: true });
 
 		if (!summary || typeof summary !== "string") {
 			if (
@@ -517,7 +518,7 @@ ${formattedLatest}`;
 SUA TAREFA:
 Foque o seu comentário/interação PRINCIPALMENTE nas últimas 15 mensagens enviadas (incluindo descrições de imagens, áudios, vídeos e textos) para garantir que sua resposta seja sobre o tópico ATUAL do grupo e não sobre algo atrasado. As mensagens anteriores foram incluídas apenas para você contextualizar de onde veio o assunto.
 
-Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta e natural.${customPersonalidade}${otherAIsPrompt}${memoryEnrichment}
+Crie uma única mensagem curta para interagir com o grupo de forma natural, como se você entendesse o assunto e quisesse participar da conversa com algo relevante. Tente usar o mesmo tom e estilo informal que as pessoas estão usando. A mensagem deve ser curta, autêntica e sem floreios de IA (sem travessões, sem bajulações, sem resumir o que as pessoas já sabem).${customPersonalidade}${otherAIsPrompt}${memoryEnrichment}
 
 ${historyFormatted}`;
 
@@ -526,7 +527,7 @@ ${historyFormatted}`;
 		);
 
 		// Obtém interação do LLM
-		const interaction = await llmService.getCompletion({ prompt, priority: 5 });
+		const interaction = await llmService.getCompletion({ prompt, priority: 5, humanize: true });
 
 		if (!interaction) {
 			if (retornarErro) {

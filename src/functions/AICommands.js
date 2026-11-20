@@ -853,6 +853,7 @@ ${privacyMemoryRule}
 		systemContext,
 		toolCalling: true,
 		priority: 5,
+		humanize: true,
 		bot,
 		message,
 		group,
