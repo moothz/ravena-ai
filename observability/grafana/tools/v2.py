@@ -17,11 +17,12 @@ class Tab:
 
 
 def _cond(only):
+    """only = (variável, valor) ou (variável, valor, "notEquals")."""
     if not only:
         return None
-    var, value = only
+    var, value, op = (*only, "equals")[:3]
     return {"kind": "ConditionalRenderingGroup", "spec": {"visibility": "show", "condition": "and", "items": [
-        {"kind": "ConditionalRenderingVariable", "spec": {"variable": var, "operator": "equals", "value": value}}]}}
+        {"kind": "ConditionalRenderingVariable", "spec": {"variable": var, "operator": op, "value": value}}]}}
 
 
 def _query(t):
@@ -60,8 +61,11 @@ def _grid(panels, elements):
         name = f"panel-{p['id']}"
         elements[name] = element(p)
         g = p["gridPos"]
-        items.append({"kind": "GridLayoutItem", "spec": {"x": g["x"], "y": g["y"] - base, "width": g["w"], "height": g["h"],
-                                                          "element": {"kind": "ElementReference", "name": name}}})
+        spec = {"x": g["x"], "y": g["y"] - base, "width": g["w"], "height": g["h"],
+                "element": {"kind": "ElementReference", "name": name}}
+        if p.get("repeat"):  # {"mode": "variable", "value": <variável>, "direction": "h", "maxPerRow": n}
+            spec["repeat"] = p["repeat"]
+        items.append({"kind": "GridLayoutItem", "spec": spec})
     items.sort(key=lambda i: (i["spec"]["y"], i["spec"]["x"]))
     return {"kind": "GridLayout", "spec": {"items": items}}
 

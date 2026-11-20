@@ -125,21 +125,26 @@
     "spec": {
      "name": "escala",
      "label": "Escala",
-     "query": "índice (100 no início) : indice,valor : valor",
+     "query": "índice em log (base comum) : indice,valor : valor,separado (um por moeda) : separado",
      "current": {
-      "text": "índice (100 no início)",
+      "text": "índice em log (base comum)",
       "value": "indice"
      },
      "options": [
       {
        "selected": true,
-       "text": "índice (100 no início)",
+       "text": "índice em log (base comum)",
        "value": "indice"
       },
       {
        "selected": false,
        "text": "valor",
        "value": "valor"
+      },
+      {
+       "selected": false,
+       "text": "separado (um por moeda)",
+       "value": "separado"
       }
      ],
      "multi": false,
@@ -200,10 +205,10 @@
    }
   ],
   "elements": {
-   "panel-32": {
+   "panel-34": {
     "kind": "Panel",
     "spec": {
-     "id": 32,
+     "id": 34,
      "title": "",
      "description": "",
      "links": [],
@@ -545,10 +550,10 @@
      }
     }
    },
-   "panel-31": {
+   "panel-33": {
     "kind": "Panel",
     "spec": {
-     "id": 31,
+     "id": 33,
      "title": "Alertas disparados",
      "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point. Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
      "links": [],
@@ -596,8 +601,8 @@
     "kind": "Panel",
     "spec": {
      "id": 30,
-     "title": "Massa em circulação, por moeda (12 semanas)",
-     "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas; Escala = índice (100 no início do período, para comparar o crescimento de moedas com tamanhos diferentes) ou valor (cada moeda na própria grandeza; a menor fica achatada). Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças.",
+     "title": "Massa em circulação, por moeda — índice, escala log (12 semanas)",
+     "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -615,8 +620,132 @@
            },
            "spec": {
             "queryType": "time series",
-            "queryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= $__from AND ts < $__to\n),\nf AS (SELECT currency, total AS t0 FROM b x WHERE ts = (SELECT MIN(ts) FROM b y WHERE y.currency = x.currency))\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  CASE WHEN '${escala}' = 'indice' THEN ROUND(100.0 * b.total / NULLIF(f.t0, 0), 2) ELSE b.total END AS \"Massa\"\nFROM b JOIN f ON f.currency = b.currency\nORDER BY b.ts",
-            "rawQueryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= $__from AND ts < $__to\n),\nf AS (SELECT currency, total AS t0 FROM b x WHERE ts = (SELECT MIN(ts) FROM b y WHERE y.currency = x.currency))\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  CASE WHEN '${escala}' = 'indice' THEN ROUND(100.0 * b.total / NULLIF(f.t0, 0), 2) ELSE b.total END AS \"Massa\"\nFROM b JOIN f ON f.currency = b.currency\nORDER BY b.ts",
+            "queryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to\n),\nf AS (SELECT currency, total AS t0 FROM b x WHERE ts = (SELECT MIN(ts) FROM b y WHERE y.currency = x.currency)),\nbase AS (SELECT MAX(t0) AS t0 FROM f)\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  ROUND(100.0 * b.total / NULLIF((SELECT t0 FROM base), 0), 4) AS \"Massa (índice)\"\nFROM b ORDER BY b.ts",
+            "rawQueryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to\n),\nf AS (SELECT currency, total AS t0 FROM b x WHERE ts = (SELECT MIN(ts) FROM b y WHERE y.currency = x.currency)),\nbase AS (SELECT MAX(t0) AS t0 FROM f)\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  ROUND(100.0 * b.total / NULLIF((SELECT t0 FROM base), 0), 4) AS \"Massa (índice)\"\nFROM b ORDER BY b.ts",
+            "timeColumns": [
+             "time"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {
+        "timeFrom": "84d"
+       }
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "timeseries",
+      "version": "",
+      "spec": {
+       "options": {
+        "legend": {
+         "displayMode": "list",
+         "placement": "bottom"
+        },
+        "tooltip": {
+         "mode": "multi",
+         "sort": "desc"
+        }
+       },
+       "fieldConfig": {
+        "defaults": {
+         "unit": "none",
+         "noValue": "carga ainda não rodou",
+         "displayName": "${__field.labels.Moeda}",
+         "custom": {
+          "lineWidth": 2,
+          "fillOpacity": 0,
+          "showPoints": "never",
+          "spanNulls": true,
+          "scaleDistribution": {
+           "type": "log",
+           "log": 10
+          }
+         }
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Zinthos"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "#7D9DE3"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Runas"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "#82DFEA"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Petalitas"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "#B76271"
+            }
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "panel-31": {
+    "kind": "Panel",
+    "spec": {
+     "id": 31,
+     "title": "Massa em circulação, por moeda — valor (12 semanas)",
+     "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "time series",
+            "queryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to\n)\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", b.total AS \"Massa\"\nFROM b ORDER BY b.ts",
+            "rawQueryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to\n)\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", b.total AS \"Massa\"\nFROM b ORDER BY b.ts",
             "timeColumns": [
              "time"
             ]
@@ -651,12 +780,131 @@
        "fieldConfig": {
         "defaults": {
          "unit": "locale",
-         "decimals": 1,
          "noValue": "carga ainda não rodou",
          "displayName": "${__field.labels.Moeda}",
          "custom": {
           "lineWidth": 2,
           "fillOpacity": 0,
+          "showPoints": "never",
+          "spanNulls": true
+         }
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Zinthos"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "#7D9DE3"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Runas"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "#82DFEA"
+            }
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Petalitas"
+          },
+          "properties": [
+           {
+            "id": "color",
+            "value": {
+             "mode": "fixed",
+             "fixedColor": "#B76271"
+            }
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
+    }
+   },
+   "panel-32": {
+    "kind": "Panel",
+    "spec": {
+     "id": 32,
+     "title": "Massa — ${moedas:text} (12 semanas)",
+     "description": "Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "time series",
+            "queryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to\n)\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", b.total AS \"Massa\"\nFROM b ORDER BY b.ts",
+            "rawQueryText": "WITH b AS (\n  SELECT currency, ts, total FROM balances WHERE currency IN (${moedas:sqlstring}) AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to\n)\nSELECT b.ts / 1000 AS time, CASE b.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", b.total AS \"Massa\"\nFROM b ORDER BY b.ts",
+            "timeColumns": [
+             "time"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {
+        "timeFrom": "84d"
+       }
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "timeseries",
+      "version": "",
+      "spec": {
+       "options": {
+        "legend": {
+         "showLegend": false,
+         "displayMode": "list",
+         "placement": "bottom"
+        },
+        "tooltip": {
+         "mode": "single"
+        }
+       },
+       "fieldConfig": {
+        "defaults": {
+         "unit": "locale",
+         "noValue": "sem retrato",
+         "displayName": "${__field.labels.Moeda}",
+         "custom": {
+          "lineWidth": 2,
+          "fillOpacity": 8,
           "showPoints": "never",
           "spanNulls": true
          }
@@ -930,10 +1178,10 @@
      }
     }
    },
-   "panel-33": {
+   "panel-35": {
     "kind": "Panel",
     "spec": {
-     "id": 33,
+     "id": 35,
      "title": "",
      "description": "",
      "links": [],
@@ -2434,10 +2682,10 @@
      }
     }
    },
-   "panel-49": {
+   "panel-51": {
     "kind": "Panel",
     "spec": {
-     "id": 49,
+     "id": 51,
      "title": "",
      "description": "",
      "links": [],
@@ -2467,10 +2715,10 @@
      "transparent": true
     }
    },
-   "panel-39": {
+   "panel-41": {
     "kind": "Panel",
     "spec": {
-     "id": 39,
+     "id": 41,
      "title": "Quem mais ganhou — ${moeda} (período selecionado)",
      "description": "Os 25 que mais receberam de motivos de criação no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -2815,10 +3063,10 @@
      }
     }
    },
-   "panel-40": {
+   "panel-42": {
     "kind": "Panel",
     "spec": {
-     "id": 40,
+     "id": 42,
      "title": "Quem mais perdeu — ${moeda} (período selecionado)",
      "description": "Os 25 com o pior saldo líquido (entrou − saiu, sem as linhas fora do dinheiro) no período. Criado = motivos de criação (recompensas, prêmios, divórcio…); câmbio e transferências separados. Uma pessoa junta os IDs dela nas três fontes (LID resolvido pelo memory.db, telefone de 12 e 13 dígitos). Clique no nome para abrir a ficha. Petalitas: só saldo (Jardim sem extrato).",
      "links": [],
@@ -3163,10 +3411,10 @@
      }
     }
    },
-   "panel-41": {
+   "panel-43": {
     "kind": "Panel",
     "spec": {
-     "id": 41,
+     "id": 43,
      "title": "Anomalias (pista, não prova): dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
      "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui. É pista, não prova.",
      "links": [],
@@ -3493,10 +3741,10 @@
      }
     }
    },
-   "panel-42": {
+   "panel-44": {
     "kind": "Panel",
     "spec": {
-     "id": 42,
+     "id": 44,
      "title": "Maiores saldos — ${moeda} (agora)",
      "description": "Saldo atual por pessoa (somando os IDs dela), fatia da massa e variação desde o saldo de 7 dias atrás (fim do dia econômico).",
      "links": [],
@@ -3793,10 +4041,10 @@
      }
     }
    },
-   "panel-36": {
+   "panel-38": {
     "kind": "Panel",
     "spec": {
-     "id": 36,
+     "id": 38,
      "title": "",
      "description": "",
      "links": [],
@@ -4158,10 +4406,10 @@
      }
     }
    },
-   "panel-37": {
+   "panel-39": {
     "kind": "Panel",
     "spec": {
-     "id": 37,
+     "id": 39,
      "title": "",
      "description": "",
      "links": [],
@@ -4527,10 +4775,10 @@
      }
     }
    },
-   "panel-38": {
+   "panel-40": {
     "kind": "Panel",
     "spec": {
-     "id": 38,
+     "id": 40,
      "title": "",
      "description": "",
      "links": [],
@@ -4560,10 +4808,10 @@
      "transparent": true
     }
    },
-   "panel-34": {
+   "panel-36": {
     "kind": "Panel",
     "spec": {
-     "id": 34,
+     "id": 36,
      "title": "Alertas da economia",
      "description": "Regras em observability/grafana/provisioning/alerting/economia.yaml (pasta Economia): carga atrasada (intervalo da carga + 2 h, 3 h no padrão; pausada não conta), motivo sem mapear, moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui e em Alerting; para receber aviso, configurar um contact point.",
      "links": [],
@@ -5513,10 +5761,10 @@
      }
     }
    },
-   "panel-35": {
+   "panel-37": {
     "kind": "Panel",
     "spec": {
-     "id": 35,
+     "id": 37,
      "title": "Glossário",
      "description": "",
      "links": [],
@@ -5555,72 +5803,230 @@
       "spec": {
        "title": "Resumo",
        "layout": {
-        "kind": "GridLayout",
+        "kind": "RowsLayout",
         "spec": {
-         "items": [
+         "rows": [
           {
-           "kind": "GridLayoutItem",
+           "kind": "RowsLayoutRow",
            "spec": {
-            "x": 0,
-            "y": 0,
-            "width": 24,
-            "height": 2,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-32"
+            "title": "",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 0,
+                 "width": 24,
+                 "height": 2,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-34"
+                 }
+                }
+               },
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 2,
+                 "width": 24,
+                 "height": 5,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-2"
+                 }
+                }
+               },
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 7,
+                 "width": 24,
+                 "height": 4,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-33"
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "hideHeader": true
+           }
+          },
+          {
+           "kind": "RowsLayoutRow",
+           "spec": {
+            "title": "",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 0,
+                 "width": 24,
+                 "height": 6,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-30"
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "hideHeader": true,
+            "conditionalRendering": {
+             "kind": "ConditionalRenderingGroup",
+             "spec": {
+              "visibility": "show",
+              "condition": "and",
+              "items": [
+               {
+                "kind": "ConditionalRenderingVariable",
+                "spec": {
+                 "variable": "escala",
+                 "operator": "equals",
+                 "value": "indice"
+                }
+               }
+              ]
+             }
             }
            }
           },
           {
-           "kind": "GridLayoutItem",
+           "kind": "RowsLayoutRow",
            "spec": {
-            "x": 0,
-            "y": 2,
-            "width": 24,
-            "height": 5,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-2"
+            "title": "",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 0,
+                 "width": 24,
+                 "height": 6,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-31"
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "hideHeader": true,
+            "conditionalRendering": {
+             "kind": "ConditionalRenderingGroup",
+             "spec": {
+              "visibility": "show",
+              "condition": "and",
+              "items": [
+               {
+                "kind": "ConditionalRenderingVariable",
+                "spec": {
+                 "variable": "escala",
+                 "operator": "equals",
+                 "value": "valor"
+                }
+               }
+              ]
+             }
             }
            }
           },
           {
-           "kind": "GridLayoutItem",
+           "kind": "RowsLayoutRow",
            "spec": {
-            "x": 0,
-            "y": 7,
-            "width": 24,
-            "height": 4,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-31"
+            "title": "",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 0,
+                 "width": 24,
+                 "height": 6,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-32"
+                 },
+                 "repeat": {
+                  "mode": "variable",
+                  "value": "moedas",
+                  "direction": "h",
+                  "maxPerRow": 3
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "hideHeader": true,
+            "conditionalRendering": {
+             "kind": "ConditionalRenderingGroup",
+             "spec": {
+              "visibility": "show",
+              "condition": "and",
+              "items": [
+               {
+                "kind": "ConditionalRenderingVariable",
+                "spec": {
+                 "variable": "escala",
+                 "operator": "equals",
+                 "value": "separado"
+                }
+               }
+              ]
+             }
             }
            }
           },
           {
-           "kind": "GridLayoutItem",
+           "kind": "RowsLayoutRow",
            "spec": {
-            "x": 0,
-            "y": 11,
-            "width": 24,
-            "height": 6,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-30"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 0,
-            "y": 17,
-            "width": 24,
-            "height": 5,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-4"
-            }
+            "title": "",
+            "collapse": false,
+            "layout": {
+             "kind": "GridLayout",
+             "spec": {
+              "items": [
+               {
+                "kind": "GridLayoutItem",
+                "spec": {
+                 "x": 0,
+                 "y": 0,
+                 "width": 24,
+                 "height": 5,
+                 "element": {
+                  "kind": "ElementReference",
+                  "name": "panel-4"
+                 }
+                }
+               }
+              ]
+             }
+            },
+            "hideHeader": true
            }
           }
          ]
@@ -5654,7 +6060,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-33"
+                  "name": "panel-35"
                  }
                 }
                },
@@ -5939,7 +6345,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-49"
+             "name": "panel-51"
             }
            }
           },
@@ -5952,7 +6358,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-39"
+             "name": "panel-41"
             }
            }
           },
@@ -5965,7 +6371,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-40"
+             "name": "panel-42"
             }
            }
           },
@@ -5978,7 +6384,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-41"
+             "name": "panel-43"
             }
            }
           },
@@ -5991,7 +6397,7 @@
             "height": 9,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-42"
+             "name": "panel-44"
             }
            }
           }
@@ -6017,7 +6423,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-36"
+             "name": "panel-38"
             }
            }
           },
@@ -6095,7 +6501,7 @@
             "height": 2,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-37"
+             "name": "panel-39"
             }
            }
           },
@@ -6156,7 +6562,7 @@
                  "height": 2,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-38"
+                  "name": "panel-40"
                  }
                 }
                },
@@ -6169,7 +6575,7 @@
                  "height": 5,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-34"
+                  "name": "panel-36"
                  }
                 }
                },
@@ -6289,7 +6695,7 @@
                  "height": 7,
                  "element": {
                   "kind": "ElementReference",
-                  "name": "panel-35"
+                  "name": "panel-37"
                  }
                 }
                }

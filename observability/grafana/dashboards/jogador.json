@@ -157,10 +157,10 @@
    }
   ],
   "elements": {
-   "panel-43": {
+   "panel-45": {
     "kind": "Panel",
     "spec": {
-     "id": 43,
+     "id": 45,
      "title": "Encontrar jogador (busca por nome, telefone ou ID)",
      "description": "Digite parte do nome, do telefone ou do ID no campo 'Buscar' no topo e clique no nome para abrir a ficha.",
      "links": [],
@@ -439,10 +439,10 @@
      }
     }
    },
-   "panel-44": {
+   "panel-46": {
     "kind": "Panel",
     "spec": {
-     "id": 44,
+     "id": 46,
      "title": "Ficha do jogador",
      "description": "Escolha o jogador clicando num nome (aqui ou nas tabelas da aba Jogadores) ou digitando a pessoa no campo 'Jogador': telefone com 13 dígitos, tg:<id> ou lid:<id>. Período = seletor de tempo.",
      "links": [],
@@ -583,10 +583,10 @@
      }
     }
    },
-   "panel-45": {
+   "panel-47": {
     "kind": "Panel",
     "spec": {
-     "id": 45,
+     "id": 47,
      "title": "Saldo por dia — ${moeda} — jogador escolhido",
      "description": "Saldo no fim de cada dia econômico (o dia corrente = agora). Petalitas: só desde a primeira carga.",
      "links": [],
@@ -642,10 +642,10 @@
      }
     }
    },
-   "panel-46": {
+   "panel-48": {
     "kind": "Panel",
     "spec": {
-     "id": 46,
+     "id": 48,
      "title": "Fluxo por motivo e dia — ${moeda} — jogador escolhido",
      "description": "Líquido (entrou − saiu) por motivo e dia econômico.",
      "links": [],
@@ -714,10 +714,10 @@
      }
     }
    },
-   "panel-47": {
+   "panel-49": {
     "kind": "Panel",
     "spec": {
-     "id": 47,
+     "id": 49,
      "title": "Extrato diário — ${moeda} — jogador escolhido",
      "description": "",
      "links": [],
@@ -857,10 +857,10 @@
      }
     }
    },
-   "panel-48": {
+   "panel-50": {
     "kind": "Panel",
     "spec": {
-     "id": 48,
+     "id": 50,
      "title": "Comandos por dia — jogador escolhido",
      "description": "",
      "links": [],
@@ -940,7 +940,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-43"
+             "name": "panel-45"
             }
            }
           }
@@ -967,7 +967,7 @@
             "height": 6,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-44"
+             "name": "panel-46"
             }
            }
           },
@@ -980,7 +980,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-45"
+             "name": "panel-47"
             }
            }
           },
@@ -993,7 +993,7 @@
             "height": 8,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-46"
+             "name": "panel-48"
             }
            }
           },
@@ -1006,7 +1006,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-47"
+             "name": "panel-49"
             }
            }
           },
@@ -1019,7 +1019,7 @@
             "height": 10,
             "element": {
              "kind": "ElementReference",
-             "name": "panel-48"
+             "name": "panel-50"
             }
            }
           }

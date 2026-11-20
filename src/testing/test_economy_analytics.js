@@ -2103,21 +2103,46 @@ async function main() {
 				["Resumo", "Moeda", "Jogadores", "Atividade", "Mudanças", "Diagnóstico"]
 			);
 			const byName = new Map(dashboardPanels().map((p) => [p.name, p]));
-			const resumo = layout[0].sections[0].elements.map((n) => byName.get(n));
-			assert.deepStrictEqual(
-				resumo.filter((p) => p.type !== "text").map((p) => p.type),
-				["table", "alertlist", "timeseries", "table"],
-				"Resumo: situação por moeda, alertas, massa, mudanças"
-			);
+			// Resumo com uma escala (seções da massa só aparecem com a Escala delas)
+			const escalaDe = (s) => s.conditional?.spec.items[0].spec.value;
+			const resumoCom = (escala) =>
+				layout[0].sections.filter((s) => !s.conditional || escalaDe(s) === escala);
+			assert.deepStrictEqual(layout[0].sections.filter((s) => s.conditional).map(escalaDe), [
+				"indice",
+				"valor",
+				"separado"
+			]);
+			for (const escala of ["indice", "valor", "separado"]) {
+				const resumo = resumoCom(escala).flatMap((s) => s.elements.map((n) => byName.get(n)));
+				assert.deepStrictEqual(
+					resumo.filter((p) => p.type !== "text").map((p) => p.type),
+					["table", "alertlist", "timeseries", "table"],
+					"Resumo: situação por moeda, alertas, massa, mudanças"
+				);
+			}
 			// Resumo cabe em 1920×1080: cada linha da grade ocupa ~38 px reais (30 + espaço), ~22 linhas abaixo do topo
 			// (variáveis e abas)
-			const resumoH = JSON.parse(
-				fs.readFileSync(DASHBOARD, "utf8")
-			).spec.layout.spec.tabs[0].spec.layout.spec.items.reduce(
-				(m, i) => Math.max(m, i.spec.y + i.spec.height),
-				0
+			const rows = dash.spec.layout.spec.tabs[0].spec.layout.spec.rows;
+			for (const escala of ["indice", "valor", "separado"]) {
+				const resumoH = rows
+					.filter(
+						(r) =>
+							!r.spec.conditionalRendering ||
+							r.spec.conditionalRendering.spec.items[0].spec.value === escala
+					)
+					.reduce(
+						(t, r) =>
+							t +
+							r.spec.layout.spec.items.reduce((m, i) => Math.max(m, i.spec.y + i.spec.height), 0),
+						0
+					);
+				assert.ok(resumoH <= 22, `Resumo (${escala}) com ${resumoH} linhas de grade`);
+			}
+			// Separado: um gráfico por moeda escolhida
+			const sep = rows.find(
+				(r) => r.spec.conditionalRendering?.spec.items[0].spec.value === "separado"
 			);
-			assert.ok(resumoH <= 22, `Resumo com ${resumoH} linhas de grade`);
+			assert.strictEqual(sep.spec.layout.spec.items[0].spec.repeat.value, "moedas");
 			const alma = layout[1].sections.find((s) => s.title === "Ciclo da alma gêmea");
 			assert.deepStrictEqual(alma.conditional.spec.items[0].spec, {
 				variable: "moeda",
@@ -2134,7 +2159,7 @@ async function main() {
 			assert.deepStrictEqual(vars.moedas.current.value, ["zinthos", "petalitas", "runas"]);
 			assert.deepStrictEqual(
 				vars.escala.options.map((o) => o.value),
-				["indice", "valor"]
+				["indice", "valor", "separado"]
 			);
 			for (const p of dashboardPanels().filter((x) => x.targets.length)) {
 				const sql = p.targets[0].queryText;

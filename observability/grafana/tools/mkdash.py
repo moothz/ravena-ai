@@ -759,25 +759,49 @@ ALERT_DESC = ("Regras em observability/grafana/provisioning/alerting/economia.ya
               "moeda sem origem acima de 5% do criado e ciclo da alma gêmea acima do custo. Sem ponto de contato configurado, ficam só aqui "
               "e em Alerting; para receber aviso, configurar um contact point.")
 
-# Massa das moedas, juntas, com o filtro Moedas e a escala (índice 100 no início do período, ou valor)
-MASSA_MULTI = f"""
-WITH b AS (
-  SELECT currency, ts, total FROM balances WHERE currency IN ({MS}) AND ts >= {FROM} AND ts < {TO}
-),
-f AS (SELECT currency, total AS t0 FROM b x WHERE ts = (SELECT MIN(ts) FROM b y WHERE y.currency = x.currency))
+# Massa das moedas (Resumo), com o filtro Moedas e três formas de ver (variável Escala):
+# - índice: todas sobre a mesma base (o maior dos primeiros retratos das moedas escolhidas na janela = 100), eixo log:
+#   inclinações iguais = mesmo crescimento %, qualquer que seja o tamanho da moeda;
+# - valor: cada moeda na própria grandeza, eixo linear (a menor fica achatada);
+# - separado: um gráfico por moeda escolhida (repetido pela variável moedas), eixo próprio e a cor da moeda.
+MASSA_B = f"""b AS (
+  SELECT currency, ts, total FROM balances WHERE currency IN ({MS}) AND ts >= {W12} AND ts < {TO}
+)"""
+MASSA_IDX = f"""
+WITH {MASSA_B},
+f AS (SELECT currency, total AS t0 FROM b x WHERE ts = (SELECT MIN(ts) FROM b y WHERE y.currency = x.currency)),
+base AS (SELECT MAX(t0) AS t0 FROM f)
 SELECT b.ts / 1000 AS time, {CUR_LABEL.format(c="b.currency")} AS "Moeda",
-  CASE WHEN '${{escala}}' = 'indice' THEN ROUND(100.0 * b.total / NULLIF(f.t0, 0), 2) ELSE b.total END AS "Massa"
-FROM b JOIN f ON f.currency = b.currency
-ORDER BY b.ts
+  ROUND(100.0 * b.total / NULLIF((SELECT t0 FROM base), 0), 4) AS "Massa (índice)"
+FROM b ORDER BY b.ts
 """
-massa_multi = panel("timeseries", "Massa em circulação, por moeda (12 semanas)", MASSA_MULTI, 0, 14, 24, 8,
-    desc="Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas; Escala = índice (100 no início do período, para comparar "
-         "o crescimento de moedas com tamanhos diferentes) ou valor (cada moeda na própria grandeza; a menor fica achatada). "
-         "Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. Marcas = mudanças.",
-    time_cols=["time"], qtype="time series", extra={"timeFrom": "84d"},
-    defaults={"unit": "locale", "decimals": 1, "noValue": "carga ainda não rodou", "displayName": "${__field.labels.Moeda}",
-              "custom": {"lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": True}},
-    overrides=cur_colors(), options={"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}})
+MASSA_VAL = f"""
+WITH {MASSA_B}
+SELECT b.ts / 1000 AS time, {CUR_LABEL.format(c="b.currency")} AS "Moeda", b.total AS "Massa"
+FROM b ORDER BY b.ts
+"""
+MASSA_DESC = ("Massa total de cada moeda. Filtro Moedas no topo põe e tira moedas. Escala: índice = todas sobre a mesma base (100 = "
+              "a maior massa entre os primeiros retratos das moedas escolhidas na janela) em eixo logarítmico, onde a mesma inclinação "
+              "é o mesmo crescimento %; valor = cada moeda na própria grandeza (a menor fica achatada); separado = um gráfico por moeda, "
+              "com eixo próprio. Zinthos antes da primeira carga: reconstruída pelo extrato. Petalitas: só desde a primeira carga. "
+              "Marcas = mudanças." + W12_NOTE)
+MASSA_LOOK = {"lineWidth": 2, "fillOpacity": 0, "showPoints": "never", "spanNulls": True}
+LEGEND = {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+massa_idx = panel("timeseries", "Massa em circulação, por moeda — índice, escala log (12 semanas)", MASSA_IDX, 0, 0, 24, 6,
+    desc=MASSA_DESC, time_cols=["time"], qtype="time series", extra={"timeFrom": "84d"},
+    defaults={"unit": "none", "noValue": "carga ainda não rodou", "displayName": "${__field.labels.Moeda}",
+              "custom": {**MASSA_LOOK, "scaleDistribution": {"type": "log", "log": 10}}},
+    overrides=cur_colors(), options=LEGEND)
+massa_val = panel("timeseries", "Massa em circulação, por moeda — valor (12 semanas)", MASSA_VAL, 0, 0, 24, 6,
+    desc=MASSA_DESC, time_cols=["time"], qtype="time series", extra={"timeFrom": "84d"},
+    defaults={"unit": "locale", "noValue": "carga ainda não rodou", "displayName": "${__field.labels.Moeda}", "custom": MASSA_LOOK},
+    overrides=cur_colors(), options=LEGEND)
+massa_sep = panel("timeseries", "Massa — ${moedas:text} (12 semanas)", MASSA_VAL, 0, 0, 24, 6,
+    desc=MASSA_DESC, time_cols=["time"], qtype="time series",
+    extra={"timeFrom": "84d", "repeat": {"mode": "variable", "value": "moedas", "direction": "h", "maxPerRow": 3}},
+    defaults={"unit": "locale", "noValue": "sem retrato", "displayName": "${__field.labels.Moeda}",
+              "custom": {**MASSA_LOOK, "fillOpacity": 8}},
+    overrides=cur_colors(), options={"legend": {"showLegend": False, "displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}})
 
 def stack(text, panels):
     """Cabeçalho (uma linha de texto, mesmo estilo em toda aba) e os painéis logo abaixo dele."""
@@ -792,10 +816,13 @@ sit["gridPos"].update({"x": 0, "y": 0, "w": 24, "h": 5})
 ativos = alertlist("Alertas disparados", ALERT_DESC + " Aqui só os disparados ou pendentes; a lista completa fica no Diagnóstico.",
                    ("firing", "pending", "error"), 5, 4)
 ativos["options"]["noValue"] = "nenhum alerta disparado"
-massa_multi["gridPos"].update({"y": 9, "h": 6})
-ultimas["gridPos"].update({"y": 15, "h": 5})
-resumo = stack("**Está tudo bem, e os dados são de agora?** Situação de cada moeda, alertas, massa e as últimas mudanças.",
-               [sit, ativos, massa_multi, ultimas])
+ultimas["gridPos"].update({"y": 0, "h": 5})
+resumo = [v2.Section(None, stack("**Está tudo bem, e os dados são de agora?** Situação de cada moeda, alertas, massa e as últimas mudanças.",
+                                 [sit, ativos])),
+          v2.Section(None, [massa_idx], only=("escala", "indice")),
+          v2.Section(None, [massa_val], only=("escala", "valor")),
+          v2.Section(None, [massa_sep], only=("escala", "separado")),
+          v2.Section(None, [ultimas])]
 
 # Moeda: seções
 fluxos = [header("**Como a moeda escolhida está se comportando?** Escolha a moeda no topo. Petalitas ainda não tem extrato: os painéis de fluxo mostram o aviso no lugar.")]
@@ -826,7 +853,7 @@ glossario = panel("text", "Glossário", "", 0, 0, 24, 7, extra={"targets": [], "
     "- **Situação (veredito)**: o pior entre crescimento da massa na semana, moeda sem origem e motivo sem mapear. Limites provisórios.")}})
 
 tabs = [
-    v2.Tab("Resumo", [v2.Section(None, resumo)]),
+    v2.Tab("Resumo", resumo),
     v2.Tab("Moeda", [v2.Section("Fluxos — ${moeda}", fluxos),
                      v2.Section("Concentração e quem recebe — ${moeda}", concentracao),
                      v2.Section("Câmbio e transferências", cambio_p, collapse=True),
@@ -850,7 +877,8 @@ anno_poss = (f"SELECT ts / 1000 AS time, 'Possível mudança (confirmar): ' || l
              f"FROM annotations WHERE origin = 'possivel' AND {ANNO_FROM}")
 ECON_VARS = [v2.custom_var("moeda", "Moeda", MOEDA_OPTS, "zinthos"),
              v2.custom_var("moedas", "Moedas", MOEDA_OPTS, ["zinthos", "petalitas", "runas"], multi=True),
-             v2.custom_var("escala", "Escala", [("índice (100 no início)", "indice"), ("valor", "valor")], "indice")]
+             v2.custom_var("escala", "Escala", [("índice em log (base comum)", "indice"), ("valor", "valor"),
+                                                ("separado (um por moeda)", "separado")], "indice")]
 ECON_ANNOS = [v2.BUILTIN_ANNOTATION, v2.annotation("Mudanças registradas", DS, anno_sql, "orange"),
               ] + ([v2.annotation("Possíveis mudanças", DS, anno_poss, AMBER)] if AUTO else [])
 ECON_DESC = ("Painel da economia (Zinthos, Petalitas, Runas). Fonte: analytics.db publicado de hora em hora pela ravena-ai. "
