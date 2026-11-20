@@ -6,12 +6,21 @@
 		<meta name="robots" content="noindex, nofollow" />
 		<title>Ravena Admin</title>
 		<link rel="icon" href="/favicon-32x32.png" type="image/png" />
-		<!-- Aplica o tema salvo antes da primeira pintura (sem piscar no tema errado). -->
+		<!-- Aplica o tema antes da primeira pintura: ?theme= (validado) ou o salvo no navegador. -->
 		<script>
-			try {
-				var t = localStorage.getItem("ravena-admin-theme");
-				if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
-			} catch (e) {}
+			(function () {
+				var ok = { light: 1, dark: 1 };
+				var t = null;
+				try {
+					t = new URLSearchParams(location.search).get("theme");
+				} catch (e) {}
+				if (!ok[t]) {
+					try {
+						t = localStorage.getItem("ravena-admin-theme");
+					} catch (e) {}
+				}
+				if (ok[t]) document.documentElement.dataset.theme = t;
+			})();
 		</script>
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -34,13 +43,19 @@
 			<span class="topbar-sep" aria-hidden="true"></span>
 			<span class="topbar-summary" id="topbar-summary" aria-live="polite"></span>
 			<span class="spacer"></span>
-			<div class="seg" id="theme-switch" role="group" aria-label="Tema">
+			<div class="seg seg-theme" id="theme-switch" role="group" aria-label="Tema">
 				<button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button>
 				<button type="button" data-theme-choice="light" aria-pressed="false">Claro</button>
 				<button type="button" data-theme-choice="dark" aria-pressed="false">Escuro</button>
 			</div>
+			<button type="button" class="btn btn-quiet theme-cycle" id="theme-cycle">Tema: Auto</button>
 			<a class="btn btn-quiet" href="/logout">Sair</a>
 		</header>
+		<div class="banner" id="session-banner" role="alert" hidden>
+			<span class="status"><span class="lamp" data-state="down" aria-hidden="true"></span></span>
+			<span>A sessão de admin expirou.</span>
+			<a class="btn" href="/admin">Entrar de novo</a>
+		</div>
 
 		<div class="shell">
 			<nav class="sidebar" id="sidebar" aria-label="Áreas do painel"></nav>

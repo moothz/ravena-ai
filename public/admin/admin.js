@@ -1,11 +1,10 @@
 /*
  * Painel de admin unificado da Ravena (experimental).
  *
- * Reúne as telas de admin que hoje vivem em rotas separadas. Cada área tem:
- *   - um "Resumo" montado aqui, só com leituras das rotas /api já existentes;
- *   - a tela antiga embutida (iframe, mesma origem e mesma sessão de admin),
- *     até que a área seja reescrita aqui de forma progressiva.
- * Nenhuma regra de negócio mora neste arquivo: ele só lê e mostra.
+ * Reúne as telas de admin que hoje vivem em rotas separadas:
+ *   - nativas aqui: Visão geral, Analytics e LLM, Logs (só leituras das rotas /api);
+ *   - as demais áreas mostram a tela antiga embutida (iframe com ?embed=1, mesma origem e
+ *     mesma sessão), até que cada uma seja migrada. Nada de regra de negócio neste arquivo.
  *
  * Rotas internas por hash: #/<area> ou #/<area>/<aba>.
  */
@@ -79,36 +78,37 @@
 			"span",
 			{ class: "status", "data-state": state },
 			h("span", { class: "lamp", "data-state": state, "aria-hidden": "true" }),
-			h("span", { class: "state-word", "data-state": state, text: word })
+			word ? h("span", { class: "state-word", "data-state": state, text: word }) : null
 		);
 	}
 
+	/* ── Números, plurais e tempo em pt-BR ─────────────────────────── */
+
 	const nf = new Intl.NumberFormat("pt-BR");
 	const nf2 = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 2 });
-	const fmt = (n) => (typeof n === "number" && Number.isFinite(n) ? nf.format(n) : "–");
-	const fmt2 = (n) => (typeof n === "number" && Number.isFinite(n) ? nf2.format(n) : "–");
+	const fmt = (n) => (typeof n === "number" && Number.isFinite(n) ? nf.format(n) : "—");
+	const fmt2 = (n) => (typeof n === "number" && Number.isFinite(n) ? nf2.format(n) : "—");
 
+	/** plural(2, "instância", "instâncias") → "2 instâncias" */
+	const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many}`;
+
+	const dateFmt = new Intl.DateTimeFormat("pt-BR", { dateStyle: "short", timeStyle: "short" });
+
+	/** "há 3 min", "há 46 h", "há 2 d"; "—" sem data */
 	function relTime(ts) {
-		if (!ts) return "–";
-		const diff = Date.now() - Number(ts);
-		if (!Number.isFinite(diff)) return "–";
-		const s = Math.round(diff / 1000);
+		const n = Number(ts);
+		if (!ts || !Number.isFinite(n)) return "—";
+		const s = Math.round((Date.now() - n) / 1000);
+		if (s < 0) return dateFmt.format(new Date(n));
 		if (s < 60) return "agora";
 		const m = Math.round(s / 60);
-		if (m < 60) return `${m} min`;
+		if (m < 60) return `há ${m} min`;
 		const hr = Math.round(m / 60);
-		if (hr < 48) return `${hr} h`;
-		return `${Math.round(hr / 24)} d`;
+		if (hr < 48) return `há ${hr} h`;
+		return `há ${Math.round(hr / 24)} d`;
 	}
 
-	/** Mostra só o fim de um número de telefone (nunca o ID inteiro na tela). */
-	function maskNumber(num) {
-		const digits = String(num || "").replace(/\D/g, "");
-		if (!digits) return "–";
-		return `…${digits.slice(-4)}`;
-	}
-
-	/* ── Acesso à API ───────────────────────────────────────────── */
+	/* ── Acesso à API: cache curto, sem pedidos repetidos em voo ────── */
 
 	class HttpError extends Error {
 		constructor(status, message) {
@@ -117,19 +117,42 @@
 		}
 	}
 
-	async function api(path) {
-		const res = await fetch(path, {
+	const API_TTL_MS = 45 * 1000;
+	const apiCache = new Map(); // url -> { at, promise }
+
+	/**
+	 * GET JSON com cache de 45 s por URL: trocar de área e voltar não refaz as leituras
+	 * (o strictLimiter do servidor é de 10/min por IP para quem não é admin).
+	 * @param {string} path
+	 * @param {{ fresh?: boolean }} [opts] - fresh: ignora o cache (botão Atualizar)
+	 */
+	function api(path, opts = {}) {
+		const hit = apiCache.get(path);
+		if (!opts.fresh && hit && Date.now() - hit.at < API_TTL_MS) return hit.promise;
+		const promise = fetch(path, {
 			credentials: "same-origin",
 			headers: { Accept: "application/json" }
+		}).then(async (res) => {
+			if (!res.ok) {
+				if (res.status === 401) showSessionExpired();
+				throw new HttpError(res.status, httpReason(res.status));
+			}
+			return res.json();
 		});
-		if (!res.ok) {
-			const reasons = {
-				401: "sessão de admin expirada",
-				429: "muitas requisições seguidas, tente de novo em um minuto"
-			};
-			throw new HttpError(res.status, reasons[res.status] || `HTTP ${res.status}`);
-		}
-		return res.json();
+		apiCache.set(path, { at: Date.now(), promise });
+		// Falhas não ficam no cache: a próxima leitura tenta de novo.
+		promise.catch(() => {
+			if (apiCache.get(path)?.promise === promise) apiCache.delete(path);
+		});
+		return promise;
+	}
+
+	function httpReason(status) {
+		if (status === 401) return "sessão expirada";
+		if (status === 403) return "sem permissão";
+		if (status === 429) return "limite de requisições, tente em 1 min";
+		if (status >= 500) return `erro no servidor (${status})`;
+		return `HTTP ${status}`;
 	}
 
 	/** Executa várias leituras sem que a falha de uma derrube a tela inteira. */
@@ -144,31 +167,48 @@
 		return out;
 	}
 
+	function showSessionExpired() {
+		const banner = document.getElementById("session-banner");
+		if (banner) banner.hidden = false;
+	}
+
 	function errorNotice(err, what) {
 		const msg = err && err.message ? err.message : "erro desconhecido";
-		const notice = h(
+		return h(
 			"div",
 			{ class: "notice error", role: "alert" },
-			`Não foi possível carregar ${what}: ${msg}`
+			`Não foi possível carregar ${what}: ${msg}.`
 		);
-		if (err && err.status === 401) {
-			notice.append(" ", h("a", { href: "/admin", text: "Entrar de novo" }));
-		}
-		return notice;
 	}
 
 	/* ── Peças de layout ─────────────────────────────────────────── */
 
-	function cell({ label, value, sub, href, attention }) {
+	/**
+	 * Bloco da grade. Com `error`, mostra o motivo por escrito no lugar do número
+	 * (nunca um "—" que pareça zero).
+	 */
+	function cell({ label, value, sub, href, attention, error }) {
 		const tag = href ? "a" : "div";
+		let valueEl;
+		if (error) {
+			valueEl = h(
+				"span",
+				{ class: "value", "data-state": "error" },
+				lamp("off", httpReasonOf(error))
+			);
+		} else {
+			valueEl = value instanceof Node ? value : h("span", { class: "value", text: value });
+		}
 		return h(
 			tag,
-			{ class: `cell${attention ? " wants-you" : ""}`, href },
+			{ class: `cell${attention && !error ? " wants-you" : ""}`, href, "data-cell": label },
 			h("p", { class: "label", text: label }),
-			value instanceof Node ? value : h("span", { class: "value", text: value }),
-			sub ? (sub instanceof Node ? sub : h("span", { class: "sub", text: sub })) : null
+			valueEl,
+			sub && !error ? (sub instanceof Node ? sub : h("span", { class: "sub", text: sub })) : null
 		);
 	}
+
+	const httpReasonOf = (err) => (err && err.message ? err.message : "sem dado");
 
 	function section(title, ...children) {
 		return h(
@@ -184,7 +224,7 @@
 		);
 	}
 
-	function table(columns, rows, caption) {
+	function table(columns, rows) {
 		if (!rows.length) return h("div", { class: "empty", text: "Nada para mostrar ainda." });
 		return h(
 			"div",
@@ -192,13 +232,6 @@
 			h(
 				"table",
 				null,
-				caption
-					? h("caption", {
-							class: "label",
-							style: "text-align:left;padding:8px 12px",
-							text: caption
-						})
-					: null,
 				h(
 					"thead",
 					null,
@@ -222,7 +255,7 @@
 								return h(
 									"td",
 									{ class: c.num ? "num" : null },
-									v instanceof Node ? v : String(v ?? "–")
+									v instanceof Node ? v : String(v ?? "—")
 								);
 							})
 						)
@@ -232,9 +265,10 @@
 		);
 	}
 
-	/** Tela antiga embutida, carregada só quando a aba é aberta. */
+	/** Tela antiga embutida (?embed=1 esconde o cabeçalho dela), carregada só quando aberta. */
 	function embed(src, title) {
-		const frame = h("iframe", { src, title, loading: "lazy" });
+		const embedSrc = `${src}${src.includes("?") ? "&" : "?"}embed=1`;
+		const frame = h("iframe", { src: embedSrc, title, loading: "lazy" });
 		return h(
 			"div",
 			{ class: "embed", "data-embed": src },
@@ -250,7 +284,7 @@
 						type: "button",
 						class: "btn btn-quiet",
 						onclick: () => {
-							frame.src = src;
+							frame.src = embedSrc;
 						}
 					},
 					icon("recarregar"),
@@ -267,7 +301,7 @@
 		);
 	}
 
-	/* ── Áreas ──────────────────────────────────────────────────── */
+	/* ── Estados derivados ──────────────────────────────────────── */
 
 	const SERVICE_NAMES = {
 		whatsgoapi: "WhatsGo API",
@@ -280,18 +314,25 @@
 		nudenet: "NudeNet"
 	};
 
-	function serviceState(value) {
+	/** "ok" | "down" | "unknown" — "sem dado" é diferente de "fora". */
+	function serviceKind(value) {
 		const status = typeof value === "object" && value ? value.status : value;
-		if (status === "up" || status === "online" || status === "ok") return ["ok", "no ar"];
-		if (status === "down" || status === "offline") return ["down", "fora"];
-		return ["off", String(status || "sem dado")];
+		if (status === "up" || status === "online" || status === "ok") return "ok";
+		if (status === "down" || status === "offline") return "down";
+		return "unknown";
 	}
 
-	function botState(bot) {
-		if (bot.enabled === false) return ["off", "desativada"];
-		if (bot.connected) return ["ok", "conectada"];
-		if (bot.isLive) return ["attention", "desconectada"];
-		return ["down", "parada"];
+	const isEventActive = (e) => e.status === "active" || e.status === "running";
+
+	/**
+	 * Falhas de LLM só pedem atenção com amostra mínima e taxa alta: um 1 em 3 de madrugada
+	 * não acende o âmbar.
+	 */
+	const LLM_FAIL_MIN_REQUESTS = 20;
+	const LLM_FAIL_RATE = 0.1;
+	function llmFailing(s) {
+		if (!s || !s.total_requests || s.total_requests < LLM_FAIL_MIN_REQUESTS) return false;
+		return s.total_failures / s.total_requests > LLM_FAIL_RATE;
 	}
 
 	const TIMEFRAMES = [
@@ -301,23 +342,22 @@
 		{ id: "30d", label: "30 d", ms: 30 * 24 * 60 * 60 * 1000 }
 	];
 
+	/* ── Áreas ──────────────────────────────────────────────────── */
+
 	const AREAS = [
 		{
 			id: "geral",
 			group: "Operação",
 			title: "Visão geral",
-			desc: "O estado da Ravena num olhar. Cada bloco leva à sua área.",
+			desc: "O que precisa de você agora e o estado da Ravena num olhar.",
 			tabs: [{ id: "resumo", label: "Resumo", render: renderGeral }]
 		},
 		{
 			id: "instancias",
 			group: "Operação",
 			title: "Instâncias",
-			desc: "Os bots configurados e o estado de cada conexão.",
-			tabs: [
-				{ id: "resumo", label: "Resumo", render: renderInstancias },
-				{ id: "gestao", label: "Gestão completa", embed: "/instances" }
-			]
+			desc: "Bots, pareamento, avisos de status e bots.json.",
+			tabs: [{ id: "gestao", label: "Gestão", embed: "/instances" }]
 		},
 		{
 			id: "logs",
@@ -331,20 +371,14 @@
 			group: "Jogos e economia",
 			title: "Banco",
 			desc: "RavenaBank: usuários, transações, configuração e economia.",
-			tabs: [
-				{ id: "resumo", label: "Resumo", render: renderBanco },
-				{ id: "painel", label: "Painel do banco", embed: "/banco/admin" }
-			]
+			tabs: [{ id: "painel", label: "Painel do banco", embed: "/banco/admin" }]
 		},
 		{
 			id: "eventos",
 			group: "Jogos e economia",
 			title: "Eventos",
 			desc: "Eventos programados com bônus para os jogos.",
-			tabs: [
-				{ id: "resumo", label: "Resumo", render: renderEventos },
-				{ id: "gestao", label: "Gestão de eventos", embed: "/eventos/admin" }
-			]
+			tabs: [{ id: "gestao", label: "Gestão de eventos", embed: "/eventos/admin" }]
 		},
 		{
 			id: "economia",
@@ -357,11 +391,8 @@
 			id: "provedores",
 			group: "IA",
 			title: "Provedores de IA",
-			desc: "Serviços externos, provedores cadastrados e fila do LLM.",
-			tabs: [
-				{ id: "resumo", label: "Resumo", render: renderProvedores },
-				{ id: "gestao", label: "Gestão de provedores", embed: "/service-providers" }
-			]
+			desc: "Cadastro de provedores, fila do LLM e custos.",
+			tabs: [{ id: "gestao", label: "Gestão de provedores", embed: "/service-providers" }]
 		},
 		{
 			id: "analytics",
@@ -389,6 +420,9 @@
 		}
 	];
 
+	/** "#/provedores" → "Provedores de IA" */
+	const areaTitle = (href) => (AREAS.find((a) => `#/${a.id}` === href) || {}).title || "";
+
 	/* Visão geral */
 	async function renderGeral(root) {
 		const d = await settle({
@@ -399,137 +433,151 @@
 			events: api("/api/events/admin")
 		});
 
-		const bots = Array.isArray(d.bots) ? d.bots : [];
-		const connected = bots.filter((b) => b.connected).length;
-		const enabled = bots.filter((b) => b.enabled !== false).length;
-		const services = d.services || {};
-		const svcEntries = Object.entries(services);
-		const svcUp = svcEntries.filter(([, v]) => serviceState(v)[0] === "ok").length;
+		const bots = Array.isArray(d.bots) ? d.bots.filter((b) => b.enabled !== false) : [];
+		const offline = bots.filter((b) => !b.connected);
+		const services = Object.entries(d.services || {});
+		const svcDown = services.filter(([, v]) => serviceKind(v) === "down");
+		const svcUnknown = services.filter(([, v]) => serviceKind(v) === "unknown");
 		const bank = d.bank && d.bank.data;
 		const llm = d.llm || {};
 		const events = (d.events && d.events.events) || [];
-		const activeEvents = events.filter(
-			(e) => e.status === "active" || e.status === "running"
-		).length;
+		const active = events.filter(isEventActive);
 
-		root.append(
-			h(
-				"div",
-				{ class: "grid" },
-				cell({
-					label: "Instâncias",
-					value: d.bots ? `${connected}/${enabled}` : "–",
-					sub: d.bots ? "conectadas / ativas" : "sem acesso",
-					href: "#/instancias",
-					attention: d.bots && connected < enabled
-				}),
-				cell({
-					label: "Serviços",
-					value: d.services ? `${svcUp}/${svcEntries.length}` : "–",
-					sub: "no ar",
-					href: "#/provedores",
-					attention: d.services && svcUp < svcEntries.length
-				}),
-				cell({
-					label: "Runas em circulação",
-					value: bank ? fmt2(bank.totalRunas) : "–",
-					sub: bank ? `${fmt(bank.totalAccounts)} contas` : "sem acesso",
-					href: "#/banco"
-				}),
-				cell({
-					label: "LLM · 24 h",
-					value: fmt(llm.total_requests),
-					sub: `${fmt(llm.total_failures)} falhas`,
-					href: "#/analytics",
-					attention: llm.total_failures > 0
-				}),
-				cell({
-					label: "Eventos",
-					value: d.events ? fmt(activeEvents) : "–",
-					sub: d.events ? `ativos de ${fmt(events.length)}` : "sem acesso",
-					href: "#/eventos"
-				})
-			)
-		);
-
-		if (d.servicesError) root.append(errorNotice(d.servicesError, "o estado dos serviços"));
-		root.append(
-			section(
-				"Serviços",
-				table(
-					[
-						{ label: "Serviço", value: ([k]) => SERVICE_NAMES[k] || k },
-						{ label: "Estado", value: ([, v]) => lamp(...serviceState(v)) },
-						{
-							label: "Detalhe",
-							value: ([, v]) => (typeof v === "object" && v && v.model ? `modelo: ${v.model}` : "")
-						}
-					],
-					svcEntries
-				)
-			)
-		);
-	}
-
-	/* Instâncias */
-	async function renderInstancias(root) {
-		const d = await settle({ bots: api("/api/bots"), stats: api("/api/bot-stats") });
-		if (d.botsError) {
-			root.append(errorNotice(d.botsError, "as instâncias"));
-			return;
+		/* Precisa de você: só o que pede ação, cada item leva à área. */
+		const needs = [];
+		for (const b of offline) {
+			needs.push({
+				state: b.isLive ? "attention" : "down",
+				what: `Instância ${b.nomeExibir || b.nome} ${b.isLive ? "desconectada" : "parada"}`,
+				detail: `Última msg: ${relTime(b.lastMessageReceived)}`,
+				href: "#/instancias"
+			});
 		}
-		const statsById = new Map((d.stats || []).map((s) => [s.id, s]));
-		const bots = d.bots || [];
-		const total = statsById.get("TOTAL");
+		for (const [k] of svcDown) {
+			needs.push({
+				state: "down",
+				what: `${SERVICE_NAMES[k] || k} fora do ar`,
+				href: "#/provedores"
+			});
+		}
+		if (llmFailing(llm)) {
+			needs.push({
+				state: "attention",
+				what: "LLM com muitas falhas",
+				detail: `${plural(llm.total_failures, "falha", "falhas")} em ${plural(llm.total_requests, "requisição", "requisições")} nas últimas 24 h`,
+				href: "#/analytics"
+			});
+		}
+		for (const e of active) {
+			needs.push({
+				state: "busy",
+				what: `Evento ativo: ${e.name}`,
+				detail: e.endFormatted ? `termina ${e.endFormatted}` : null,
+				href: "#/eventos"
+			});
+		}
+		for (const [k] of svcUnknown) {
+			needs.push({
+				state: "off",
+				what: `${SERVICE_NAMES[k] || k}: sem dado`,
+				href: "#/provedores"
+			});
+		}
 
+		const errors = [d.botsError, d.servicesError, d.eventsError].filter(Boolean);
 		root.append(
-			h(
-				"div",
-				{ class: "grid" },
-				cell({ label: "Configuradas", value: fmt(bots.length) }),
-				cell({ label: "Conectadas", value: fmt(bots.filter((b) => b.connected).length) }),
-				cell({ label: "Grupos", value: fmt(total ? total.groupsCount : undefined) }),
-				cell({ label: "Msgs hoje", value: fmt(total ? total.day : undefined) })
+			section(
+				"Precisa de você",
+				errors.length ? errorNotice(errors[0], "parte do estado") : null,
+				needs.length
+					? h(
+							"ul",
+							{ class: "needs", "data-needs": String(needs.length) },
+							needs.map((n) =>
+								h(
+									"li",
+									{ "data-state": n.state },
+									h(
+										"a",
+										{ href: n.href },
+										h("span", {
+											class: "lamp",
+											"data-state": n.state,
+											"aria-hidden": "true"
+										}),
+										h("span", { class: "what", text: n.what }),
+										h("span", { class: "where", text: areaTitle(n.href) }),
+										n.detail ? h("span", { class: "detail", text: n.detail }) : null
+									)
+								)
+							)
+						)
+					: errors.length
+						? null
+						: h(
+								"div",
+								{ class: "needs-empty", "data-needs": "0" },
+								lamp("ok"),
+								"Nada pede sua atenção agora."
+							)
 			),
 			section(
-				"Bots",
-				table(
-					[
-						{ label: "Instância", value: (b) => b.nomeExibir || b.nome },
-						{ label: "Estado", value: (b) => lamp(...botState(b)) },
-						{
-							label: "Número",
-							value: (b) => h("span", { class: "mono", text: maskNumber(b.numero) })
-						},
-						{ label: "Msgs/h", num: true, value: (b) => fmt(b.msgsHr) },
-						{
-							label: "Resp. média",
-							num: true,
-							value: (b) =>
-								b.responseTime && b.responseTime.avg ? `${fmt2(b.responseTime.avg)} s` : "–"
-						},
-						{ label: "Grupos", num: true, value: (b) => fmt(b.groupsCount) },
-						{ label: "Msgs hoje", num: true, value: (b) => fmt((statsById.get(b.nome) || {}).day) },
-						{ label: "Última msg", num: true, value: (b) => relTime(b.lastMessageReceived) }
-					],
-					bots
+				"Estado",
+				h(
+					"div",
+					{ class: "grid" },
+					cell({
+						label: "Instâncias",
+						value: `${bots.length - offline.length}/${bots.length}`,
+						sub: "conectadas / ativas",
+						href: "#/instancias",
+						attention: offline.length > 0,
+						error: d.botsError
+					}),
+					cell({
+						label: "Serviços",
+						value: `${services.length - svcDown.length - svcUnknown.length}/${services.length}`,
+						sub: svcUnknown.length
+							? `no ar · ${plural(svcUnknown.length, "sem dado", "sem dado")}`
+							: "no ar",
+						href: "#/provedores",
+						attention: svcDown.length > 0,
+						error: d.servicesError
+					}),
+					cell({
+						label: "Runas em circulação",
+						value: bank ? fmt2(bank.totalRunas) : "—",
+						sub: bank ? plural(bank.totalAccounts, "conta", "contas") : null,
+						href: "#/banco",
+						error: d.bankError
+					}),
+					cell({
+						label: "LLM · 24 h",
+						value: fmt(llm.total_requests),
+						sub: plural(llm.total_failures || 0, "falha", "falhas"),
+						href: "#/analytics",
+						attention: llmFailing(llm),
+						error: d.llmError
+					}),
+					cell({
+						label: "Eventos ativos",
+						value: fmt(active.length),
+						sub: `de ${plural(events.length, "evento", "eventos")}`,
+						href: "#/eventos",
+						error: d.eventsError
+					})
 				)
-			),
-			h(
-				"p",
-				{ class: "muted" },
-				"Reiniciar, desconectar, parear e editar o bots.json continuam na aba ",
-				h("a", { href: "#/instancias/gestao", text: "Gestão completa" }),
-				"."
 			)
 		);
 	}
 
 	/* Logs (SSE) */
 	function renderLogs(root) {
-		const MAX_LINES = 2000;
+		const MAX_LINES = 2000; // na tela
+		const MAX_PENDING = 2000; // guardadas durante a pausa
 		const out = h("pre", { class: "log", "aria-live": "off", "aria-label": "Saída de log" });
 		const state = h("span", { class: "status" });
+		const dropped = h("span", { class: "faint", "aria-live": "polite" });
 		const filter = h("input", {
 			type: "search",
 			placeholder: "filtrar",
@@ -537,6 +585,7 @@
 		});
 		let paused = false;
 		let source = null;
+		let droppedCount = 0;
 		const pending = [];
 
 		const setState = (s, word) => state.replaceChildren(lamp(s, word));
@@ -551,15 +600,18 @@
 		}
 
 		function onData(text) {
+			const lines = text.split("\n").filter((l) => l.length);
 			if (paused) {
-				pending.push(text);
+				pending.push(...lines);
+				if (pending.length > MAX_PENDING) {
+					droppedCount += pending.length - MAX_PENDING;
+					pending.splice(0, pending.length - MAX_PENDING);
+					dropped.textContent = `${plural(droppedCount, "linha descartada", "linhas descartadas")} durante a pausa`;
+				}
 				return;
 			}
 			const stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 24;
-			text
-				.split("\n")
-				.filter((l) => l.length)
-				.forEach(appendLine);
+			lines.forEach(appendLine);
 			if (stick) out.scrollTop = out.scrollHeight;
 		}
 
@@ -590,14 +642,21 @@
 				paused = !paused;
 				pauseBtn.setAttribute("aria-pressed", String(paused));
 				pauseBtn.textContent = paused ? "Continuar" : "Pausar";
-				if (!paused) pending.splice(0).forEach(onData);
+				if (!paused) {
+					const lines = pending.splice(0);
+					droppedCount = 0;
+					dropped.textContent = "";
+					lines.forEach(appendLine);
+					out.scrollTop = out.scrollHeight;
+				}
 			}
 		});
 
 		filter.addEventListener("input", () => {
 			const q = filter.value.trim().toLowerCase();
-			for (const line of out.children)
+			for (const line of out.children) {
 				line.hidden = q ? !line.textContent.toLowerCase().includes(q) : false;
+			}
 		});
 
 		root.append(
@@ -605,6 +664,7 @@
 				"div",
 				{ class: "toolbar" },
 				state,
+				dropped,
 				h("span", { class: "spacer" }),
 				h("label", { class: "field" }, filter),
 				pauseBtn,
@@ -620,135 +680,6 @@
 		);
 		connect();
 		return () => source && source.close();
-	}
-
-	/* Banco */
-	async function renderBanco(root) {
-		const d = await settle({
-			config: api("/api/games/bank/admin/config"),
-			users: api("/api/games/bank/admin/users?page=1&limit=10")
-		});
-		if (d.configError) {
-			root.append(errorNotice(d.configError, "a configuração do banco"));
-			return;
-		}
-		const c = (d.config && d.config.data) || {};
-		const r = c.rates || {};
-		root.append(
-			h(
-				"div",
-				{ class: "grid" },
-				cell({ label: "Runas em circulação", value: fmt2(c.totalRunas) }),
-				cell({ label: "Contas", value: fmt(c.totalAccounts) }),
-				cell({
-					label: "Inflação Waifuletes",
-					value: c.waifu ? `${fmt2(c.waifu.inflationPercent)} %` : "–",
-					sub: c.waifu ? `${fmt(c.waifu.circulatingZinthos)} Zinthos` : null,
-					attention: c.waifu && c.waifu.inflationPercent > 5
-				}),
-				cell({
-					label: "Inflação Jardim",
-					value: c.jardim ? `${fmt2(c.jardim.inflationPercent)} %` : "–",
-					sub: c.jardim ? `${fmt(c.jardim.totalCoins)} moedas` : null,
-					attention: c.jardim && c.jardim.inflationPercent > 5
-				}),
-				cell({
-					label: "Peixes",
-					value: c.fish ? `${fmt(c.fish.totalWeight)} kg` : "–",
-					sub: c.fish ? `${fmt(c.fish.totalCount)} capturas` : null
-				})
-			),
-			section(
-				`Cotações do dia${r.date ? ` · ${r.date}` : ""}`,
-				table(
-					[
-						{ label: "Conversão", value: (x) => x[0] },
-						{ label: "Runas", num: true, value: (x) => fmt2(x[1]) },
-						{
-							label: "Multiplicador",
-							num: true,
-							value: (x) => (x[2] === undefined ? "–" : fmt2(x[2]))
-						}
-					],
-					[
-						["1 kg de peixe", r.runasPerKgFish, r.fishMultiplier],
-						["1 Zinthos", r.runasPerZinthos, r.waifuMultiplier],
-						["1 moeda do Jardim", r.runasPerJardimCoin, r.jardimMultiplier]
-					]
-				)
-			)
-		);
-		const users = (d.users && d.users.data && d.users.data.users) || [];
-		root.append(
-			section(
-				"Maiores saldos",
-				d.usersError
-					? errorNotice(d.usersError, "os usuários")
-					: table(
-							[
-								{ label: "Nome", value: (u) => u.name || "Sem apelido" },
-								{ label: "Runas", num: true, value: (u) => fmt2(u.runas) },
-								{ label: "Depositado", num: true, value: (u) => fmt2(u.totalDeposited) },
-								{ label: "Sacado", num: true, value: (u) => fmt2(u.totalWithdrawn) },
-								{ label: "Atualizado", num: true, value: (u) => relTime(u.updatedAt) }
-							],
-							users.slice(0, 10)
-						)
-			),
-			h(
-				"p",
-				{ class: "muted" },
-				"Transações, desfazer, impersonação e regras ficam no ",
-				h("a", { href: "#/banco/painel", text: "Painel do banco" }),
-				"."
-			)
-		);
-	}
-
-	/* Eventos */
-	async function renderEventos(root) {
-		let data;
-		try {
-			data = await api("/api/events/admin");
-		} catch (err) {
-			root.append(errorNotice(err, "os eventos"));
-			return;
-		}
-		const events = data.events || [];
-		const eventState = (e) => {
-			if (e.status === "active" || e.status === "running") return ["ok", e.statusLabel || "ativo"];
-			if (e.status === "scheduled" || e.status === "pending")
-				return ["busy", e.statusLabel || "agendado"];
-			return ["off", e.statusLabel || e.status || "encerrado"];
-		};
-		root.append(
-			section(
-				"Eventos",
-				table(
-					[
-						{ label: "#", num: true, value: (e) => e.id },
-						{ label: "Nome", value: (e) => e.name },
-						{ label: "Estado", value: (e) => lamp(...eventState(e)) },
-						{ label: "Início", value: (e) => e.startFormatted || "–" },
-						{ label: "Fim", value: (e) => e.endFormatted || "–" },
-						{ label: "Duração", value: (e) => e.durationLabel || "–" }
-					],
-					events
-				)
-			),
-			section(
-				"Bônus disponíveis",
-				table(
-					[
-						{ label: "Jogo", value: (g) => g.gameLabel || g.game },
-						{ label: "Bônus", value: (g) => g.label },
-						{ label: "Unidade", value: (g) => g.unit },
-						{ label: "Padrão", num: true, value: (g) => fmt(g.defaultValue) }
-					],
-					(data.catalog && data.catalog.startGrants) || []
-				)
-			)
-		);
 	}
 
 	/* Economia */
@@ -816,7 +747,7 @@
 					"div",
 					{ class: "empty", "data-placeholder": "carga" },
 					h("p", {
-						style: "margin:0 0 6px",
+						style: "margin:0 0 0.375rem",
 						text: "Ainda não há rotas na API para os comandos da carga."
 					}),
 					h(
@@ -825,75 +756,6 @@
 						"Quando existirem, aparecem aqui com o estado da última execução e um botão por comando, sempre com confirmação."
 					)
 				)
-			)
-		);
-	}
-
-	/* Provedores de IA */
-	async function renderProvedores(root) {
-		const d = await settle({
-			services: api("/api/services/status"),
-			providers: api("/api/service-providers"),
-			queue: api("/api/llm/queue")
-		});
-		const services = Object.entries(d.services || {});
-		const providers = Object.entries(d.providers || {});
-		const queues = Object.entries((d.queue && d.queue.queues) || {});
-
-		if (d.servicesError) root.append(errorNotice(d.servicesError, "o estado dos serviços"));
-		root.append(
-			section(
-				"Estado dos serviços",
-				table(
-					[
-						{ label: "Serviço", value: ([k]) => SERVICE_NAMES[k] || k },
-						{ label: "Estado", value: ([, v]) => lamp(...serviceState(v)) },
-						{
-							label: "Detalhe",
-							value: ([, v]) => (typeof v === "object" && v && v.model ? `modelo: ${v.model}` : "")
-						}
-					],
-					services
-				)
-			),
-			section(
-				"Provedores cadastrados",
-				d.providersError
-					? errorNotice(d.providersError, "os provedores")
-					: table(
-							[
-								{ label: "Tipo", value: ([k]) => k },
-								{
-									label: "Cadastrados",
-									num: true,
-									value: ([, v]) => fmt(Array.isArray(v) ? v.length : 0)
-								},
-								{
-									label: "Ativos",
-									num: true,
-									value: ([, v]) =>
-										fmt(Array.isArray(v) ? v.filter((p) => p && p.enabled !== false).length : 0)
-								}
-							],
-							providers
-						)
-			),
-			section(
-				"Fila do LLM",
-				queues.length
-					? table(
-							[
-								{ label: "Fila", value: ([k]) => k },
-								{
-									label: "Itens",
-									num: true,
-									value: ([, v]) =>
-										fmt(Array.isArray(v) ? v.length : (v && (v.length ?? v.size)) || 0)
-								}
-							],
-							queues
-						)
-					: h("div", { class: "empty", text: "Fila vazia." })
 			)
 		);
 	}
@@ -914,7 +776,7 @@
 					text: t.label,
 					onclick: () => {
 						currentTimeframe = t.id;
-						router.rerender();
+						router.render({ focusSelector: `[data-timeframe="${t.id}"]` });
 					}
 				})
 			)
@@ -948,15 +810,17 @@
 				cell({
 					label: "Falhas",
 					value: fmt(s.total_failures),
-					sub: `${fmt2(failRate)} %`,
-					attention: failRate > 5
+					sub: s.total_requests ? `${fmt2(failRate)} % das requisições` : null,
+					attention: llmFailing(s)
 				}),
-				cell({ label: "Tokens entrada", value: fmt(s.total_input_tokens) }),
-				cell({ label: "Tokens saída", value: fmt(s.total_output_tokens) }),
+				cell({ label: "Tokens de entrada", value: fmt(s.total_input_tokens) }),
+				cell({ label: "Tokens de saída", value: fmt(s.total_output_tokens) }),
 				cell({ label: "Externas", value: fmt(s.external_requests) }),
 				cell({
-					label: "Msgs/hora hoje (soma)",
-					value: msgsHoje === null ? "–" : fmt(Math.round(msgsHoje))
+					label: "Msgs hoje",
+					value: msgsHoje === null ? "—" : fmt(Math.round(msgsHoje)),
+					sub: "soma das médias por hora",
+					error: d.analyticsError
 				})
 			),
 			section(
@@ -1056,7 +920,7 @@
 									{ class: "nav-item", href: `#/${a.id}`, "data-area": a.id },
 									icon(a.id),
 									h("span", { class: "nav-text", text: a.title }),
-									a.tabs.some((t) => t.embed) && !a.tabs.some((t) => t.render)
+									a.tabs.every((t) => t.embed)
 										? h("span", { class: "nav-meta", text: "antiga" })
 										: null
 								)
@@ -1111,7 +975,6 @@
 			else if (ev.key === "End") next = tabs[tabs.length - 1];
 			if (next) {
 				ev.preventDefault();
-				next.focus();
 				next.click();
 			}
 		});
@@ -1123,29 +986,39 @@
 	const router = {
 		cleanup: null,
 		token: 0,
+		areaId: null,
 		parse() {
 			const [areaId, tabId] = location.hash.replace(/^#\/?/, "").split("/");
 			const area = AREAS.find((a) => a.id === areaId) || AREAS[0];
 			const tab = area.tabs.find((t) => t.id === tabId) || area.tabs[0];
 			return { area, tab };
 		},
-		async render({ focus } = {}) {
+		/**
+		 * @param {{ focusMain?: boolean, focusSelector?: string }} [opts]
+		 *   focusMain: a área mudou, o foco vai para o conteúdo;
+		 *   focusSelector: o foco volta para este controle depois de redesenhar (aba, período).
+		 */
+		async render(opts = {}) {
 			const { area, tab } = this.parse();
 			const token = ++this.token;
 			if (typeof this.cleanup === "function") this.cleanup();
 			this.cleanup = null;
+			this.areaId = area.id;
 
 			document.querySelectorAll(".nav-item").forEach((a) => {
-				if (a.dataset.area === area.id) a.setAttribute("aria-current", "page");
-				else a.removeAttribute("aria-current");
+				if (a.dataset.area === area.id) {
+					a.setAttribute("aria-current", "page");
+					a.scrollIntoView({ block: "nearest", inline: "nearest" });
+				} else a.removeAttribute("aria-current");
 			});
 			document.title = `${area.title} · Ravena Admin`;
 
 			const main = document.getElementById("main");
+			const multi = area.tabs.length > 1;
 			const body = h("div", {
 				id: "view-body",
-				role: area.tabs.length > 1 ? "tabpanel" : null,
-				"aria-labelledby": area.tabs.length > 1 ? `tab-${tab.id}` : null,
+				role: multi ? "tabpanel" : null,
+				"aria-labelledby": multi ? `tab-${tab.id}` : null,
 				"data-view": `${area.id}/${tab.id}`,
 				"aria-busy": "true"
 			});
@@ -1164,7 +1037,13 @@
 				),
 				body
 			);
-			if (focus) main.focus({ preventScroll: true });
+			if (opts.focusMain) main.focus({ preventScroll: true });
+			const refocus = () => {
+				if (!opts.focusSelector) return;
+				const el = main.querySelector(opts.focusSelector);
+				if (el) el.focus();
+			};
+			refocus();
 
 			if (tab.embed) {
 				body.append(embed(tab.embed, `${area.title}: ${tab.label}`));
@@ -1181,18 +1060,32 @@
 				}
 				this.cleanup = cleanup;
 				body.replaceChildren(...holder.childNodes);
+				refocus();
 			} catch (err) {
 				if (token !== this.token) return;
 				body.replaceChildren(errorNotice(err, area.title.toLowerCase()));
 			}
 			body.removeAttribute("aria-busy");
-		},
-		rerender() {
-			return this.render();
 		}
 	};
 
+	window.addEventListener("hashchange", () => {
+		const { area, tab } = router.parse();
+		if (area.id !== router.areaId) router.render({ focusMain: true });
+		else router.render({ focusSelector: `[data-tab="${tab.id}"]` });
+	});
+
 	/* ── Resumo da barra do topo ─────────────────────────────────── */
+
+	function summaryItem(state, count, word, href) {
+		return h(
+			"a",
+			{ class: "summary-item", href, "data-summary": state },
+			h("span", { class: "lamp", "data-state": state, "aria-hidden": "true" }),
+			h("span", { class: "count", text: fmt(count) }),
+			h("span", { class: "word", text: word })
+		);
+	}
 
 	async function refreshSummary() {
 		const el = document.getElementById("topbar-summary");
@@ -1202,62 +1095,90 @@
 			const bots = d.bots.filter((b) => b.enabled !== false);
 			const off = bots.filter((b) => !b.connected).length;
 			parts.push(
-				h(
-					"span",
-					{ class: "lamp-text" },
-					lamp(
-						off ? "attention" : "ok",
-						off ? `${off} instância(s) fora` : `${bots.length} instância(s) ok`
-					)
-				)
+				off
+					? summaryItem(
+							"attention",
+							off,
+							off === 1 ? "instância fora" : "instâncias fora",
+							"#/instancias"
+						)
+					: summaryItem(
+							"ok",
+							bots.length,
+							bots.length === 1 ? "instância ok" : "instâncias ok",
+							"#/instancias"
+						)
 			);
 		}
 		if (d.services) {
 			const entries = Object.values(d.services);
-			const down = entries.filter((v) => serviceState(v)[0] !== "ok").length;
-			parts.push(
-				h(
-					"span",
-					{ class: "lamp-text" },
-					lamp(down ? "attention" : "ok", down ? `${down} serviço(s) fora` : "serviços ok")
-				)
-			);
+			const down = entries.filter((v) => serviceKind(v) === "down").length;
+			const unknown = entries.filter((v) => serviceKind(v) === "unknown").length;
+			if (down) {
+				parts.push(
+					summaryItem("down", down, down === 1 ? "serviço fora" : "serviços fora", "#/provedores")
+				);
+			}
+			if (unknown) parts.push(summaryItem("off", unknown, "sem dado", "#/provedores"));
+			if (!down && !unknown) {
+				parts.push(summaryItem("ok", entries.length, "serviços ok", "#/provedores"));
+			}
 		}
 		el.replaceChildren(...parts);
+	}
+
+	/** Atualiza o resumo a cada minuto, só com a aba visível. */
+	function startSummary() {
+		const tick = () => {
+			if (!document.hidden) refreshSummary().catch(() => {});
+		};
+		tick();
+		setInterval(tick, 60000);
+		document.addEventListener("visibilitychange", tick);
 	}
 
 	/* ── Tema (auto | claro | escuro) ────────────────────────────── */
 
 	const THEME_KEY = "ravena-admin-theme";
+	const THEMES = ["auto", "light", "dark"];
+	const THEME_LABEL = { auto: "Auto", light: "Claro", dark: "Escuro" };
+	const validTheme = (t) => (THEMES.includes(t) ? t : null);
+	let theme = "auto";
 
-	function applyTheme(choice) {
-		if (choice === "light" || choice === "dark") document.documentElement.dataset.theme = choice;
-		else delete document.documentElement.dataset.theme;
+	function applyTheme(choice, { save = true } = {}) {
+		theme = validTheme(choice) || "auto";
+		if (theme === "auto") delete document.documentElement.dataset.theme;
+		else document.documentElement.dataset.theme = theme;
 		document.querySelectorAll("[data-theme-choice]").forEach((b) => {
-			b.setAttribute("aria-pressed", String(b.dataset.themeChoice === (choice || "auto")));
+			b.setAttribute("aria-pressed", String(b.dataset.themeChoice === theme));
 		});
+		const cycle = document.getElementById("theme-cycle");
+		if (cycle) cycle.textContent = `Tema: ${THEME_LABEL[theme]}`;
+		if (!save) return;
 		try {
-			if (choice === "light" || choice === "dark") localStorage.setItem(THEME_KEY, choice);
-			else localStorage.removeItem(THEME_KEY);
+			if (theme === "auto") localStorage.removeItem(THEME_KEY);
+			else localStorage.setItem(THEME_KEY, theme);
 		} catch {
 			/* sem armazenamento: vale só nesta visita */
 		}
 	}
 
 	function initTheme() {
-		const params = new URLSearchParams(location.search);
-		let choice = params.get("theme");
-		if (!choice) {
-			try {
-				choice = localStorage.getItem(THEME_KEY);
-			} catch {
-				choice = null;
-			}
+		// ?theme= vale só nesta visita (não sobrescreve a escolha salva)
+		const fromUrl = validTheme(new URLSearchParams(location.search).get("theme"));
+		let saved = null;
+		try {
+			saved = validTheme(localStorage.getItem(THEME_KEY));
+		} catch {
+			saved = null;
 		}
-		applyTheme(choice || "auto");
+		applyTheme(fromUrl || saved || "auto", { save: false });
 		document.getElementById("theme-switch").addEventListener("click", (ev) => {
 			const btn = ev.target.closest("[data-theme-choice]");
 			if (btn) applyTheme(btn.dataset.themeChoice);
+		});
+		document.getElementById("theme-cycle").addEventListener("click", () => {
+			applyTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]);
 		});
 	}
 
@@ -1275,8 +1196,6 @@
 
 	initTheme();
 	buildSidebar();
-	window.addEventListener("hashchange", () => router.render({ focus: true }));
 	router.render();
-	refreshSummary().catch(() => {});
-	setInterval(() => refreshSummary().catch(() => {}), 60000);
+	startSummary();
 })();
