@@ -1214,6 +1214,16 @@ class CustomVariableProcessor {
 				return text;
 			}
 
+			// Se já estamos dentro de um comando embutido, impede recursão e exibe o limite
+			if (context.isEmbedded || (context.embeddingDepth && context.embeddingDepth >= 1)) {
+				for (const match of cmdMatches) {
+					const matchContent = match.match(/\{cmd-(.*?)\}/);
+					const commandText = matchContent ? matchContent[1].trim() : "";
+					text = text.replace(match, `[Limite Comandos embutidos: '${commandText}']`);
+				}
+				return text;
+			}
+
 			if (context && context.message && context.bot) {
 				// Verifica se o texto consiste apenas de comandos e espaços/quebras de linha
 				const pureCommandsText = text.replace(cmdRegex, "").trim();
@@ -1238,6 +1248,8 @@ class CustomVariableProcessor {
 			}
 
 			// Processa cada ocorrência que esteja misturada com texto
+			const commandHandler = context.commandHandler || context.bot?.eventHandler?.commandHandler;
+
 			for (const match of cmdMatches) {
 				try {
 					const matchContent = match.match(/\{cmd-(.*?)\}/);
@@ -1249,7 +1261,83 @@ class CustomVariableProcessor {
 						continue;
 					}
 
-					text = text.replace(match, `[Comando embutido: ${commandText}]`);
+					let replacement = "";
+					let resolved = false;
+
+					// Normaliza nome do comando
+					let cmdStr = commandText;
+					const prefix = context.group?.prefix ?? "!";
+					if (cmdStr.startsWith(prefix)) {
+						cmdStr = cmdStr.substring(prefix.length);
+					} else if (cmdStr.startsWith("!") || cmdStr.startsWith("/")) {
+						cmdStr = cmdStr.substring(1);
+					}
+					const [embeddedCmd, ...embeddedArgs] = cmdStr.trim().split(/\s+/);
+
+					// 1. Tenta encontrar como comando personalizado do grupo
+					if (context.group && commandHandler?.customCommands?.[context.group.id]) {
+						const matchResult = commandHandler.findCustomCommand(
+							embeddedCmd,
+							commandHandler.customCommands[context.group.id],
+							embeddedArgs
+						);
+						if (matchResult) {
+							const { customCommand, newArgs } = matchResult;
+							const responses = customCommand.responses ?? [];
+							if (responses.length > 0) {
+								const rawResponse = customCommand.sendAllResponses
+									? responses.join("\n")
+									: responses[Math.floor(Math.random() * responses.length)];
+
+								const childContext = {
+									...context,
+									isEmbedded: true,
+									embeddingDepth: (context.embeddingDepth || 0) + 1,
+									command: { ...customCommand, args: newArgs }
+								};
+								const processedChild = await this.process(rawResponse, childContext);
+								replacement =
+									typeof processedChild === "string"
+										? processedChild
+										: (processedChild?.content ?? "");
+								resolved = true;
+							}
+						}
+					}
+
+					// 2. Se não foi resolvido como custom, tenta como comando fixo via processCommand silencioso
+					if (!resolved && commandHandler?.processCommand) {
+						const result = await commandHandler.processCommand(
+							context.bot,
+							context.message,
+							embeddedCmd,
+							embeddedArgs.concat(context.command?.args || []),
+							context.group,
+							{
+								silent: true,
+								isEmbedded: true,
+								embeddingDepth: (context.embeddingDepth || 0) + 1,
+								skipCustom: true
+							}
+						);
+						if (result) {
+							if (typeof result.content === "string") {
+								replacement = result.content;
+							} else if (Array.isArray(result) && result[0]?.content) {
+								replacement = result
+									.map((r) => r.content)
+									.filter(Boolean)
+									.join("\n");
+							}
+							resolved = true;
+						}
+					}
+
+					if (resolved) {
+						text = text.replace(match, replacement);
+					} else {
+						text = text.replace(match, `[Comando embutido: ${commandText}]`);
+					}
 				} catch (cmdError) {
 					this.logger.error(`Erro ao processar comando embutido ${match}:`, cmdError);
 					text = text.replace(match, "[Erro no comando embutido]");

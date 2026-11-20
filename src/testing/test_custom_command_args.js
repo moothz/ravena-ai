@@ -89,7 +89,12 @@ async function runTests() {
 		};
 		await run("{cmd-!ping extra}");
 		assert.deepStrictEqual(embedded[3], ["extra", "olá", "mundo"]);
-		assert.deepStrictEqual(embedded[5], { skipCustom: true, silent: true });
+		assert.deepStrictEqual(embedded[5], {
+			silent: true,
+			isEmbedded: true,
+			embeddingDepth: 1,
+			skipCustom: false
+		});
 		handler.processCommand = originalProcessCommand;
 		console.log("OK: respostas aleatórias/todas e argumentos de comandos embutidos");
 

@@ -857,7 +857,7 @@ class CommandHandler {
 	 * @param {Object} options - Opções de processamento (silent, skipCustom)
 	 */
 	async processCommand(bot, message, command, args, group, options = {}) {
-		const skipCustom = options.skipCustom ?? false;
+		const skipCustom = options.skipCustom ?? options.embeddingDepth > 1;
 		const silent = options.silent ?? false;
 
 		//this.logger.debug(`Processando comando: ${command}, determinação de tipo`);
@@ -1168,7 +1168,10 @@ class CommandHandler {
 						customCommand,
 						newArgs,
 						group,
-						silent
+						silent,
+						false,
+						false,
+						options
 					);
 				}
 			}
@@ -1181,14 +1184,23 @@ class CommandHandler {
 
 		// Verifica se é um comando personalizado (apenas para mensagens de grupo)
 		if (group && this.customCommands[group.id] && !skipCustom) {
-			// Quando é comando embutid ({cmd-xxx}), não roda personalizados, se não vira um loop
 			const matchResult = this.findCustomCommand(command, this.customCommands[group.id], args);
 			if (matchResult) {
 				const { customCommand, newArgs } = matchResult;
 				this.logger.debug(
 					`[${gidDebug}][${message.author}/${message.authorName}] Comando custom (${customCommand.startsWith}) '${command}' '${newArgs.join(" ")}'`
 				);
-				return await this.executeCustomCommand(bot, message, customCommand, newArgs, group, silent);
+				return await this.executeCustomCommand(
+					bot,
+					message,
+					customCommand,
+					newArgs,
+					group,
+					silent,
+					false,
+					false,
+					options
+				);
 			} else {
 				if (group.prefix && group.prefix !== "" && !silent) {
 					message.origin.react("🆖");
@@ -1908,7 +1920,8 @@ class CommandHandler {
 		group,
 		silent = false,
 		silentReaction = false,
-		isAuto = false
+		isAuto = false,
+		options = {}
 	) {
 		return telemetry.withCommandSpan(
 			"command custom",
@@ -1930,7 +1943,8 @@ class CommandHandler {
 					group,
 					silent,
 					silentReaction,
-					isAuto
+					isAuto,
+					options
 				)
 		);
 	}
@@ -1943,7 +1957,8 @@ class CommandHandler {
 		group,
 		silent = false,
 		silentReaction = false,
-		isAuto = false
+		isAuto = false,
+		options = {}
 	) {
 		try {
 			//this.logger.info(`Executando comando personalizado: ${command.startsWith}`);
@@ -2098,6 +2113,24 @@ class CommandHandler {
 				);
 				const returnMessages = [];
 
+				const applyOptionsToMessage = (msg) => {
+					if (!msg || !(msg instanceof ReturnMessage)) return msg;
+					if (command.replyInPvivate) {
+						msg.chatId = message.author;
+					}
+					if (!msg.options) msg.options = {};
+					const mentionsSet = new Set(msg.options.mentions || []);
+					if (command.mentions && command.mentions.length > 0) {
+						command.mentions.forEach((m) => mentionsSet.add(m));
+					}
+					if (message.group && !command.replyInPvivate) {
+						const requesterId = message.authorAlt || message.author;
+						if (requesterId) mentionsSet.add(requesterId);
+					}
+					msg.options.mentions = Array.from(mentionsSet);
+					return msg;
+				};
+
 				for (const response of responses) {
 					const processedMessage = await this.processCustomCommandResponse(
 						bot,
@@ -2105,28 +2138,17 @@ class CommandHandler {
 						response,
 						command,
 						group,
-						args
+						args,
+						options
 					);
 					if (processedMessage) {
-						if (command.replyInPvivate) {
-							processedMessage.chatId = message.author; // ou authorAlt?
+						if (Array.isArray(processedMessage)) {
+							for (const m of processedMessage) {
+								returnMessages.push(applyOptionsToMessage(m));
+							}
+						} else {
+							returnMessages.push(applyOptionsToMessage(processedMessage));
 						}
-						// Adiciona menções do comando
-						if (!processedMessage.options) processedMessage.options = {};
-						const mentionsSet = new Set(processedMessage.options.mentions || []);
-
-						if (command.mentions && command.mentions.length > 0) {
-							command.mentions.forEach((m) => mentionsSet.add(m));
-						}
-
-						// Auto-mention do usuário que pediu o comando (apenas em grupos e se não for resposta privada)
-						if (message.group && !command.replyInPvivate) {
-							const requesterId = message.authorAlt || message.author;
-							if (requesterId) mentionsSet.add(requesterId);
-						}
-
-						processedMessage.options.mentions = Array.from(mentionsSet);
-						returnMessages.push(processedMessage);
 					}
 				}
 
@@ -2142,34 +2164,43 @@ class CommandHandler {
 					`Enviando resposta aleatória (${randomIndex + 1}/${responses.length}) para o comando *${command.startsWith}*`
 				);
 
-				const returnMessage = await this.processCustomCommandResponse(
+				const rawReturn = await this.processCustomCommandResponse(
 					bot,
 					message,
 					responses[randomIndex],
 					command,
 					group,
-					args
+					args,
+					options
 				);
-				if (returnMessage) {
-					if (command.replyInPvivate) {
-						returnMessage.chatId = message.author; // ou authorAlt?
-					}
-					// Adiciona menções do comando
-					if (!returnMessage.options) returnMessage.options = {};
-					const mentionsSet = new Set(returnMessage.options.mentions || []);
+				let returnMessage = null;
+				if (rawReturn) {
+					const applyOptionsToMessage = (msg) => {
+						if (!msg || !(msg instanceof ReturnMessage)) return msg;
+						if (command.replyInPvivate) {
+							msg.chatId = message.author;
+						}
+						if (!msg.options) msg.options = {};
+						const mentionsSet = new Set(msg.options.mentions || []);
+						if (command.mentions && command.mentions.length > 0) {
+							command.mentions.forEach((m) => mentionsSet.add(m));
+						}
+						if (message.group && !command.replyInPvivate) {
+							const requesterId = message.authorAlt || message.author;
+							if (requesterId) mentionsSet.add(requesterId);
+						}
+						msg.options.mentions = Array.from(mentionsSet);
+						return msg;
+					};
 
-					if (command.mentions && command.mentions.length > 0) {
-						command.mentions.forEach((m) => mentionsSet.add(m));
+					if (Array.isArray(rawReturn)) {
+						returnMessage = rawReturn.map((m) => applyOptionsToMessage(m));
+						if (!silent && returnMessage.length > 0)
+							await bot.sendReturnMessages(returnMessage, group);
+					} else {
+						returnMessage = applyOptionsToMessage(rawReturn);
+						if (!silent) await bot.sendReturnMessages(returnMessage, group);
 					}
-
-					// Auto-mention do usuário que pediu o comando (apenas em grupos e se não for resposta privada)
-					if (message.group && !command.replyInPvivate) {
-						const requesterId = message.authorAlt || message.author;
-						if (requesterId) mentionsSet.add(requesterId);
-					}
-
-					returnMessage.options.mentions = Array.from(mentionsSet);
-					if (!silent) await bot.sendReturnMessages(returnMessage, group);
 				}
 				finalResult = returnMessage;
 			}
@@ -2228,7 +2259,15 @@ class CommandHandler {
 	 * @param {Group} group - O objeto do grupo
 	 * @returns {Promise<ReturnMessage|null>} - A mensagem de retorno processada
 	 */
-	async processCustomCommandResponse(bot, message, responseText, command, group, args) {
+	async processCustomCommandResponse(
+		bot,
+		message,
+		responseText,
+		command,
+		group,
+		args,
+		cmdOptions = {}
+	) {
 		try {
 			this.logger.debug(
 				`Processando resposta para comando ${command.startsWith} (${responseText.length} caracteres)`
@@ -2241,7 +2280,10 @@ class CommandHandler {
 				group,
 				command: { ...command, args: args ?? [] },
 				options,
-				bot // Incluindo o bot no contexto para processar variáveis de arquivo
+				bot, // Incluindo o bot no contexto para processar variáveis de arquivo
+				commandHandler: this,
+				isEmbedded: cmdOptions.isEmbedded ?? false,
+				embeddingDepth: cmdOptions.embeddingDepth ?? 0
 			};
 			const processedResponse = await this.variableProcessor.process(responseText, context);
 
@@ -2281,12 +2323,22 @@ class CommandHandler {
 							embeddedCmd,
 							embeddedArgs.concat(args),
 							group,
-							{ skipCustom: true, silent: true }
+							{
+								silent: true,
+								isEmbedded: true,
+								embeddingDepth: (cmdOptions.embeddingDepth || 0) + 1,
+								skipCustom: (cmdOptions.embeddingDepth || 0) >= 1
+							}
 						);
 						if (result) allResults.push(result);
 					}
 
-					return this.aggregateReturnMessages(allResults);
+					const aggregated = this.aggregateReturnMessages(allResults);
+					return aggregated.length === 1
+						? aggregated[0]
+						: aggregated.length > 0
+							? aggregated
+							: null;
 				} catch (embeddedError) {
 					this.logger.error(`Erro ao executar comandos embutidos`, embeddedError);
 					return null;
@@ -2325,7 +2377,11 @@ class CommandHandler {
 						embeddedCmd,
 						embeddedArgs.concat(args),
 						group,
-						{ skipCustom: true }
+						{
+							isEmbedded: true,
+							embeddingDepth: (cmdOptions.embeddingDepth || 0) + 1,
+							skipCustom: (cmdOptions.embeddingDepth || 0) >= 1
+						}
 					);
 				} catch (embeddedError) {
 					this.logger.error(
