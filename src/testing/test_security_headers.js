@@ -32,6 +32,26 @@ async function runTests() {
 	console.log("=== Teste dos cabeçalhos de segurança ===");
 	await testFrameAncestors();
 	await testSameOrigin();
+	await testSecureCookie();
+}
+
+async function testSecureCookie() {
+	const { setAdminSessionCookie } = require("../BotAPI/middleware/auth");
+	const apiMock = { apiUser: "u", apiPassword: "p" };
+	const app = express();
+	app.set("trust proxy", true);
+	app.get("/login", (req, res) => {
+		setAdminSessionCookie(apiMock, res);
+		res.send("ok");
+	});
+	await withServer(app, async (base) => {
+		const plain = (await fetch(`${base}/login`)).headers.get("set-cookie") || "";
+		assert.ok(plain.includes("ravena_admin_session="), "cookie criado");
+		assert.ok(!/;\s*Secure/i.test(plain), "HTTP puro: sem Secure");
+		const https = await fetch(`${base}/login`, { headers: { "X-Forwarded-Proto": "https" } });
+		assert.ok(/;\s*Secure/i.test(https.headers.get("set-cookie") || ""), "HTTPS: com Secure");
+	});
+	console.log("✓ Cookie de sessão com Secure só quando a requisição é HTTPS.");
 }
 
 async function testSameOrigin() {
