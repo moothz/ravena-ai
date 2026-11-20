@@ -6861,7 +6861,7 @@
             "x": 0,
             "y": 2,
             "width": 24,
-            "height": 17,
+            "height": 11,
             "element": {
              "kind": "ElementReference",
              "name": "panel-18"
@@ -6872,9 +6872,9 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 19,
+            "y": 13,
             "width": 24,
-            "height": 6,
+            "height": 8,
             "element": {
              "kind": "ElementReference",
              "name": "panel-19"
@@ -6885,7 +6885,7 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 25,
+            "y": 21,
             "width": 24,
             "height": 4,
             "element": {

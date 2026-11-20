@@ -632,7 +632,7 @@ SELECT ts / 1000 AS "Quando", label AS "O que mudou", {DCRI_TXT} AS "Criado/dia:
   ROUND(jog_a, 1) AS "Jogadores/dia antes", ROUND(jog_d, 1) AS "Jogadores/dia depois",
   semanas AS "Semanas no normal"
 FROM rs ORDER BY ts DESC
-""", 0, 2, 24, 17, desc=MUD_DESC + " Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois. "
+""", 0, 2, 24, 11 if AUTO else 17, desc=MUD_DESC + " Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois. "
                        "Massa: Δ nos 7 dias antes = a mesma conta na semana anterior à mudança, como referência. Com menos de 4 "
                        "semanas de histórico o Δ diz com quantas semanas o normal foi medido.",
     time_cols=["Quando"], defaults={"noValue": EMPTY_MUD, "custom": {"wrapText": True}},
@@ -650,7 +650,7 @@ SELECT rowid AS "Id", ts / 1000 AS "Quando",
   label AS "O que pode ter mudado", printf('--confirmar %d  ·  --descartar %d', rowid, rowid) AS "Decidir com economy-annotate.js"
 FROM annotations WHERE origin = 'possivel' AND ts <= {TO}
 ORDER BY ts DESC LIMIT 50
-""", 0, 19, 24, 6,
+""", 0, 13, 24, 8,
         desc="Detectadas nos dados (motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro), ainda "
              "sem decisão: não entram nas fichas nem nas Últimas mudanças. Aparecem como marca cinza nos gráficos (Possíveis mudanças). "
              "Decidir: docker exec ravena-ai node scripts/economy-annotate.js --confirmar <Id> [\"texto novo\"] ou --descartar <Id>.",
@@ -658,7 +658,7 @@ ORDER BY ts DESC LIMIT 50
         overrides=when("Quando") + [by_name("Id", ("custom.width", 70)), by_name("Quando", ("custom.width", 95)),
                                     by_name("Moeda", ("custom.width", 90)), by_name("O que pode ter mudado", ("custom.width", 700))],
         options=TABLE_OPTS))
-mud_p.append(panel("text", "Como registrar e ler", "", 0, 25 if AUTO else 19, 24, 4, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
+mud_p.append(panel("text", "Como registrar e ler", "", 0, 21 if AUTO else 19, 24, 4, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
     ("**Automáticas**: a cada carga a ravena lê os parâmetros de balanceamento dos serviços (`/internal/economy/params`) e registra o que mudou, "
      "com valor antigo e novo. **Possíveis**: motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro; "
      "elas ficam na tabela acima até alguém decidir: `docker exec ravena-ai node scripts/economy-annotate.js --confirmar <id> [\"texto novo\"]` "
