@@ -1,0 +1,25 @@
+/*
+ * Telas antigas de admin dentro do painel /admin (?embed=1, ver embed.js).
+ * Só esconde o cabeçalho próprio de cada tela; as ações (Novo Evento, Salvar Tudo...) ficam.
+ * O tema continua o escuro de cada tela: as cores delas estão fixas no CSS de cada página,
+ * então aplicar os tokens do painel exigiria reescrever esses estilos (fica para a migração).
+ */
+
+html.ravena-embed {
+	color-scheme: dark;
+}
+
+/* /instances: some o logo, ficam os botões de ação */
+html.ravena-embed .header .header-content > .logo {
+	display: none;
+}
+
+/* /banco/admin e /eventos/admin: some o bloco de marca, ficam as ações */
+html.ravena-embed .top-navbar > .brand-badge {
+	display: none;
+}
+
+/* /service-providers, /dossies e /groups-dossier: o cabeçalho é só marca e título */
+html.ravena-embed header.header:not(:has(.header-actions)) {
+	display: none;
+}
