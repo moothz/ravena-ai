@@ -24,13 +24,18 @@ html.ravena-embed header.header:not(:has(.header-actions)) {
 	display: none;
 }
 
+/* Dentro do painel, Sair e Instâncias repetem a navegação dele (em qualquer largura). */
+html.ravena-embed .top-actions a[href="/logout"],
+html.ravena-embed .top-actions a[href="/instances"] {
+	display: none;
+}
+
 /*
- * Celular: dentro do painel, a navegação própria da tela (Instâncias, Sair, Página Pública) repete
- * a do painel e gasta a primeira tela; some. Sem margem lateral extra: o painel já dá a borda.
+ * Iframe estreito (celular em pé) ou baixo (celular deitado): somem também os atalhos para as
+ * páginas públicas, e a primeira tela fica para o conteúdo. Sem margem lateral extra: o painel já
+ * dá a borda.
  */
-@media (max-width: 640px) {
-	html.ravena-embed .top-actions a[href="/logout"],
-	html.ravena-embed .top-actions a[href="/instances"],
+@media (max-width: 640px), (max-height: 500px) {
 	html.ravena-embed .top-actions a[href="/eventos"],
 	html.ravena-embed .top-actions a[href="/ravenabank"] {
 		display: none;
