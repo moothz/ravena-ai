@@ -55,6 +55,23 @@ async function runTests() {
 		}
 		console.log("✓ /admin, /admin/ e /admin.html exigem admin e passam pela rota dedicada.");
 
+		// Caminhos codificados ou com barra dupla não podem entregar o HTML do painel sem login
+		for (const sneaky of [
+			"/%61dmin.html",
+			"/admin%2ehtml",
+			"//admin.html",
+			"/%61dmin/",
+			"/ADMIN.html"
+		]) {
+			const res = await fetch(`${baseUrl}${sneaky}`, { redirect: "manual" });
+			const body = await res.text();
+			assert.ok(
+				!/<title>Ravena Admin<\/title>/.test(body),
+				`${sneaky} sem credenciais não pode servir o painel (status ${res.status})`
+			);
+		}
+		console.log("✓ Caminhos codificados não expõem o HTML do painel.");
+
 		const css = await fetch(`${baseUrl}/admin/tokens.css`);
 		assert.strictEqual(css.status, 200, "os assets do painel continuam estáticos");
 		console.log("✓ Assets em /admin/*.css servidos pelo express.static.");
