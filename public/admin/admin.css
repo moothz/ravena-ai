@@ -391,6 +391,12 @@ button {
 	cursor: pointer;
 }
 
+.tab svg {
+	width: 0.75rem;
+	height: 0.75rem;
+	flex: none;
+}
+
 .tab:hover {
 	background: var(--hover);
 	color: var(--fg);
