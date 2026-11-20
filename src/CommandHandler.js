@@ -171,14 +171,22 @@ class CommandHandler {
 	 * Verifica se um comando está em cooldown
 	 * @param {Command|string} command - Comando ou nome do comando
 	 * @param {string} groupId - ID do grupo ou chat
-	 * @param {string} botId - ID do bot
+	 * @param {Object|string} botOrBotId - Instância do bot ou ID do bot
 	 * @param {string} userKey - Identificador do usuário
 	 * @param {boolean} [isPrivate] - Indica se o contexto é PV (opcional, inferido por padrão)
 	 * @returns {Promise<Object>} - Informações sobre o cooldown
 	 */
-	async checkCooldown(command, groupId, botId, userKey, isPrivate) {
+	async checkCooldown(command, groupId, botOrBotId, userKey, isPrivate) {
 		const commandName =
 			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		const bot =
+			typeof botOrBotId === "object" && botOrBotId !== null
+				? botOrBotId
+				: this.database.botInstances?.find(
+						(b) => b.id === botOrBotId || b.nome === botOrBotId || b.name === botOrBotId
+					);
+		const botId = typeof botOrBotId === "string" ? botOrBotId : (bot?.id ?? "unknown_bot");
+
 		let cooldownValue = 0;
 		if (typeof command === "object") {
 			const isPv = isPrivate !== undefined ? Boolean(isPrivate) : !groupId?.includes("@g.us");
@@ -188,6 +196,14 @@ class CommandHandler {
 				cooldownValue = command.cooldown ?? 0;
 			}
 		}
+
+		if (cooldownValue > 0) {
+			const rawMultiplier =
+				bot?.extras?.cdMultiplier !== undefined ? bot.extras.cdMultiplier : bot?.cdMultiplier;
+			const multiplier = typeof rawMultiplier === "number" ? rawMultiplier : bot?.privado ? 0 : 1.0;
+			cooldownValue = Math.round(cooldownValue * multiplier);
+		}
+
 		const cooldownMs = cooldownValue * 1000;
 		if (cooldownMs === 0) {
 			return { inCooldown: false, timeLeft: 0, formattedTime: "" };
@@ -284,9 +300,17 @@ class CommandHandler {
 		}
 	}
 
-	async updateCooldown(command, groupId, botId, userKey, isPrivate) {
+	async updateCooldown(command, groupId, botOrBotId, userKey, isPrivate) {
 		const commandName =
 			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		const bot =
+			typeof botOrBotId === "object" && botOrBotId !== null
+				? botOrBotId
+				: this.database.botInstances?.find(
+						(b) => b.id === botOrBotId || b.nome === botOrBotId || b.name === botOrBotId
+					);
+		const botId = typeof botOrBotId === "string" ? botOrBotId : (bot?.id ?? "unknown_bot");
+
 		const isPv = isPrivate !== undefined ? Boolean(isPrivate) : !groupId?.includes("@g.us");
 		let cooldownValue = 0;
 		if (typeof command === "object") {
@@ -296,6 +320,14 @@ class CommandHandler {
 				cooldownValue = command.cooldown ?? 0;
 			}
 		}
+
+		if (cooldownValue > 0) {
+			const rawMultiplier =
+				bot?.extras?.cdMultiplier !== undefined ? bot.extras.cdMultiplier : bot?.cdMultiplier;
+			const multiplier = typeof rawMultiplier === "number" ? rawMultiplier : bot?.privado ? 0 : 1.0;
+			cooldownValue = Math.round(cooldownValue * multiplier);
+		}
+
 		if (cooldownValue <= 0) return;
 
 		const now = Date.now();
@@ -1660,7 +1692,7 @@ class CommandHandler {
 			const isPrivate = !message.group;
 			const groupId = message.group ?? message.author;
 			const userKey = this.getLimitUserKey(bot, message);
-			const cooldownInfo = await this.checkCooldown(command, groupId, bot.id, userKey, isPrivate);
+			const cooldownInfo = await this.checkCooldown(command, groupId, bot, userKey, isPrivate);
 
 			if (cooldownInfo.inCooldown) {
 				this.logger.debug(`Comando ${command.name} em cooldown por mais ${cooldownInfo.timeLeft}s`);
@@ -1692,7 +1724,7 @@ class CommandHandler {
 
 			// Executa método do comando
 			if (typeof command.method === "function") {
-				this.updateCooldown(command, groupId, bot.id, userKey, isPrivate);
+				this.updateCooldown(command, groupId, bot, userKey, isPrivate);
 				this.recordCommandLimitUsage(commandLimit, message);
 				//this.logger.debug(`Comando ${command.name} tem method, executando`);
 				telemetry.addEvent("command.checks_passed");
@@ -2053,7 +2085,7 @@ class CommandHandler {
 			const cooldownInfo = await this.checkCooldown(
 				cooldownCheckCmd,
 				message.group ?? message.author,
-				bot.id,
+				bot,
 				userKey,
 				isPrivate
 			);
@@ -2127,7 +2159,7 @@ class CommandHandler {
 			this.updateCooldown(
 				cooldownCheckCmd,
 				message.group ?? message.author,
-				bot.id,
+				bot,
 				userKey,
 				isPrivate
 			);

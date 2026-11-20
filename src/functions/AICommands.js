@@ -430,7 +430,7 @@ async function handleCommandInvocation(classification, bot, message, group) {
 				const cooldownInfo = await commandHandler.checkCooldown(
 					cooldownCheckCmd,
 					message.group ?? message.author,
-					bot.id,
+					bot,
 					userKey
 				);
 				if (cooldownInfo.inCooldown) {

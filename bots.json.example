@@ -16,6 +16,7 @@
     "updateStatus": true,
     "aiPersonality": "Você é um assistente prestativo.",
     "extras": {
+      "cdMultiplier": 1.0,
       "stickers": {
         "maxFiga": 30
       }
