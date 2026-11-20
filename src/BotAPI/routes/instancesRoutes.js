@@ -1060,6 +1060,19 @@ function registerInstancesRoutes(api) {
 			res.write(`data: [ERROR] ${data.toString()}\n\n`);
 		});
 
+		// Sem pm2 no ambiente (ex.: imagem Docker), o spawn falha: avisa o cliente e encerra
+		// o stream em vez de deixá-lo aberto e mudo. O evento nomeado "unavailable" deixa o
+		// painel /admin parar de reconectar; clientes antigos só veem a linha de erro.
+		logStream.on("error", (err) => {
+			api.logger.warn(`Stream de logs indisponível: ${err.message}`);
+			if (res.writableEnded) return;
+			res.write(
+				`data: [ERROR] Logs do pm2 indisponíveis neste ambiente (${err.code || err.message})\n\n`
+			);
+			res.write(`event: unavailable\ndata: ${err.code || "error"}\n\n`);
+			res.end();
+		});
+
 		req.on("close", () => {
 			api.logger.info("Closing log stream to dashboard.");
 			logStream.kill();
