@@ -30,7 +30,7 @@
    }
   ],
   "timeSettings": {
-   "timezone": "browser",
+   "timezone": "America/Sao_Paulo",
    "from": "now-7d",
    "to": "now",
    "autoRefresh": "",
@@ -165,7 +165,7 @@
      },
      "enable": true,
      "hide": false,
-     "iconColor": "orange",
+     "iconColor": "#c4cad3",
      "name": "Mudanças registradas"
     }
    }
@@ -837,13 +837,25 @@
           },
           "properties": [
            {
+            "id": "thresholds",
+            "value": {
+             "mode": "absolute",
+             "steps": [
+              {
+               "color": "text",
+               "value": null
+              }
+             ]
+            }
+           },
+           {
             "id": "mappings",
             "value": [
              {
               "type": "value",
               "options": {
                "Sem mapeamento": {
-                "color": "red",
+                "color": "#e0645c",
                 "index": 0
                },
                "Fora do dinheiro": {

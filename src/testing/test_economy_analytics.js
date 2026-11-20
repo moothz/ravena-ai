@@ -1724,6 +1724,22 @@ async function main() {
 			assert.strictEqual(fech["Criado/dia: Δ"], "▼ -100.0% (normal ±20%)");
 			assert.strictEqual(fech["Jogadores/dia antes"], 1.5);
 			assert.strictEqual(fech["Jogadores/dia depois"], 1);
+			assert.deepStrictEqual(Object.keys(fech).slice(0, 5), [
+				"Quando",
+				"O que mudou",
+				"Criado/dia: Δ",
+				"Situação",
+				"Motivos que mais mudaram"
+			]);
+			// Pouco histórico (3 semanas → 2 comparações): o normal diz com quantas semanas foi medido
+			const db5 = new BetterSQLite(f4);
+			db5.prepare("DELETE FROM flows_hourly WHERE hour < ?").run(T - 3 * 7 * D);
+			db5.close();
+			const [curta] = readAll(
+				f4,
+				dashboardSql("Ficha de antes e depois (últimas 20)", { from: 0, to: T + 30 * D })
+			);
+			assert.match(curta["Criado/dia: Δ"], /^▼ -100\.0% \(normal ±\d+%, 2 semanas\)$/);
 			// Moeda sem extrato (Petalitas): o "depois" avança pela carga registrada, não fica "cedo demais"
 			const { file: f3, db: db3 } = freshDb("mudancas-pet.db");
 			db3
@@ -1976,7 +1992,7 @@ async function main() {
 				rows.map((r) => r.Motivo),
 				["R12", "R11", "R10", "R9", "R8", "R7", "R6", "R5", "MISTERIO", "Outros (4 motivos)"]
 			);
-			assert.strictEqual(rows[9]["Líquido"], 100 + 200 + 300 + 400);
+			assert.strictEqual(rows[9]["Líquido"], "+1,000"); // texto neutro com sinal: 100 + 200 + 300 + 400
 		});
 
 		await test("totais: criado/destruído só com creation/destruction; câmbio e transferência à parte; nomes legíveis", () => {
@@ -2292,7 +2308,7 @@ async function main() {
 								"conh",
 								"late"
 							],
-							...["lv_so_bruto", "ev", "pz", "desde", "wq", "k"],
+							...["lv_so_bruto", "ev", "pz", "desde", "wq", "k", "massa_ant"],
 							// ranking da aba Jogadores (CTE internas)
 							...[
 								"cambio",

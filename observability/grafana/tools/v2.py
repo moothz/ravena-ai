@@ -105,7 +105,7 @@ def dashboard(uid, title, *, tabs, description, tags, variables, annotations, li
         "spec": {
             "title": title, "description": description, "tags": tags, "editable": True, "cursorSync": "Crosshair",
             "liveNow": False, "preload": False, "links": links,
-            "timeSettings": {"timezone": "browser", "from": time_from, "to": time_to, "autoRefresh": "",
+            "timeSettings": {"timezone": "America/Sao_Paulo", "from": time_from, "to": time_to, "autoRefresh": "",
                              "autoRefreshIntervals": ["5m", "15m", "1h"], "hideTimepicker": False,
                              "fiscalYearStartMonth": 0, "weekStart": "monday"},
             "variables": variables, "annotations": annotations, "elements": elements, "layout": layout,

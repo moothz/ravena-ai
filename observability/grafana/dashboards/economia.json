@@ -30,7 +30,7 @@
    }
   ],
   "timeSettings": {
-   "timezone": "browser",
+   "timezone": "America/Sao_Paulo",
    "from": "now-7d",
    "to": "now",
    "autoRefresh": "",
@@ -199,7 +199,7 @@
      },
      "enable": true,
      "hide": false,
-     "iconColor": "orange",
+     "iconColor": "#c4cad3",
      "name": "Mudanças registradas"
     }
    }
@@ -984,8 +984,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\",\n  label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%)', dcri, ruido)\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%)', dcri, ruido) END AS \"Criado/dia: Δ\", situacao AS \"Situação\"\nFROM rs ORDER BY ts DESC",
-            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\",\n  label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%)', dcri, ruido)\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%)', dcri, ruido) END AS \"Criado/dia: Δ\", situacao AS \"Situação\"\nFROM rs ORDER BY ts DESC",
+            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\"\nFROM rs ORDER BY ts DESC",
+            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 3\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\"\nFROM rs ORDER BY ts DESC",
             "timeColumns": [
              "Quando"
             ]
@@ -1327,7 +1327,7 @@
     "spec": {
      "id": 6,
      "title": "Criado, destruído e líquido por dia — ${moeda} (período selecionado)",
-     "description": "Só motivos de criação e destruição (câmbio e transferências na seção própria), por dia econômico (04:00 BRT): criado acima de zero, destruído abaixo, e o líquido (criado − destruído) em linha.",
+     "description": "Só motivos de criação e destruição (câmbio e transferências na seção própria), por dia econômico (04:00 BRT): criado acima de zero, destruído abaixo, e o líquido (criado − destruído) em linha. Só dias inteiros: o dia corrente (incompleto) fica de fora.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -1345,8 +1345,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS \"Criado\", -SUM(amount_out) AS \"Destruído\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly\nWHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= $__from AND hour < $__to\nGROUP BY 1 ORDER BY 1",
-            "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS \"Criado\", -SUM(amount_out) AS \"Destruído\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly\nWHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= $__from AND hour < $__to\nGROUP BY 1 ORDER BY 1",
+            "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS \"Criado\", -SUM(amount_out) AS \"Destruído\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly\nWHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND hour < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY 1 ORDER BY 1",
+            "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  SUM(amount_in) AS \"Criado\", -SUM(amount_out) AS \"Destruído\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly\nWHERE currency = '${moeda}' AND kind IN ('creation', 'destruction') AND hour >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND hour < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY 1 ORDER BY 1",
             "timeColumns": [
              "time"
             ]
@@ -1463,7 +1463,7 @@
     "spec": {
      "id": 7,
      "title": "Fluxo por motivo e dia — ${moeda} (período selecionado)",
-     "description": "Líquido (entrou − saiu) por motivo e dia econômico.",
+     "description": "Líquido (entrou − saiu) por motivo e dia econômico. Só dias inteiros: o dia corrente (incompleto) fica de fora.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -1481,8 +1481,8 @@
            },
            "spec": {
             "queryType": "time series",
-            "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Motivo\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly f\nWHERE f.currency = '${moeda}' AND f.kind <> 'non_monetary' AND f.hour >= $__from AND f.hour < $__to\nGROUP BY 1, f.reason ORDER BY 1",
-            "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Motivo\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly f\nWHERE f.currency = '${moeda}' AND f.kind <> 'non_monetary' AND f.hour >= $__from AND f.hour < $__to\nGROUP BY 1, f.reason ORDER BY 1",
+            "queryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Motivo\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly f\nWHERE f.currency = '${moeda}' AND f.kind <> 'non_monetary' AND f.hour >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND f.hour < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY 1, f.reason ORDER BY 1",
+            "rawQueryText": "SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,\n  COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS \"Motivo\", SUM(amount_in - amount_out) AS \"Líquido\"\nFROM flows_hourly f\nWHERE f.currency = '${moeda}' AND f.kind <> 'non_monetary' AND f.hour >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND f.hour < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY 1, f.reason ORDER BY 1",
             "timeColumns": [
              "time"
             ]
@@ -1553,8 +1553,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH r AS (\n  SELECT f.reason, f.kind, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    SUM(amount_in) AS ent, SUM(amount_out) AS sai, SUM(amount_in - amount_out) AS liq, SUM(tx_count) AS tx\n  FROM flows_hourly f\n  WHERE f.currency = '${moeda}' AND f.hour >= $__to - 604800000 AND f.hour < $__to\n  GROUP BY f.reason, f.kind\n),\nk AS (\n  SELECT *, ROW_NUMBER() OVER (ORDER BY CASE WHEN kind = 'non_monetary' THEN 0 ELSE ABS(liq) END DESC, tx DESC) AS pos FROM r\n),\nshown AS (SELECT * FROM k WHERE pos <= 8 OR kind = 'unknown'),\nrest AS (SELECT * FROM k WHERE NOT (pos <= 8 OR kind = 'unknown'))\nSELECT \"Motivo\", \"Tipo\", \"Entrou\", \"Saiu\", \"Líquido\", \"Transações\" FROM (\n  SELECT 0 AS grp, pos, motivo AS \"Motivo\", CASE kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE ent END AS \"Entrou\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE sai END AS \"Saiu\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE liq END AS \"Líquido\",\n    tx AS \"Transações\"\n  FROM shown\n  UNION ALL\n  SELECT 1, 0, 'Outros (' || COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' motivo)' ELSE ' motivos)' END, '—',\n    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE ent END), SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE sai END),\n    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE liq END), SUM(tx)\n  FROM rest HAVING COUNT(*) > 0\n) ORDER BY grp, pos",
-            "rawQueryText": "WITH r AS (\n  SELECT f.reason, f.kind, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    SUM(amount_in) AS ent, SUM(amount_out) AS sai, SUM(amount_in - amount_out) AS liq, SUM(tx_count) AS tx\n  FROM flows_hourly f\n  WHERE f.currency = '${moeda}' AND f.hour >= $__to - 604800000 AND f.hour < $__to\n  GROUP BY f.reason, f.kind\n),\nk AS (\n  SELECT *, ROW_NUMBER() OVER (ORDER BY CASE WHEN kind = 'non_monetary' THEN 0 ELSE ABS(liq) END DESC, tx DESC) AS pos FROM r\n),\nshown AS (SELECT * FROM k WHERE pos <= 8 OR kind = 'unknown'),\nrest AS (SELECT * FROM k WHERE NOT (pos <= 8 OR kind = 'unknown'))\nSELECT \"Motivo\", \"Tipo\", \"Entrou\", \"Saiu\", \"Líquido\", \"Transações\" FROM (\n  SELECT 0 AS grp, pos, motivo AS \"Motivo\", CASE kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE ent END AS \"Entrou\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE sai END AS \"Saiu\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE liq END AS \"Líquido\",\n    tx AS \"Transações\"\n  FROM shown\n  UNION ALL\n  SELECT 1, 0, 'Outros (' || COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' motivo)' ELSE ' motivos)' END, '—',\n    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE ent END), SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE sai END),\n    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE liq END), SUM(tx)\n  FROM rest HAVING COUNT(*) > 0\n) ORDER BY grp, pos",
+            "queryText": "WITH r AS (\n  SELECT f.reason, f.kind, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    SUM(amount_in) AS ent, SUM(amount_out) AS sai, SUM(amount_in - amount_out) AS liq, SUM(tx_count) AS tx\n  FROM flows_hourly f\n  WHERE f.currency = '${moeda}' AND f.hour >= $__to - 604800000 AND f.hour < $__to\n  GROUP BY f.reason, f.kind\n),\nk AS (\n  SELECT *, ROW_NUMBER() OVER (ORDER BY CASE WHEN kind = 'non_monetary' THEN 0 ELSE ABS(liq) END DESC, tx DESC) AS pos FROM r\n),\nshown AS (SELECT * FROM k WHERE pos <= 8 OR kind = 'unknown'),\nrest AS (SELECT * FROM k WHERE NOT (pos <= 8 OR kind = 'unknown'))\nSELECT \"Motivo\", \"Tipo\", \"Entrou\", \"Saiu\", \"Líquido\", \"Transações\" FROM (\n  SELECT 0 AS grp, pos, motivo AS \"Motivo\", CASE kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE ent END AS \"Entrou\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE sai END AS \"Saiu\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE printf('%+,d', liq) END AS \"Líquido\",\n    tx AS \"Transações\"\n  FROM shown\n  UNION ALL\n  SELECT 1, 0, 'Outros (' || COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' motivo)' ELSE ' motivos)' END, '—',\n    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE ent END), SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE sai END),\n    printf('%+,d', SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE liq END)), SUM(tx)\n  FROM rest HAVING COUNT(*) > 0\n) ORDER BY grp, pos",
+            "rawQueryText": "WITH r AS (\n  SELECT f.reason, f.kind, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    SUM(amount_in) AS ent, SUM(amount_out) AS sai, SUM(amount_in - amount_out) AS liq, SUM(tx_count) AS tx\n  FROM flows_hourly f\n  WHERE f.currency = '${moeda}' AND f.hour >= $__to - 604800000 AND f.hour < $__to\n  GROUP BY f.reason, f.kind\n),\nk AS (\n  SELECT *, ROW_NUMBER() OVER (ORDER BY CASE WHEN kind = 'non_monetary' THEN 0 ELSE ABS(liq) END DESC, tx DESC) AS pos FROM r\n),\nshown AS (SELECT * FROM k WHERE pos <= 8 OR kind = 'unknown'),\nrest AS (SELECT * FROM k WHERE NOT (pos <= 8 OR kind = 'unknown'))\nSELECT \"Motivo\", \"Tipo\", \"Entrou\", \"Saiu\", \"Líquido\", \"Transações\" FROM (\n  SELECT 0 AS grp, pos, motivo AS \"Motivo\", CASE kind WHEN 'creation' THEN 'Criação' WHEN 'destruction' THEN 'Destruição'\n    WHEN 'transfer' THEN 'Transferência' WHEN 'exchange_in' THEN 'Câmbio (entrada)'\n    WHEN 'exchange_out' THEN 'Câmbio (saída)' WHEN 'non_monetary' THEN 'Fora do dinheiro'\n    ELSE 'Sem mapeamento' END AS \"Tipo\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE ent END AS \"Entrou\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE sai END AS \"Saiu\",\n    CASE WHEN kind = 'non_monetary' THEN NULL ELSE printf('%+,d', liq) END AS \"Líquido\",\n    tx AS \"Transações\"\n  FROM shown\n  UNION ALL\n  SELECT 1, 0, 'Outros (' || COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' motivo)' ELSE ' motivos)' END, '—',\n    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE ent END), SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE sai END),\n    printf('%+,d', SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE liq END)), SUM(tx)\n  FROM rest HAVING COUNT(*) > 0\n) ORDER BY grp, pos",
             "timeColumns": []
            }
           },
@@ -1608,18 +1608,6 @@
          {
           "matcher": {
            "id": "byName",
-           "options": "Líquido"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "locale"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
            "options": "Transações"
           },
           "properties": [
@@ -1660,13 +1648,25 @@
           },
           "properties": [
            {
+            "id": "thresholds",
+            "value": {
+             "mode": "absolute",
+             "steps": [
+              {
+               "color": "text",
+               "value": null
+              }
+             ]
+            }
+           },
+           {
             "id": "mappings",
             "value": [
              {
               "type": "value",
               "options": {
                "Sem mapeamento": {
-                "color": "red",
+                "color": "#e0645c",
                 "index": 0
                },
                "Fora do dinheiro": {
@@ -1692,26 +1692,8 @@
           },
           "properties": [
            {
-            "id": "thresholds",
-            "value": {
-             "mode": "absolute",
-             "steps": [
-              {
-               "color": "red",
-               "value": null
-              },
-              {
-               "color": "green",
-               "value": 0
-              }
-             ]
-            }
-           },
-           {
-            "id": "custom.cellOptions",
-            "value": {
-             "type": "color-text"
-            }
+            "id": "custom.align",
+            "value": "right"
            }
           ]
          }
@@ -2824,7 +2806,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "**Quem se destaca e o que é anômalo?** Moeda do seletor no topo. Clique num nome para abrir a ficha (dashboard Ravena — Jogador)."
+        "content": "**Quem se destaca e o que é anômalo?** Moeda do seletor no topo; clique num nome para abrir a ficha."
        },
        "fieldConfig": {
         "defaults": {},
@@ -2833,6 +2815,336 @@
       }
      },
      "transparent": true
+    }
+   },
+   "panel-45": {
+    "kind": "Panel",
+    "spec": {
+     "id": 45,
+     "title": "Anomalias (pista, não prova): dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
+     "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui. É pista, não prova.",
+     "links": [],
+     "data": {
+      "kind": "QueryGroup",
+      "spec": {
+       "queries": [
+        {
+         "kind": "PanelQuery",
+         "spec": {
+          "query": {
+           "kind": "DataQuery",
+           "group": "frser-sqlite-datasource",
+           "version": "v0",
+           "datasource": {
+            "name": "economia-sqlite"
+           },
+           "spec": {
+            "queryType": "table",
+            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\npd AS (\n  SELECT d.day, i.person, SUM(d.amount_in - d.amount_out) AS criado\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY d.day, i.person HAVING SUM(d.amount_in - d.amount_out) > 0\n),\nord AS (SELECT day, criado, ROW_NUMBER() OVER (PARTITION BY day ORDER BY criado) AS rn, COUNT(*) OVER (PARTITION BY day) AS n FROM pd),\nmed AS (SELECT day, AVG(criado) AS mediana, MAX(n) AS n FROM ord WHERE rn IN ((n + 1) / 2, (n + 2) / 2) GROUP BY day),\ndom AS (\n  SELECT day, person, motivo, v FROM (\n    SELECT d.day, i.person, COALESCE(l.label, d.reason) AS motivo, SUM(d.amount_in - d.amount_out) AS v,\n      ROW_NUMBER() OVER (PARTITION BY d.day, i.person ORDER BY SUM(d.amount_in - d.amount_out) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n    GROUP BY d.day, i.person, d.reason) WHERE rn = 1\n)\nSELECT pd.day / 1000 AS \"Dia\", pd.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  pd.criado AS \"Criado no dia\", ROUND(med.mediana) AS \"Mediana do dia\", ROUND(pd.criado / med.mediana, 1) AS \"Vezes a mediana\",\n  dom.motivo AS \"Motivo dominante\", ROUND(100.0 * dom.v / pd.criado, 0) AS \"% do dia\", med.n AS \"Jogadores no dia\"\nFROM pd JOIN med ON med.day = pd.day JOIN pp ON pp.person = pd.person\nLEFT JOIN dom ON dom.day = pd.day AND dom.person = pd.person\nWHERE med.n >= 5 AND med.mediana > 0 AND pd.criado >= 10 * med.mediana\nORDER BY \"Vezes a mediana\" DESC LIMIT 30",
+            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\npd AS (\n  SELECT d.day, i.person, SUM(d.amount_in - d.amount_out) AS criado\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY d.day, i.person HAVING SUM(d.amount_in - d.amount_out) > 0\n),\nord AS (SELECT day, criado, ROW_NUMBER() OVER (PARTITION BY day ORDER BY criado) AS rn, COUNT(*) OVER (PARTITION BY day) AS n FROM pd),\nmed AS (SELECT day, AVG(criado) AS mediana, MAX(n) AS n FROM ord WHERE rn IN ((n + 1) / 2, (n + 2) / 2) GROUP BY day),\ndom AS (\n  SELECT day, person, motivo, v FROM (\n    SELECT d.day, i.person, COALESCE(l.label, d.reason) AS motivo, SUM(d.amount_in - d.amount_out) AS v,\n      ROW_NUMBER() OVER (PARTITION BY d.day, i.person ORDER BY SUM(d.amount_in - d.amount_out) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n    GROUP BY d.day, i.person, d.reason) WHERE rn = 1\n)\nSELECT pd.day / 1000 AS \"Dia\", pd.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  pd.criado AS \"Criado no dia\", ROUND(med.mediana) AS \"Mediana do dia\", ROUND(pd.criado / med.mediana, 1) AS \"Vezes a mediana\",\n  dom.motivo AS \"Motivo dominante\", ROUND(100.0 * dom.v / pd.criado, 0) AS \"% do dia\", med.n AS \"Jogadores no dia\"\nFROM pd JOIN med ON med.day = pd.day JOIN pp ON pp.person = pd.person\nLEFT JOIN dom ON dom.day = pd.day AND dom.person = pd.person\nWHERE med.n >= 5 AND med.mediana > 0 AND pd.criado >= 10 * med.mediana\nORDER BY \"Vezes a mediana\" DESC LIMIT 30",
+            "timeColumns": [
+             "Dia"
+            ]
+           }
+          },
+          "refId": "A",
+          "hidden": false
+         }
+        }
+       ],
+       "transformations": [],
+       "queryOptions": {}
+      }
+     },
+     "vizConfig": {
+      "kind": "VizConfig",
+      "group": "table",
+      "version": "",
+      "spec": {
+       "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+       },
+       "fieldConfig": {
+        "defaults": {
+         "noValue": "nenhum dia fora da curva"
+        },
+        "overrides": [
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Dia"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "time:DD/MM"
+           },
+           {
+            "id": "custom.width",
+            "value": 70
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "% do dia"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "percent"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Zinthos"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Runas"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Petalitas"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Comandos (7 dias)"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Saldo atual"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Maior fonte"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Variação em 7 dias"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "% da massa"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Motivo dominante"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "% do dia"
+          },
+          "properties": [
+           {
+            "id": "noValue",
+            "value": "—"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Pessoa"
+          },
+          "properties": [
+           {
+            "id": "custom.hidden",
+            "value": true
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Nome"
+          },
+          "properties": [
+           {
+            "id": "links",
+            "value": [
+             {
+              "title": "Abrir ficha do jogador",
+              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
+             }
+            ]
+           },
+           {
+            "id": "custom.width",
+            "value": 180
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Telefone / ID"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 160
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Tipo de ID"
+          },
+          "properties": [
+           {
+            "id": "custom.width",
+            "value": 110
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Criado no dia"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Mediana do dia"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Jogadores no dia"
+          },
+          "properties": [
+           {
+            "id": "unit",
+            "value": "locale"
+           }
+          ]
+         },
+         {
+          "matcher": {
+           "id": "byName",
+           "options": "Vezes a mediana"
+          },
+          "properties": [
+           {
+            "id": "thresholds",
+            "value": {
+             "mode": "absolute",
+             "steps": [
+              {
+               "color": "yellow",
+               "value": null
+              },
+              {
+               "color": "red",
+               "value": 50
+              }
+             ]
+            }
+           },
+           {
+            "id": "custom.cellOptions",
+            "value": {
+             "type": "color-text"
+            }
+           }
+          ]
+         }
+        ]
+       }
+      }
+     }
     }
    },
    "panel-43": {
@@ -2858,8 +3170,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nORDER BY agg.criado DESC LIMIT 25",
-            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nORDER BY agg.criado DESC LIMIT 25",
+            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nORDER BY agg.criado DESC LIMIT 25",
+            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nORDER BY agg.criado DESC LIMIT 25",
             "timeColumns": []
            }
           },
@@ -3206,8 +3518,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nWHERE agg.liquido < 0 ORDER BY agg.liquido ASC LIMIT 25",
-            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nWHERE agg.liquido < 0 ORDER BY agg.liquido ASC LIMIT 25",
+            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nWHERE agg.liquido < 0 ORDER BY agg.liquido ASC LIMIT 25",
+            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nagg AS (\n  SELECT i.person,\n    SUM(CASE WHEN d.kind = 'creation' THEN d.amount_in - d.amount_out ELSE 0 END) AS criado,\n    SUM(CASE WHEN d.kind = 'destruction' THEN d.amount_out - d.amount_in ELSE 0 END) AS destruido,\n    SUM(CASE WHEN d.kind IN ('exchange_in', 'exchange_out') THEN d.amount_in - d.amount_out ELSE 0 END) AS cambio,\n    SUM(CASE WHEN d.kind = 'transfer' THEN d.amount_in - d.amount_out ELSE 0 END) AS transf,\n    SUM(CASE WHEN d.kind <> 'non_monetary' THEN d.amount_in - d.amount_out ELSE 0 END) AS liquido\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY i.person\n),\ntop_reason AS (\n  SELECT person, motivo FROM (\n    SELECT i.person, COALESCE(l.label, d.reason) AS motivo,\n      ROW_NUMBER() OVER (PARTITION BY i.person ORDER BY SUM(d.amount_in) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to AND d.kind = 'creation'\n    GROUP BY i.person, d.reason) WHERE rn = 1\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT agg.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  agg.criado AS \"Criado\", agg.destruido AS \"Destruído\", agg.cambio AS \"Câmbio (líquido)\", agg.transf AS \"Transf. (líquido)\",\n  agg.liquido AS \"Líquido\", bal.saldo AS \"Saldo atual\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  top_reason.motivo AS \"Maior fonte\"\nFROM agg JOIN pp ON pp.person = agg.person\nLEFT JOIN bal ON bal.person = agg.person LEFT JOIN top_reason ON top_reason.person = agg.person\nWHERE agg.liquido < 0 ORDER BY agg.liquido ASC LIMIT 25",
             "timeColumns": []
            }
           },
@@ -3531,336 +3843,6 @@
      }
     }
    },
-   "panel-45": {
-    "kind": "Panel",
-    "spec": {
-     "id": 45,
-     "title": "Anomalias (pista, não prova): dias com criação acima de 10× a mediana — ${moeda} (período selecionado)",
-     "description": "Pessoa-dia em que alguém recebeu de motivos de criação 10× ou mais a mediana de quem recebeu algo naquele dia (dias com pelo menos 5 jogadores). Motivo dominante = o motivo que mais pesou no dia da pessoa. Ponto de partida para investigar: prêmio legítimo de evento também aparece aqui. É pista, não prova.",
-     "links": [],
-     "data": {
-      "kind": "QueryGroup",
-      "spec": {
-       "queries": [
-        {
-         "kind": "PanelQuery",
-         "spec": {
-          "query": {
-           "kind": "DataQuery",
-           "group": "frser-sqlite-datasource",
-           "version": "v0",
-           "datasource": {
-            "name": "economia-sqlite"
-           },
-           "spec": {
-            "queryType": "table",
-            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\npd AS (\n  SELECT d.day, i.person, SUM(d.amount_in - d.amount_out) AS criado\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY d.day, i.person HAVING SUM(d.amount_in - d.amount_out) > 0\n),\nord AS (SELECT day, criado, ROW_NUMBER() OVER (PARTITION BY day ORDER BY criado) AS rn, COUNT(*) OVER (PARTITION BY day) AS n FROM pd),\nmed AS (SELECT day, AVG(criado) AS mediana, MAX(n) AS n FROM ord WHERE rn IN ((n + 1) / 2, (n + 2) / 2) GROUP BY day),\ndom AS (\n  SELECT day, person, motivo, v FROM (\n    SELECT d.day, i.person, COALESCE(l.label, d.reason) AS motivo, SUM(d.amount_in - d.amount_out) AS v,\n      ROW_NUMBER() OVER (PARTITION BY d.day, i.person ORDER BY SUM(d.amount_in - d.amount_out) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n    GROUP BY d.day, i.person, d.reason) WHERE rn = 1\n)\nSELECT pd.day / 1000 AS \"Dia\", pd.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  pd.criado AS \"Criado no dia\", ROUND(med.mediana) AS \"Mediana do dia\", ROUND(pd.criado / med.mediana, 1) AS \"Vezes a mediana\",\n  dom.motivo AS \"Motivo dominante\", ROUND(100.0 * dom.v / pd.criado, 0) AS \"% do dia\", med.n AS \"Jogadores no dia\"\nFROM pd JOIN med ON med.day = pd.day JOIN pp ON pp.person = pd.person\nLEFT JOIN dom ON dom.day = pd.day AND dom.person = pd.person\nWHERE med.n >= 5 AND med.mediana > 0 AND pd.criado >= 10 * med.mediana\nORDER BY \"Vezes a mediana\" DESC LIMIT 30",
-            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\npd AS (\n  SELECT d.day, i.person, SUM(d.amount_in - d.amount_out) AS criado\n  FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n  WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n  GROUP BY d.day, i.person HAVING SUM(d.amount_in - d.amount_out) > 0\n),\nord AS (SELECT day, criado, ROW_NUMBER() OVER (PARTITION BY day ORDER BY criado) AS rn, COUNT(*) OVER (PARTITION BY day) AS n FROM pd),\nmed AS (SELECT day, AVG(criado) AS mediana, MAX(n) AS n FROM ord WHERE rn IN ((n + 1) / 2, (n + 2) / 2) GROUP BY day),\ndom AS (\n  SELECT day, person, motivo, v FROM (\n    SELECT d.day, i.person, COALESCE(l.label, d.reason) AS motivo, SUM(d.amount_in - d.amount_out) AS v,\n      ROW_NUMBER() OVER (PARTITION BY d.day, i.person ORDER BY SUM(d.amount_in - d.amount_out) DESC) AS rn\n    FROM player_daily d JOIN identities i ON i.player_id = d.player_id\n    LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason\n    WHERE d.currency = '${moeda}' AND d.kind = 'creation' AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\n    GROUP BY d.day, i.person, d.reason) WHERE rn = 1\n)\nSELECT pd.day / 1000 AS \"Dia\", pd.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  pd.criado AS \"Criado no dia\", ROUND(med.mediana) AS \"Mediana do dia\", ROUND(pd.criado / med.mediana, 1) AS \"Vezes a mediana\",\n  dom.motivo AS \"Motivo dominante\", ROUND(100.0 * dom.v / pd.criado, 0) AS \"% do dia\", med.n AS \"Jogadores no dia\"\nFROM pd JOIN med ON med.day = pd.day JOIN pp ON pp.person = pd.person\nLEFT JOIN dom ON dom.day = pd.day AND dom.person = pd.person\nWHERE med.n >= 5 AND med.mediana > 0 AND pd.criado >= 10 * med.mediana\nORDER BY \"Vezes a mediana\" DESC LIMIT 30",
-            "timeColumns": [
-             "Dia"
-            ]
-           }
-          },
-          "refId": "A",
-          "hidden": false
-         }
-        }
-       ],
-       "transformations": [],
-       "queryOptions": {}
-      }
-     },
-     "vizConfig": {
-      "kind": "VizConfig",
-      "group": "table",
-      "version": "",
-      "spec": {
-       "options": {
-        "cellHeight": "sm",
-        "showHeader": true
-       },
-       "fieldConfig": {
-        "defaults": {
-         "noValue": "nenhum dia fora da curva"
-        },
-        "overrides": [
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Dia"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "time:DD/MM"
-           },
-           {
-            "id": "custom.width",
-            "value": 70
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "% do dia"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "percent"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Zinthos"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Runas"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Petalitas"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Comandos (7 dias)"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Saldo atual"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Maior fonte"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Variação em 7 dias"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "% da massa"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Motivo dominante"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "% do dia"
-          },
-          "properties": [
-           {
-            "id": "noValue",
-            "value": "—"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Pessoa"
-          },
-          "properties": [
-           {
-            "id": "custom.hidden",
-            "value": true
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Nome"
-          },
-          "properties": [
-           {
-            "id": "links",
-            "value": [
-             {
-              "title": "Abrir ficha do jogador",
-              "url": "/d/ravena-jogador/ravena-jogador?var-jogador=${__data.fields.Pessoa:percentencode}&var-nome=${__data.fields.Nome:percentencode}&${moeda:queryparam}&${__url_time_range}"
-             }
-            ]
-           },
-           {
-            "id": "custom.width",
-            "value": 180
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Telefone / ID"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 160
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Tipo de ID"
-          },
-          "properties": [
-           {
-            "id": "custom.width",
-            "value": 110
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Criado no dia"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "locale"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Mediana do dia"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "locale"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Jogadores no dia"
-          },
-          "properties": [
-           {
-            "id": "unit",
-            "value": "locale"
-           }
-          ]
-         },
-         {
-          "matcher": {
-           "id": "byName",
-           "options": "Vezes a mediana"
-          },
-          "properties": [
-           {
-            "id": "thresholds",
-            "value": {
-             "mode": "absolute",
-             "steps": [
-              {
-               "color": "yellow",
-               "value": null
-              },
-              {
-               "color": "red",
-               "value": 50
-              }
-             ]
-            }
-           },
-           {
-            "id": "custom.cellOptions",
-            "value": {
-             "type": "color-text"
-            }
-           }
-          ]
-         }
-        ]
-       }
-      }
-     }
-    }
-   },
    "panel-46": {
     "kind": "Panel",
     "spec": {
@@ -3884,8 +3866,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nsemana AS (\n  SELECT i.person, SUM(b.balance) AS saldo FROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\n  WHERE b.currency = '${moeda}' AND b.day = (SELECT MAX(day) FROM player_balance_daily x WHERE x.currency = '${moeda}' AND x.day <= $__to - 604800000)\n  GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT bal.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.saldo AS \"Saldo\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  bal.saldo - semana.saldo AS \"Variação em 7 dias\"\nFROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person\nORDER BY bal.saldo DESC LIMIT 25",
-            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nsemana AS (\n  SELECT i.person, SUM(b.balance) AS saldo FROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\n  WHERE b.currency = '${moeda}' AND b.day = (SELECT MAX(day) FROM player_balance_daily x WHERE x.currency = '${moeda}' AND x.day <= $__to - 604800000)\n  GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT bal.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\", pp.tipos AS \"Tipo de ID\",\n  bal.saldo AS \"Saldo\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  bal.saldo - semana.saldo AS \"Variação em 7 dias\"\nFROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person\nORDER BY bal.saldo DESC LIMIT 25",
+            "queryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nsemana AS (\n  SELECT i.person, SUM(b.balance) AS saldo FROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\n  WHERE b.currency = '${moeda}' AND b.day = (SELECT MAX(day) FROM player_balance_daily x WHERE x.currency = '${moeda}' AND x.day <= $__to - 604800000)\n  GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT bal.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  bal.saldo AS \"Saldo\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  bal.saldo - semana.saldo AS \"Variação em 7 dias\"\nFROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person\nORDER BY bal.saldo DESC LIMIT 25",
+            "rawQueryText": "WITH pn AS (\n  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person\n),\npp AS (\n  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome\n  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person\n),\nbal AS (\n  SELECT i.person, SUM(p.balance) AS saldo FROM players p JOIN identities i ON i.player_id = p.player_id\n  WHERE p.currency = '${moeda}' GROUP BY i.person\n),\nsemana AS (\n  SELECT i.person, SUM(b.balance) AS saldo FROM player_balance_daily b JOIN identities i ON i.player_id = b.player_id\n  WHERE b.currency = '${moeda}' AND b.day = (SELECT MAX(day) FROM player_balance_daily x WHERE x.currency = '${moeda}' AND x.day <= $__to - 604800000)\n  GROUP BY i.person\n),\nmassa AS (SELECT SUM(balance) AS m FROM players WHERE currency = '${moeda}' AND balance > 0)\nSELECT bal.person AS \"Pessoa\", COALESCE(pp.nome, '—') AS \"Nome\", CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END AS \"Telefone / ID\",\n  bal.saldo AS \"Saldo\", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS \"% da massa\",\n  bal.saldo - semana.saldo AS \"Variação em 7 dias\"\nFROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person\nORDER BY bal.saldo DESC LIMIT 25",
             "timeColumns": []
            }
           },
@@ -4183,7 +4165,7 @@
       "spec": {
        "options": {
         "mode": "markdown",
-        "content": "**Quanta gente está jogando?** Pessoas distintas (LID e telefone unidos) e jogadores com movimento em cada moeda."
+        "content": "**Quanta gente está jogando?** Pessoas distintas e jogadores com movimento em cada moeda."
        },
        "fieldConfig": {
         "defaults": {},
@@ -4199,7 +4181,7 @@
     "spec": {
      "id": 25,
      "title": "Pessoas ativas por dia (período selecionado)",
-     "description": "Pessoas distintas que usaram algum comando no dia econômico (04:00 BRT), com LID e variantes de telefone unidas. Fonte: cmd_usage.db (sem comandos automáticos nem interação passiva, como o resumo semanal). Guardado por ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90).",
+     "description": "Pessoas distintas que usaram algum comando no dia econômico (04:00 BRT), com LID e variantes de telefone unidas. Fonte: cmd_usage.db (sem comandos automáticos nem interação passiva, como o resumo semanal). Guardado por ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90). Só dias inteiros: o dia corrente (incompleto) fica de fora.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -4217,8 +4199,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS \"Pessoas que usaram comandos\"\nFROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
-            "rawQueryText": "SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS \"Pessoas que usaram comandos\"\nFROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < $__to\nGROUP BY a.day ORDER BY a.day",
+            "queryText": "SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS \"Pessoas que usaram comandos\"\nFROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY a.day ORDER BY a.day",
+            "rawQueryText": "SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS \"Pessoas que usaram comandos\"\nFROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id\nWHERE (SELECT available FROM features WHERE key = 'atividade') = 1 AND a.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY a.day ORDER BY a.day",
             "timeColumns": [
              "time"
             ]
@@ -4243,6 +4225,7 @@
         "defaults": {
          "noValue": "Indisponível — depende de: cmd_usage.db legível pela ravena",
          "unit": "locale",
+         "min": 0,
          "custom": {
           "drawStyle": "bars",
           "fillOpacity": 60
@@ -4259,7 +4242,7 @@
     "spec": {
      "id": 26,
      "title": "Jogadores com movimento por dia, por moeda (período selecionado)",
-     "description": "Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato.",
+     "description": "Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato. Só dias inteiros: o dia corrente (incompleto) fica de fora.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -4277,8 +4260,8 @@
            },
            "spec": {
             "queryType": "time series",
-            "queryText": "SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  COUNT(DISTINCT d.player_id) AS \"Jogadores\"\nFROM player_daily d\nWHERE d.currency IN (${moedas:sqlstring}) AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.currency ORDER BY d.day",
-            "rawQueryText": "SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  COUNT(DISTINCT d.player_id) AS \"Jogadores\"\nFROM player_daily d\nWHERE d.currency IN (${moedas:sqlstring}) AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < $__to\nGROUP BY d.day, d.currency ORDER BY d.day",
+            "queryText": "SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  COUNT(DISTINCT d.player_id) AS \"Jogadores\"\nFROM player_daily d\nWHERE d.currency IN (${moedas:sqlstring}) AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY d.day, d.currency ORDER BY d.day",
+            "rawQueryText": "SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\",\n  COUNT(DISTINCT d.player_id) AS \"Jogadores\"\nFROM player_daily d\nWHERE d.currency IN (${moedas:sqlstring}) AND d.day >= (($__from - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < (($__to - 25200000) / 86400000) * 86400000 + 25200000\nGROUP BY d.day, d.currency ORDER BY d.day",
             "timeColumns": [
              "time"
             ]
@@ -4308,6 +4291,7 @@
         "defaults": {
          "noValue": "sem dados",
          "unit": "locale",
+         "min": 0,
          "displayName": "${__field.labels.Moeda}"
         },
         "overrides": [
@@ -4564,7 +4548,7 @@
     "spec": {
      "id": 18,
      "title": "Ficha de antes e depois (últimas 20)",
-     "description": "Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. Registradas à mão com scripts/economy-annotate.js. Mudança sem moeda usa a moeda do seletor. Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois.",
+     "description": "Leitura antes/depois, não causal: um evento, um feriado ou a variação normal também mexem nos números. Criado e destruído = médias diárias dos motivos de criação/destruição nos 7 dias antes e depois (depois = até a última hora carregada, no máximo 7 dias). 'Normal' = variação semanal típica do criado nas 8 semanas antes da mudança; o Δ só ganha cor (▲▼ âmbar) quando passa dela. Registradas à mão com scripts/economy-annotate.js. Mudança sem moeda usa a moeda do seletor. Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois. Massa: Δ nos 7 dias antes = a mesma conta na semana anterior à mudança, como referência. Com menos de 4 semanas de histórico o Δ diz com quantas semanas o normal foi medido.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -4582,8 +4566,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\",\n  label AS \"O que mudou\", situacao AS \"Situação\",\n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%)', dcri, ruido)\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%)', dcri, ruido) END AS \"Criado/dia: Δ\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\", semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
-            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\",\n  label AS \"O que mudou\", situacao AS \"Situação\",\n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%)', dcri, ruido)\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%)', dcri, ruido) END AS \"Criado/dia: Δ\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\", semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
+            "queryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", \n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS \"Massa: Δ nos 7 dias antes (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
+            "rawQueryText": "WITH a AS (\n  SELECT ROW_NUMBER() OVER (ORDER BY ts DESC, label) AS id, ts, currency, label, COALESCE(origin, 'manual') AS origin,\n    COALESCE(currency, '${moeda}') AS c\n  FROM annotations WHERE ts <= $__to ORDER BY ts DESC LIMIT 20\n),\nk(n) AS (VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9)),\nwk AS (\n  SELECT a.id, k.n, (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation'\n                     AND f.hour >= a.ts - k.n * 604800000 AND f.hour < a.ts - (k.n - 1) * 604800000) AS v\n  FROM a, k\n),\nnoise AS (\n  SELECT w1.id, 100.0 * AVG(ABS(w1.v - w2.v) * 1.0 / w2.v) AS ruido, COUNT(*) AS semanas\n  FROM wk w1 JOIN wk w2 ON w2.id = w1.id AND w2.n = w1.n + 1\n  WHERE w1.v IS NOT NULL AND w2.v > 0 GROUP BY w1.id\n),\nm AS (\n  SELECT a.*,\n    MAX(0, MIN(604800000, COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), a.ts) - a.ts)) / 86400000.0 AS dias,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS cri_a,\n    (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS cri_d_tot,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - 604800000 AND f.hour < a.ts) / 7.0 AS des_a,\n    (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + 604800000) AS des_d_tot,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_ant,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,\n    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + 604800000 ORDER BY b.ts DESC LIMIT 1) AS massa_dep,\n    COALESCE((SELECT available FROM ledger_status s WHERE s.currency = a.c), 1) AS avail,\n    -- jogadores/dia = média dos distintos de cada dia (o \"depois\" só com dias inteiros já carregados)\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts - 604800000 AND d.day < a.ts GROUP BY d.day)) AS jog_a,\n    (SELECT AVG(n) FROM (SELECT COUNT(DISTINCT player_id) AS n FROM player_daily d\n       WHERE d.currency = a.c AND d.day >= a.ts AND d.day < a.ts + 604800000 AND d.day + 86400000 <= COALESCE(COALESCE((SELECT MAX(window_to) FROM load_runs l WHERE l.source = a.c AND l.ok = 1), (SELECT MAX(hour) + 3600000 FROM flows_hourly z WHERE z.currency = a.c)), 0)\n       GROUP BY d.day)) AS jog_d\n  FROM a\n),\nrm AS (\n  SELECT m.id, COALESCE((SELECT l.label FROM reason_labels l WHERE l.currency = f.currency AND l.reason = f.reason), f.reason) AS motivo,\n    COALESCE(SUM(CASE WHEN f.hour >= m.ts THEN f.amount_in - f.amount_out END) / m.dias, 0)\n      - COALESCE(SUM(CASE WHEN f.hour < m.ts THEN f.amount_in - f.amount_out END) / 7.0, 0) AS d\n  FROM m JOIN flows_hourly f ON f.currency = m.c AND f.kind <> 'non_monetary' AND f.hour >= m.ts - 604800000 AND f.hour < m.ts + 604800000\n  WHERE m.dias >= 1 GROUP BY m.id, f.reason\n),\ntop AS (\n  SELECT id, GROUP_CONCAT(motivo || ' ' || CASE WHEN d >= 0 THEN '+' ELSE '−' END || replace(printf('%,d', CAST(ABS(ROUND(d)) AS INTEGER)), ',', '.') || '/dia', ' · ') AS motivos\n  FROM (SELECT id, motivo, d, ROW_NUMBER() OVER (PARTITION BY id ORDER BY ABS(d) DESC) AS rn FROM rm WHERE ABS(d) >= 1) WHERE rn <= 3\n  GROUP BY id\n),\nr AS (\n  -- sem nenhuma linha depois da mudança: 0 (recurso desligado não some), se a moeda tem extrato\n  SELECT m.*, CASE WHEN dias >= 1 THEN COALESCE(cri_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS cri_d,\n    CASE WHEN dias >= 1 THEN COALESCE(des_d_tot, CASE WHEN avail = 1 THEN 0 END) / dias END AS des_d,\n    noise.ruido, noise.semanas, top.motivos\n  FROM m LEFT JOIN noise ON noise.id = m.id LEFT JOIN top ON top.id = m.id\n),\nrs AS (\n  SELECT r.*, 100.0 * (cri_d - cri_a) / NULLIF(cri_a, 0) AS dcri,\n    CASE WHEN dias < 1 THEN 'cedo demais (< 1 dia)' WHEN dias < 7 THEN printf('acompanhando (%d de 7 dias)', CAST(dias AS INTEGER))\n         ELSE 'fechada' END\n      AS situacao\n  FROM r\n)\nSELECT ts / 1000 AS \"Quando\", label AS \"O que mudou\", CASE WHEN dcri IS NULL THEN '—'\n    WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)\n    WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)\n    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')'\n    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END || ')' END AS \"Criado/dia: Δ\", situacao AS \"Situação\",\n  COALESCE(motivos, '—') AS \"Motivos que mais mudaram\",\n  CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS \"Moeda\", \n  ROUND(cri_a) AS \"Criado/dia antes\", ROUND(cri_d) AS \"Criado/dia depois\",\n  ROUND(des_a) AS \"Destruído/dia antes\", ROUND(des_d) AS \"Destruído/dia depois\",\n  ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS \"Massa: Δ em 7 dias (%)\",\n  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS \"Massa: Δ nos 7 dias antes (%)\",\n  ROUND(jog_a, 1) AS \"Jogadores/dia antes\", ROUND(jog_d, 1) AS \"Jogadores/dia depois\",\n  semanas AS \"Semanas no normal\"\nFROM rs ORDER BY ts DESC",
             "timeColumns": [
              "Quando"
             ]
@@ -4719,7 +4703,7 @@
           "properties": [
            {
             "id": "custom.width",
-            "value": 260
+            "value": 340
            }
           ]
          },
@@ -4731,7 +4715,7 @@
           "properties": [
            {
             "id": "custom.width",
-            "value": 320
+            "value": 560
            }
           ]
          },
@@ -4841,7 +4825,7 @@
            },
            {
             "id": "custom.width",
-            "value": 200
+            "value": 300
            }
           ]
          },
@@ -6565,6 +6549,19 @@
             "x": 0,
             "y": 2,
             "width": 24,
+            "height": 9,
+            "element": {
+             "kind": "ElementReference",
+             "name": "panel-45"
+            }
+           }
+          },
+          {
+           "kind": "GridLayoutItem",
+           "spec": {
+            "x": 0,
+            "y": 11,
+            "width": 24,
             "height": 10,
             "element": {
              "kind": "ElementReference",
@@ -6576,25 +6573,12 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 12,
+            "y": 21,
             "width": 24,
             "height": 8,
             "element": {
              "kind": "ElementReference",
              "name": "panel-44"
-            }
-           }
-          },
-          {
-           "kind": "GridLayoutItem",
-           "spec": {
-            "x": 0,
-            "y": 20,
-            "width": 24,
-            "height": 9,
-            "element": {
-             "kind": "ElementReference",
-             "name": "panel-45"
             }
            }
           },
@@ -6721,7 +6705,7 @@
             "x": 0,
             "y": 2,
             "width": 24,
-            "height": 12,
+            "height": 17,
             "element": {
              "kind": "ElementReference",
              "name": "panel-18"
@@ -6732,9 +6716,9 @@
            "kind": "GridLayoutItem",
            "spec": {
             "x": 0,
-            "y": 14,
+            "y": 19,
             "width": 24,
-            "height": 5,
+            "height": 4,
             "element": {
              "kind": "ElementReference",
              "name": "panel-19"

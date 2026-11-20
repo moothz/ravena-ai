@@ -37,6 +37,11 @@ MS = "${moedas:sqlstring}"
 # Painéis "(12 semanas)": a janela sai do SQL, ancorada no fim do período ($__to − 12 semanas). O timeFrom "84d"
 # continua para o eixo do gráfico mostrar as 12 semanas com período relativo (o padrão); com período absoluto o
 # Grafana ignora o timeFrom e o eixo mostra o período escolhido, por isso o MIN com $__from (nada some à esquerda).
+# Barras por dia: do início do dia econômico (04:00 BRT) em que $__from cai até o início do dia corrente (que ainda
+# está pela metade e fica de fora): só dias inteiros.
+DAY0_FROM = f"(({FROM} - 25200000) / 86400000) * 86400000 + 25200000"
+DAY0_TO = f"(({TO} - 25200000) / 86400000) * 86400000 + 25200000"
+FULL_DAYS_NOTE = " Só dias inteiros: o dia corrente (incompleto) fica de fora."
 W12 = f"MIN({FROM}, {TO} - 12 * {WEEK})"
 W12_NOTE = " Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas."
 # Cor fixa por moeda (tema escuro, o padrão do compose); validadas para daltonismo (ver plano do painel)
@@ -133,7 +138,8 @@ SIT_MAP = [{"type": "regex", "options": {"pattern": "^(ok.*)", "result": {"color
            {"type": "regex", "options": {"pattern": "^(dados atrasados.*)", "result": {"color": "#e5a650", "text": "▲ $1", "index": 4}}},
            {"type": "regex", "options": {"pattern": "^(agir.*)", "result": {"color": "#e0645c", "text": "■ $1", "index": 2}}},
            {"type": "regex", "options": {"pattern": "^sem .*", "result": {"color": "text", "index": 3}}}]
-KIND_MAP = [{"type": "value", "options": {"Sem mapeamento": {"color": "red", "index": 0},
+NEUTRAL_T = ("thresholds", {"mode": "absolute", "steps": [{"color": "text", "value": None}]})
+KIND_MAP = [{"type": "value", "options": {"Sem mapeamento": {"color": CRIT, "index": 0},
                                           "Fora do dinheiro": {"color": "text", "index": 1}}}]
 TABLE_OPTS = {"cellHeight": "sm", "showHeader": True}
 WHEN = "time:DD/MM HH:mm"
@@ -299,6 +305,8 @@ FROM v ORDER BY ordem
     options=TABLE_OPTS))
 
 TOPN = 8
+# Número com sinal, como texto neutro (destruir moeda não é erro: sem vermelho)
+SIGNED = "printf('%+,d', {v})"  # mesma separação de milhar do resto do painel
 state.append(panel("table", "De onde vem e para onde vai — ${moeda} (últimos 7 dias)", f"""
 WITH r AS (
   SELECT f.reason, f.kind, {LABEL} AS motivo,
@@ -316,13 +324,13 @@ SELECT "Motivo", "Tipo", "Entrou", "Saiu", "Líquido", "Transações" FROM (
   SELECT 0 AS grp, pos, motivo AS "Motivo", {KIND_PT} AS "Tipo",
     CASE WHEN kind = 'non_monetary' THEN NULL ELSE ent END AS "Entrou",
     CASE WHEN kind = 'non_monetary' THEN NULL ELSE sai END AS "Saiu",
-    CASE WHEN kind = 'non_monetary' THEN NULL ELSE liq END AS "Líquido",
+    CASE WHEN kind = 'non_monetary' THEN NULL ELSE {SIGNED.format(v="liq")} END AS "Líquido",
     tx AS "Transações"
   FROM shown
   UNION ALL
   SELECT 1, 0, 'Outros (' || COUNT(*) || CASE WHEN COUNT(*) = 1 THEN ' motivo)' ELSE ' motivos)' END, '—',
     SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE ent END), SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE sai END),
-    SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE liq END), SUM(tx)
+    {SIGNED.format(v="SUM(CASE WHEN kind = 'non_monetary' THEN 0 ELSE liq END)")}, SUM(tx)
   FROM rest HAVING COUNT(*) > 0
 ) ORDER BY grp, pos
 """, 0, 13, 24, 11,
@@ -331,10 +339,10 @@ SELECT "Motivo", "Tipo", "Entrou", "Saiu", "Líquido", "Transações" FROM (
          "alguém precisa mapear; 'Fora do dinheiro' (ex.: waifu confiscada na taxa de hospedagem) não mexe no saldo e só mostra a contagem. "
          "Petalitas: sem extrato.",
     defaults={"noValue": "sem extrato / sem movimento"},
-    overrides=num("Entrou", "Saiu", "Líquido", "Transações") + [
+    overrides=num("Entrou", "Saiu", "Transações") + [
         by_name("Motivo", ("custom.width", 260)), by_name("Tipo", ("custom.width", 130)),
-        by_name("Tipo", ("mappings", KIND_MAP), ("custom.cellOptions", {"type": "color-text"})),
-        cell("Líquido", steps((None, "red"), (0, "green")), "color-text")],
+        by_name("Tipo", NEUTRAL_T, ("mappings", KIND_MAP), ("custom.cellOptions", {"type": "color-text"})),
+        by_name("Líquido", ("custom.align", "right"))],
     options=TABLE_OPTS))
 
 # Ficha de cada mudança (scorecard): criado/destruído por dia nos 7 dias antes x depois (até a última hora
@@ -370,6 +378,7 @@ m AS (
     (SELECT SUM(amount_in) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'creation' AND f.hour >= a.ts AND f.hour < a.ts + {WEEK}) AS cri_d_tot,
     (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts - {WEEK} AND f.hour < a.ts) / 7.0 AS des_a,
     (SELECT SUM(amount_out) FROM flows_hourly f WHERE f.currency = a.c AND f.kind = 'destruction' AND f.hour >= a.ts AND f.hour < a.ts + {WEEK}) AS des_d_tot,
+    (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts - {WEEK} ORDER BY b.ts DESC LIMIT 1) AS massa_ant,
     (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts ORDER BY b.ts DESC LIMIT 1) AS massa_na,
     (SELECT total FROM balances b WHERE b.currency = a.c AND b.ts <= a.ts + {WEEK} ORDER BY b.ts DESC LIMIT 1) AS massa_dep,
     {AVAIL.format(c="a.c")} AS avail,
@@ -411,8 +420,10 @@ rs AS (
 DCRI_TXT = """CASE WHEN dcri IS NULL THEN '—'
     WHEN dias < 7 THEN printf('parcial: %+.1f%%', dcri)
     WHEN ruido IS NULL THEN printf('%+.1f%% (sem histórico para o normal)', dcri)
-    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%)', dcri, ruido)
-    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%)', dcri, ruido) END"""
+    WHEN ABS(dcri) > ruido THEN CASE WHEN dcri > 0 THEN '▲ ' ELSE '▼ ' END || printf('%+.1f%% (normal ±%.0f%%', dcri, ruido) || NSEM || ')'
+    ELSE printf('dentro do normal: %+.1f%% (±%.0f%%', dcri, ruido) || NSEM || ')' END"""
+# normal medido com menos de 4 semanas: diz com quantas (pouco histórico, faixa pouco confiável)
+DCRI_TXT = DCRI_TXT.replace("NSEM", "CASE WHEN semanas < 4 THEN printf(', %d semana%s', semanas, CASE WHEN semanas = 1 THEN '' ELSE 's' END) ELSE '' END")
 ORIGIN_PT = "CASE origin WHEN 'auto' THEN 'automática' WHEN 'possivel' THEN 'possível' WHEN 'confirmada' THEN 'possível, confirmada' ELSE 'manual' END"
 ORIGIN_COL = f'{ORIGIN_PT} AS "Origem", ' if AUTO else ""
 CUR_NAME = "CASE c WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END"
@@ -433,8 +444,8 @@ MUD_DESC = ("Leitura antes/depois, não causal: um evento, um feriado ou a varia
             + "Mudança sem moeda usa a moeda do seletor.")
 state.append(panel("table", "Últimas mudanças (3)", f"""
 WITH {FICHA_CTE.replace("{n}", "3")}
-SELECT ts / 1000 AS "Quando", {ORIGIN_COL}{CUR_NAME} || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS "Moeda",
-  label AS "O que mudou", {DCRI_TXT} AS "Criado/dia: Δ", situacao AS "Situação"
+SELECT ts / 1000 AS "Quando", label AS "O que mudou", {DCRI_TXT} AS "Criado/dia: Δ", situacao AS "Situação",
+  {ORIGIN_COL}{CUR_NAME} || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS "Moeda"
 FROM rs ORDER BY ts DESC
 """, 0, 24, 24, 6, desc=MUD_DESC + " A ficha completa fica na aba Mudanças.",
     time_cols=["Quando"], defaults={"noValue": EMPTY_MUD},
@@ -457,10 +468,10 @@ moeda_p.append(panel("timeseries", "Criado, destruído e líquido por dia — ${
 SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,
   SUM(amount_in) AS "Criado", -SUM(amount_out) AS "Destruído", SUM(amount_in - amount_out) AS "Líquido"
 FROM flows_hourly
-WHERE currency = {M} AND {CD} AND hour >= {FROM} AND hour < {TO}
+WHERE currency = {M} AND {CD} AND hour >= {DAY0_FROM} AND hour < {DAY0_TO}
 GROUP BY 1 ORDER BY 1
 """, 0, y + 9, 12, 8, desc="Só motivos de criação e destruição (câmbio e transferências na seção própria), por dia econômico (04:00 BRT): "
-                           "criado acima de zero, destruído abaixo, e o líquido (criado − destruído) em linha.",
+                           "criado acima de zero, destruído abaixo, e o líquido (criado − destruído) em linha." + FULL_DAYS_NOTE,
     time_cols=["time"], defaults={"unit": "locale", "noValue": "sem extrato / sem movimento",
                                   "custom": {"drawStyle": "bars", "fillOpacity": 70, "lineWidth": 1}},
     overrides=[by_name("Criado", ("color", {"mode": "fixed", "fixedColor": "#9aa4b2"})),
@@ -472,9 +483,9 @@ moeda_p.append(panel("timeseries", "Fluxo por motivo e dia — ${moeda} (períod
 SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS time,
   {LABEL} AS "Motivo", SUM(amount_in - amount_out) AS "Líquido"
 FROM flows_hourly f
-WHERE f.currency = {M} AND f.kind <> 'non_monetary' AND f.hour >= {FROM} AND f.hour < {TO}
+WHERE f.currency = {M} AND f.kind <> 'non_monetary' AND f.hour >= {DAY0_FROM} AND f.hour < {DAY0_TO}
 GROUP BY 1, f.reason ORDER BY 1
-""", 12, y + 9, 12, 8, desc="Líquido (entrou − saiu) por motivo e dia econômico.",
+""", 12, y + 9, 12, 8, desc="Líquido (entrou − saiu) por motivo e dia econômico." + FULL_DAYS_NOTE,
     time_cols=["time"], defaults={"unit": "locale", "displayName": "${__field.labels.Motivo}", "custom": {"drawStyle": "bars", "fillOpacity": 60, "stacking": {"mode": "normal"}}, "noValue": "sem extrato"},
     options={"legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]}}, qtype="time series"))
 moeda_p.append(panel("timeseries", "Fatia da massa com os 10% maiores saldos — ${moeda} (12 semanas)", f"""
@@ -603,24 +614,28 @@ FROM load_runs ORDER BY ts DESC LIMIT 50
 mud_p = []
 mud_p.append(panel("table", "Ficha de antes e depois (últimas 20)", f"""
 WITH {FICHA_CTE.replace("{n}", "20")}
-SELECT ts / 1000 AS "Quando", {ORIGIN_COL}{CUR_NAME} || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS "Moeda",
-  label AS "O que mudou", situacao AS "Situação",
-  ROUND(cri_a) AS "Criado/dia antes", ROUND(cri_d) AS "Criado/dia depois", {DCRI_TXT} AS "Criado/dia: Δ",
+SELECT ts / 1000 AS "Quando", label AS "O que mudou", {DCRI_TXT} AS "Criado/dia: Δ", situacao AS "Situação",
+  COALESCE(motivos, '—') AS "Motivos que mais mudaram",
+  {CUR_NAME} || CASE WHEN currency IS NULL THEN ' (todas)' ELSE '' END AS "Moeda", {ORIGIN_COL}
+  ROUND(cri_a) AS "Criado/dia antes", ROUND(cri_d) AS "Criado/dia depois",
   ROUND(des_a) AS "Destruído/dia antes", ROUND(des_d) AS "Destruído/dia depois",
   ROUND(100.0 * (massa_dep - massa_na) / NULLIF(ABS(massa_na), 0), 2) AS "Massa: Δ em 7 dias (%)",
+  ROUND(100.0 * (massa_na - massa_ant) / NULLIF(ABS(massa_ant), 0), 2) AS "Massa: Δ nos 7 dias antes (%)",
   ROUND(jog_a, 1) AS "Jogadores/dia antes", ROUND(jog_d, 1) AS "Jogadores/dia depois",
-  COALESCE(motivos, '—') AS "Motivos que mais mudaram", semanas AS "Semanas no normal"
+  semanas AS "Semanas no normal"
 FROM rs ORDER BY ts DESC
-""", 0, 2, 24, 12, desc=MUD_DESC + " Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois.",
+""", 0, 2, 24, 17, desc=MUD_DESC + " Motivos que mais mudaram = os 3 com maior diferença de líquido por dia entre antes e depois. "
+                       "Massa: Δ nos 7 dias antes = a mesma conta na semana anterior à mudança, como referência. Com menos de 4 "
+                       "semanas de histórico o Δ diz com quantas semanas o normal foi medido.",
     time_cols=["Quando"], defaults={"noValue": EMPTY_MUD, "custom": {"wrapText": True}},
     overrides=when("Quando") + num("Criado/dia antes", "Criado/dia depois", "Destruído/dia antes", "Destruído/dia depois") + [
         by_name("Quando", ("custom.width", 95)), by_name("Origem", ("custom.width", 100)), by_name("Moeda", ("custom.width", 90)),
-        by_name("O que mudou", ("custom.width", 260)), by_name("Motivos que mais mudaram", ("custom.width", 320)),
+        by_name("O que mudou", ("custom.width", 340)), by_name("Motivos que mais mudaram", ("custom.width", 560)),
         by_name("Criado/dia: Δ", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 250)),
-        by_name("Situação", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 200)),
+        by_name("Situação", NEUTRAL, ("mappings", DELTA_MAP), ("custom.cellOptions", {"type": "color-text"}), ("custom.width", 300)),
         by_name("Semanas no normal", ("custom.hidden", True))],
     options=TABLE_OPTS))
-mud_p.append(panel("text", "Como registrar e ler", "", 0, 14, 24, 5, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
+mud_p.append(panel("text", "Como registrar e ler", "", 0, 19, 24, 4, extra={"targets": [], "datasource": None, "options": {"mode": "markdown", "content": (
     ("**Automáticas**: a cada carga a ravena lê os parâmetros de balanceamento dos serviços (`/internal/economy/params`) e registra o que mudou, "
      "com valor antigo e novo. **Possíveis**: motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro; "
      "veja com `--listar` e confirme ou descarte com `scripts/economy-annotate.js --confirmar|--descartar <ts> \"texto\"`. **Manuais**: " if AUTO else "**Registrar**: ")
@@ -703,22 +718,22 @@ ativ_p = []
 ativ_p.append(panel("timeseries", "Pessoas ativas por dia (período selecionado)", f"""
 SELECT a.day / 1000 AS time, COUNT(DISTINCT COALESCE(i.person, a.player_id)) AS "Pessoas que usaram comandos"
 FROM player_activity_daily a LEFT JOIN identities i ON i.player_id = a.player_id
-WHERE {AT_ON} AND a.day >= (({FROM} - 25200000) / 86400000) * 86400000 + 25200000 AND a.day < {TO}
+WHERE {AT_ON} AND a.day >= {DAY0_FROM} AND a.day < {DAY0_TO}
 GROUP BY a.day ORDER BY a.day
 """, 0, 2, 12, 8,
     desc="Pessoas distintas que usaram algum comando no dia econômico (04:00 BRT), com LID e variantes de telefone unidas. Fonte: "
          "cmd_usage.db (sem comandos automáticos nem interação passiva, como o resumo semanal). Guardado por "
-         "ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90).",
-    time_cols=["time"], defaults={"noValue": AT_OFF, "unit": "locale", "custom": {"drawStyle": "bars", "fillOpacity": 60}}))
+         "ECONOMY_ANALYTICS_PLAYER_DAYS dias (padrão 90)." + FULL_DAYS_NOTE,
+    time_cols=["time"], defaults={"noValue": AT_OFF, "unit": "locale", "min": 0, "custom": {"drawStyle": "bars", "fillOpacity": 60}}))
 ativ_p.append(panel("timeseries", "Jogadores com movimento por dia, por moeda (período selecionado)", f"""
 SELECT d.day / 1000 AS time, CASE d.currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS "Moeda",
   COUNT(DISTINCT d.player_id) AS "Jogadores"
 FROM player_daily d
-WHERE d.currency IN ({MS}) AND d.day >= (({FROM} - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < {TO}
+WHERE d.currency IN ({MS}) AND d.day >= {DAY0_FROM} AND d.day < {DAY0_TO}
 GROUP BY d.day, d.currency ORDER BY d.day
 """, 12, 2, 12, 8,
-    desc="Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato.",
-    time_cols=["time"], defaults={"noValue": "sem dados", "unit": "locale", "displayName": "${__field.labels.Moeda}"},
+    desc="Jogadores com pelo menos uma linha no extrato da moeda no dia. Petalitas não aparecem: o Jardim ainda não tem extrato." + FULL_DAYS_NOTE,
+    time_cols=["time"], defaults={"noValue": "sem dados", "unit": "locale", "min": 0, "displayName": "${__field.labels.Moeda}"},
     overrides=cur_colors(), options={"legend": {"displayMode": "list", "placement": "bottom"}}, qtype="time series"))
 ativ_p.append(panel("timeseries", "Comandos por hora (período selecionado)", f"""
 SELECT hour / 1000 AS time, uses AS "Comandos" FROM activity_hourly
@@ -888,7 +903,7 @@ tabs = [
                      v2.Section("Câmbio e transferências", cambio_p, collapse=True),
                      v2.Section("Ciclo da alma gêmea", alma_p, only=("moeda", "zinthos"))]),
     None,  # Jogadores: preenchido abaixo, junto com a ficha
-    v2.Tab("Atividade", [v2.Section(None, [header("**Quanta gente está jogando?** Pessoas distintas (LID e telefone unidos) e jogadores com movimento em cada moeda.")]
+    v2.Tab("Atividade", [v2.Section(None, [header("**Quanta gente está jogando?** Pessoas distintas e jogadores com movimento em cada moeda.")]
                                           + [dict(p_, gridPos={**p_["gridPos"], "y": p_["gridPos"]["y"]}) for p_ in ativ_p])]),
     v2.Tab("Mudanças", [v2.Section(None, [header("**O que mudou depois de cada ajuste?** Uma linha por mudança de balanceamento" + (": automática, possível ou manual." if AUTO else ".") + "")] + mud_p)]),
     v2.Tab("Diagnóstico", [v2.Section(None, stack("**Dá para confiar nos números?** Alertas, de quando são os dados, conferência estoque × fluxos e cargas.", diag_p)),
@@ -908,8 +923,10 @@ ECON_VARS = [v2.custom_var("moeda", "Moeda", MOEDA_OPTS, "zinthos"),
              v2.custom_var("moedas", "Moedas", MOEDA_OPTS, ["zinthos", "petalitas", "runas"], multi=True),
              v2.custom_var("escala", "Escala", [("índice em log (base comum)", "indice"), ("valor", "valor"),
                                                 ("separado (um por moeda)", "separado")], "indice")]
-ECON_ANNOS = [v2.BUILTIN_ANNOTATION, v2.annotation("Mudanças registradas", DS, anno_sql, "orange"),
-              ] + ([v2.annotation("Possíveis mudanças", DS, anno_poss, AMBER)] if AUTO else [])
+MARK = "#c4cad3"  # marcas de mudança: cinza-claro, para não confundir com o âmbar das linhas de limite
+MARK_POSS = "#8a94a3"
+ECON_ANNOS = [v2.BUILTIN_ANNOTATION, v2.annotation("Mudanças registradas", DS, anno_sql, MARK),
+              ] + ([v2.annotation("Possíveis mudanças", DS, anno_poss, MARK_POSS)] if AUTO else [])
 ECON_DESC = ("Painel da economia (Zinthos, Petalitas, Runas). Fonte: analytics.db publicado de hora em hora pela ravena-ai. "
              "Mapeamento motivo → tipo e nomes em src/services/EconomyAnalyticsMapping.js. " + TIME_NOTE)
 
@@ -960,7 +977,7 @@ bal AS (
   WHERE p.currency = {M} GROUP BY i.person
 ),
 massa AS (SELECT SUM(balance) AS m FROM players WHERE currency = {M} AND balance > 0)
-SELECT agg.person AS "Pessoa", COALESCE(pp.nome, '—') AS "Nome", {SHOWID} AS "Telefone / ID", pp.tipos AS "Tipo de ID",
+SELECT agg.person AS "Pessoa", COALESCE(pp.nome, '—') AS "Nome", {SHOWID} AS "Telefone / ID",
   agg.criado AS "Criado", agg.destruido AS "Destruído", agg.cambio AS "Câmbio (líquido)", agg.transf AS "Transf. (líquido)",
   agg.liquido AS "Líquido", bal.saldo AS "Saldo atual", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS "% da massa",
   top_reason.motivo AS "Maior fonte"
@@ -1031,7 +1048,7 @@ semana AS (
   GROUP BY i.person
 ),
 massa AS (SELECT SUM(balance) AS m FROM players WHERE currency = {M} AND balance > 0)
-SELECT bal.person AS "Pessoa", COALESCE(pp.nome, '—') AS "Nome", {SHOWID} AS "Telefone / ID", pp.tipos AS "Tipo de ID",
+SELECT bal.person AS "Pessoa", COALESCE(pp.nome, '—') AS "Nome", {SHOWID} AS "Telefone / ID",
   bal.saldo AS "Saldo", ROUND(100.0 * bal.saldo / NULLIF((SELECT m FROM massa), 0), 2) AS "% da massa",
   bal.saldo - semana.saldo AS "Variação em 7 dias"
 FROM bal JOIN pp ON pp.person = bal.person LEFT JOIN semana ON semana.person = bal.person
@@ -1116,7 +1133,7 @@ LEFT JOIN reason_labels l ON l.currency = d.currency AND l.reason = d.reason
 WHERE {PF} AND d.currency = {M} AND {DAYF}
 GROUP BY d.day, d.reason ORDER BY d.day DESC, SUM(d.amount_in) + SUM(d.amount_out) DESC
 """, 0, 15, 16, 10, time_cols=["Dia"], defaults={"noValue": "escolha um jogador"},
-    overrides=[by_name("Dia", ("unit", "time:DD/MM"), ("custom.width", 70)), by_name("Tipo", ("mappings", KIND_MAP), ("custom.cellOptions", {"type": "color-text"}))]
+    overrides=[by_name("Dia", ("unit", "time:DD/MM"), ("custom.width", 70)), by_name("Tipo", NEUTRAL_T, ("mappings", KIND_MAP), ("custom.cellOptions", {"type": "color-text"}))]
               + num("Entrou", "Saiu", "Transações"),
     options=TABLE_OPTS))
 jog.append(panel("timeseries", "Comandos por dia — jogador escolhido", f"""
@@ -1128,11 +1145,12 @@ GROUP BY a.day ORDER BY a.day
                                                     "custom": {"drawStyle": "bars", "fillOpacity": 60}}))
 
 busca = jp.pop()  # "Encontrar jogador" vai para a ficha
+jp.insert(0, jp.pop(2))  # Anomalias primeiro (é o que pede ação), depois quem mais ganhou/perdeu e os maiores saldos
 yy = 2
 for pnl in jp:
     pnl["gridPos"]["y"] = yy
     yy += pnl["gridPos"]["h"]
-tabs[2] = v2.Tab("Jogadores", [v2.Section(None, [header("**Quem se destaca e o que é anômalo?** Moeda do seletor no topo. Clique num nome para abrir a ficha (dashboard Ravena — Jogador).")] + jp)])
+tabs[2] = v2.Tab("Jogadores", [v2.Section(None, [header("**Quem se destaca e o que é anômalo?** Moeda do seletor no topo; clique num nome para abrir a ficha.")] + jp)])
 
 
 def write(path, obj):
@@ -1168,7 +1186,7 @@ jdash = v2.dashboard("ravena-jogador", "Ravena — Jogador", tabs=[v2.Tab("Jogad
     tags=["ravena", "economia"],
     variables=[v2.custom_var("moeda", "Moeda", MOEDA_OPTS, "zinthos"), v2.text_var("busca", "Buscar"), v2.text_var("jogador", "Jogador"),
                v2.text_var("nome", "Nome", hide="hideVariable")],
-    annotations=[v2.BUILTIN_ANNOTATION, v2.annotation("Mudanças registradas", DS, anno_sql, "orange")],
+    annotations=[v2.BUILTIN_ANNOTATION, v2.annotation("Mudanças registradas", DS, anno_sql, MARK)],
     links=[v2.link("Economia", "/d/ravena-economia/ravena-economia", "Painel da economia")])
 jout = os.path.join(OUT, "observability/grafana/dashboards/jogador.json")
 write(jout, jdash)
