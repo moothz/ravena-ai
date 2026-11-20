@@ -270,6 +270,98 @@ function registerIndexRoutes(api) {
 		}
 	});
 
+	// Endpoint para solicitação ativa de convite via mini app "Quero Uma!"
+	const limiter = api.strictLimiter || ((req, res, next) => next());
+	app.post("/api/invite", limiter, async (req, res) => {
+		try {
+			const { link, contato, motivo } = req.body || {};
+			if (!link || !contato || !motivo) {
+				return res.status(400).json({
+					status: "error",
+					message: "Todos os campos (link, contato e motivo) são obrigatórios."
+				});
+			}
+
+			const cleanLink = String(link).trim();
+			const cleanContact = String(contato).trim();
+			const cleanReason = String(motivo).trim();
+
+			const match = cleanLink.match(/(?:https?:\/\/)?chat\.whatsapp\.com\/([0-9A-Za-z_-]{20,26})/i);
+			if (!match) {
+				return res.status(400).json({
+					status: "error",
+					message:
+						"Link de grupo do WhatsApp inválido. Formato esperado: https://chat.whatsapp.com/..."
+				});
+			}
+			const inviteCode = match[1];
+
+			if (cleanReason.length < 5) {
+				return res.status(400).json({
+					status: "error",
+					message: "O motivo é muito curto. Por favor, descreva melhor o propósito do seu grupo."
+				});
+			}
+
+			const onlineBot =
+				api.bots.find((b) => b.isConnected && b.grupoInvites) ||
+				api.bots.find((b) => b.isConnected);
+			const targetGroup =
+				onlineBot?.grupoInvites || api.bots.find((b) => b.grupoInvites)?.grupoInvites;
+
+			if (!onlineBot || !targetGroup) {
+				api.logger.warn(
+					"Tentativa de envio de convite via site, mas nenhum bot conectado ou grupoInvites configurado."
+				);
+				return res.status(503).json({
+					status: "error",
+					message:
+						"Serviço temporariamente indisponível. Nenhuma instância conectada para entregar o convite. Tente novamente mais tarde."
+				});
+			}
+
+			const cleanPhone = cleanContact.replace(/\D/g, "");
+			const formattedContact = cleanPhone ? `${cleanContact} (${cleanPhone})` : cleanContact;
+
+			const infoMsg =
+				`🌐 *[Recebido pelo Site - Quero Uma!]*\n\n` +
+				`🔗 *Link:* https://chat.whatsapp.com/${inviteCode}\n` +
+				`👤 *Solicitante / Contato:* ${formattedContact}\n` +
+				`💬 *Motivo:*\n${cleanReason}\n\n` +
+				`🤖 *Entregue por:* ${onlineBot.nomeExibir || onlineBot.id}`;
+
+			await onlineBot.sendMessage(targetGroup, infoMsg);
+
+			// Comandos rápidos para SuperAdmin
+			const joinCmd = `!sa-joinGrupo ${inviteCode} ${cleanPhone || "site"} Site`;
+			await onlineBot.sendMessage(targetGroup, joinCmd);
+
+			const inspectCmd = `!sa-inviteInfo ${inviteCode}`;
+			await onlineBot.sendMessage(targetGroup, inspectCmd);
+
+			if (cleanPhone) {
+				const blockCmd = `!sa-blockInvites ${cleanPhone} ${inviteCode}`;
+				await onlineBot.sendMessage(targetGroup, blockCmd);
+			}
+
+			api.logger.info(
+				`[BotAPI] Convite recebido pelo site encaminhado para ${targetGroup} pelo bot ${onlineBot.id} (código: ${inviteCode})`
+			);
+
+			return res.json({
+				status: "ok",
+				message:
+					"Sua solicitação foi enviada com sucesso! Ela foi encaminhada para a equipe de moderação."
+			});
+		} catch (err) {
+			api.logger.error("Erro ao processar convite via site:", err);
+			return res.status(500).json({
+				status: "error",
+				message: "Erro interno ao processar sua solicitação."
+			});
+		}
+	});
+
 	// Endpoint para testar o layout da página 502
 	app.get("/502", async (req, res) => {
 		try {

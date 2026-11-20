@@ -3,6 +3,7 @@
 const MobileApp = {
     apps: [
         { id: 'status',     label: 'Status',            icon: 'img/icons/status.webp',     window: 'status',     iconFa: 'fa-desktop' },
+        { id: 'avisos',     label: 'Avisos',            icon: 'img/icons/avisos.svg',      window: 'avisos',     iconFa: 'fa-bullhorn' },
         { id: 'invite',     label: 'Quero Uma!',        icon: 'img/icons/invite.webp',     window: 'invite',     iconFa: 'fa-envelope' },
         { id: 'commands',   label: 'Comandos',          icon: 'img/icons/commands.svg',    window: 'commands',   iconFa: 'fa-terminal' },
         { id: 'community',  label: 'Comunidade',        icon: 'img/icons/community.webp',  window: 'community',  iconFa: 'fa-users' },

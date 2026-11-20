@@ -399,6 +399,11 @@ const Taskbar = {
                 <span>Status</span>
             </div>
 
+            <div class="start-menu-item" data-action="avisos">
+                <i class="fas fa-bullhorn" style="color: var(--cyan-neon);"></i>
+                <span>Avisos</span>
+            </div>
+
             <div class="start-menu-item" data-action="invite">
                 <i class="fas fa-envelope"></i>
                 <span>Quero Uma!</span>

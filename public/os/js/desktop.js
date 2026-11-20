@@ -3,6 +3,7 @@
 const Desktop = {
     icons: [
         { id: 'status',     label: 'Status',            tooltip: 'Painel de status das instâncias da Ravena',            icon: 'img/icons/status.webp',     window: 'status' },
+        { id: 'avisos',     label: 'Avisos',            tooltip: 'Mural de avisos e comunicados importantes',            icon: 'img/icons/avisos.svg',      window: 'avisos' },
         { id: 'invite',     label: 'Quero Uma!',        tooltip: 'Instruções para adicionar o bot no seu grupo',          icon: 'img/icons/invite.webp',     window: 'invite' },
         { id: 'commands',   label: 'Comandos',          tooltip: 'Catálogo de comandos e exemplos de uso',                icon: 'img/icons/commands.svg',    window: 'commands' },
         { id: 'community',  label: 'Comunidade',        tooltip: 'Grupos no WhatsApp, Discord e Telegram',                icon: 'img/icons/community.webp',  window: 'community' },

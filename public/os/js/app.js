@@ -92,6 +92,26 @@ const RavenaOS = {
             }, 100);
         }
 
+        // Abre automaticamente o mini app de Avisos se houver comunicados ativos
+        const hasActiveAnnouncements = Boolean(
+            this.state.healthData &&
+            Array.isArray(this.state.healthData.announcements) &&
+            this.state.healthData.announcements.some(a => a && Number(a.expires_at) > Date.now())
+        );
+        if (hasActiveAnnouncements) {
+            setTimeout(() => {
+                if (this.state.isMobile && window.MobileApp) {
+                    window.MobileApp.openApp('avisos');
+                } else if (window.WindowManager) {
+                    const w = 580;
+                    const h = 420;
+                    const left = Math.max(20, Math.floor((window.innerWidth - w) / 2));
+                    const top = Math.max(30, Math.floor((window.innerHeight - h) / 3));
+                    window.WindowManager.open('avisos', { x: `${left}px`, y: `${top}px`, width: `${w}px`, height: `${h}px` });
+                }
+            }, 250);
+        }
+
         // Periodic update timers
         setInterval(() => this.fetchHealth(), 30000);
         setInterval(() => this.fetchDonations(), 300000);
