@@ -1912,7 +1912,7 @@ async function main() {
 			assert.strictEqual(sit("velha.db").Carga, "pausada desde 19/11 12:30");
 		});
 
-		await test("ciclo da alma gêmea: sem cotas à parte e % sobre os com cotas, com e sem a coluna withoutQuota", () => {
+		await test("ciclo da alma gêmea: sem cotas à parte (NULL = desconhecido) e % sobre os com cotas", () => {
 			const { file, db } = freshDb("alma.db");
 			db.prepare(
 				"INSERT INTO features (key, title, available, ts) VALUES ('ciclo_alma_gemea', 'Ciclo', 1, 0)"
@@ -1928,19 +1928,18 @@ async function main() {
 				readAll(file, dashboardSql("Divórcios de alma gêmea sem cotas (últimos 7 dias)", range))[0][
 					"Sem cotas"
 				];
-			// Sem a coluna (dados antigos): sem cotas = 0, % sobre os 5
-			assert.strictEqual(dia()["Sem cotas"], 0);
+			// without_quota NULL (waifuletes antigo): sem cotas desconhecido, % sobre os 5
+			assert.strictEqual(dia()["Sem cotas"], null);
 			assert.strictEqual(dia()["% dos com cotas"], 40);
 			assert.strictEqual(dia()["Pagou mais que as cotas"], 2);
-			assert.strictEqual(semCotas(), 0);
-			// Com a coluna (ADD COLUMN): 1 dos 5 sem cotas → 2 de 4
+			assert.strictEqual(semCotas(), "desconhecido");
+			// 1 dos 5 sem cotas → 2 de 4
 			const db2 = new BetterSQLite(file);
-			db2.exec("ALTER TABLE soulmate_cycle_hourly ADD COLUMN withoutQuota INTEGER");
-			db2.prepare("UPDATE soulmate_cycle_hourly SET withoutQuota = 1").run();
+			db2.prepare("UPDATE soulmate_cycle_hourly SET without_quota = 1").run();
 			db2.close();
 			assert.strictEqual(dia()["Sem cotas"], 1);
 			assert.strictEqual(dia()["% dos com cotas"], 50);
-			assert.strictEqual(semCotas(), 1);
+			assert.strictEqual(semCotas(), "1");
 		});
 
 		await test("alerta de carga atrasada: só fontes das últimas 48 h, intervalo + 2 h, pausada não dispara", () => {

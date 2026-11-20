@@ -646,13 +646,9 @@ mud_p.append(panel("text", "Como registrar e ler", "", 0, 19, 24, 4, extra={"tar
 # ============================================================================ Ciclo da alma gêmea (recolhido)
 SM_ON = "(SELECT available FROM features WHERE key = 'ciclo_alma_gemea') = 1"
 SM_OFF = "Indisponível — depende de: waifuletes com soulmateCycle no resumo da economia"
-# withoutQuota (divórcios sem cotas) é coluna nova (ADD COLUMN, NULL em dados antigos). O SQL funciona com e sem ela:
-# a subconsulta acha a coluna em soulmate_cycle_hourly quando existe; sem ela, cai no NULL de `dflt` (escopo de fora).
-SC = """sc AS (
-  SELECT x.hour, x.divorces, x.paid, x.quota_cost, x.above_cost, x.max_return,
-    COALESCE((SELECT withoutQuota FROM soulmate_cycle_hourly i WHERE i.hour = x.hour), 0) AS wq
-  FROM (SELECT NULL AS withoutQuota) dflt, (SELECT * FROM soulmate_cycle_hourly) x
-)"""
+# without_quota (divórcios sem cotas): NULL = hora carregada de um waifuletes anterior ao campo (desconhecido, não 0).
+# Percentual sobre os divórcios com cotas: divorces − COALESCE(without_quota, 0).
+SC = """sc AS (SELECT hour, divorces, paid, quota_cost, above_cost, max_return, without_quota AS wq FROM soulmate_cycle_hourly)"""
 STAT_OPTS = {"graphMode": "none", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": False}}
 alma_p = []
 alma_p.append(panel("stat", "Divórcios de alma gêmea que pagaram mais que as cotas (últimos 7 dias)", f"""
@@ -684,11 +680,11 @@ HAVING {SM_ON}
 """, 12, 2, 6, 6, defaults={"noValue": SM_OFF, "unit": "locale"}, options={**STAT_OPTS, "colorMode": "none"}))
 alma_p.append(panel("stat", "Divórcios de alma gêmea sem cotas (últimos 7 dias)", f"""
 WITH {SC}
-SELECT COALESCE(SUM(wq), 0) AS "Sem cotas" FROM sc
+SELECT CASE WHEN COUNT(wq) = 0 THEN 'desconhecido' ELSE CAST(SUM(wq) AS TEXT) END AS "Sem cotas" FROM sc
 WHERE {SM_ON} AND hour >= {TO} - {WEEK} AND hour < {TO}
 HAVING {SM_ON}
 """, 18, 2, 6, 6, desc="Divórcios de alma gêmea sem nenhuma cota comprada (não entram no 'pagou mais que as cotas' nem nos percentuais). "
-                     "0 em dados antigos, de antes do waifuletes mandar esse número.",
+                     "'desconhecido' quando as horas da semana vieram de um waifuletes anterior a esse número.",
     defaults={"noValue": SM_OFF, "unit": "locale"}, options={**STAT_OPTS, "colorMode": "none"}))
 alma_p.append(panel("table", "Ciclo da alma gêmea por dia (período selecionado)", f"""
 WITH {SC}
@@ -696,16 +692,17 @@ SELECT (((hour - 25200000) / 86400000) * 86400000 + 25200000) / 1000 AS "Dia",
   SUM(divorces) AS "Divórcios", SUM(wq) AS "Sem cotas", SUM(paid) AS "Pago nos divórcios", SUM(quota_cost) AS "Custo das cotas",
   ROUND(1.0 * SUM(paid) / NULLIF(SUM(quota_cost), 0), 2) AS "Retorno (pago ÷ custo)",
   SUM(above_cost) AS "Pagou mais que as cotas",
-  ROUND(100.0 * SUM(above_cost) / NULLIF(SUM(divorces) - SUM(wq), 0), 1) AS "% dos com cotas",
+  ROUND(100.0 * SUM(above_cost) / NULLIF(SUM(divorces) - COALESCE(SUM(wq), 0), 0), 1) AS "% dos com cotas",
   ROUND(MAX(max_return), 2) AS "Maior retorno"
 FROM sc
 WHERE {SM_ON} AND hour >= {FROM} AND hour < {TO}
 GROUP BY (hour - 25200000) / 86400000 ORDER BY 1 DESC
 """, 0, 8, 24, 7, desc="Por dia econômico (04:00 BRT). Retorno abaixo de 1 = o jogador gastou mais em cotas do que recebeu no divórcio. "
                        "Pagou mais que as cotas = pagamento estritamente maior que o custo das cotas (custo > 0); o % é sobre os divórcios "
-                       "com cotas (divórcios − sem cotas).",
+                       "com cotas (divórcios − sem cotas; sem cotas desconhecido, de waifuletes antigo, conta como 0).",
     time_cols=["Dia"], defaults={"noValue": SM_OFF + " (ou nenhum divórcio de alma gêmea no período)"},
-    overrides=[by_name("Dia", ("unit", "time:DD/MM"))] + num("Divórcios", "Sem cotas", "Pago nos divórcios", "Custo das cotas") + [
+    overrides=[by_name("Dia", ("unit", "time:DD/MM")), by_name("Sem cotas", ("noValue", "desconhecido"))]
+              + num("Divórcios", "Sem cotas", "Pago nos divórcios", "Custo das cotas") + [
         by_name("% dos com cotas", ("unit", "percent")),
         cell("Retorno (pago ÷ custo)", steps((None, "green"), (0.5, "yellow"), (1, "red")), "color-text"),
         cell("Pagou mais que as cotas", steps((None, "green"), (1, "red")), "color-text")],
@@ -934,14 +931,10 @@ ECON_DESC = ("Painel da economia (Zinthos, Petalitas, Runas). Fonte: analytics.d
 # (ids continuam: os painéis do ranking entram no dashboard da economia)
 J = "${jogador:sqlstring}"
 DAYF = f"d.day >= (({FROM} - 25200000) / 86400000) * 86400000 + 25200000 AND d.day < {TO}"
-# Pessoa → telefone, tipos de ID e nome (o da identidade; sem ele, o maior nome dos players dela). Nome reserva num
-# JOIN agregado (pn), não numa subconsulta correlata por pessoa (quadrática com players ⋈ identities).
-PEOPLE = """pn AS (
-  SELECT j.person, MAX(p.name) AS nome FROM players p JOIN identities j ON j.player_id = p.player_id GROUP BY j.person
-),
-pp AS (
-  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, COALESCE(MAX(i.name), MAX(pn.nome)) AS nome
-  FROM identities i LEFT JOIN pn ON pn.person = i.person GROUP BY i.person
+# Pessoa → telefone, tipos de ID e nome (a carga grava em identities.name o nome dos players da pessoa)
+PEOPLE = """pp AS (
+  SELECT i.person, MAX(i.phone) AS phone, GROUP_CONCAT(DISTINCT i.id_kind) AS tipos, MAX(i.name) AS nome
+  FROM identities i GROUP BY i.person
 )"""
 SHOWID = ("CASE WHEN pp.phone IS NOT NULL THEN '+' || pp.phone WHEN pp.person LIKE 'tg:%' THEN 'Telegram ' || substr(pp.person, 4) "
           "WHEN pp.person LIKE 'lid:%' THEN 'LID ' || substr(pp.person, 5) ELSE pp.person END")
