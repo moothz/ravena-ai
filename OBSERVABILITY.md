@@ -129,6 +129,7 @@ Versões: o SDK está fixado na linha `@opentelemetry/sdk-node@0.223.x`, a últi
 | `fazenda harvest.reconcile` | INTERNAL | dentro de `POST /api/games/fazenda/harvest` (chamado pelo Jardim). `ravena.fazenda.credited_count` |
 | `waifu marry.scheduled` | INTERNAL (raiz) | casamento agendado do `!mu-casar` quando o timer dispara: trace próprio com link para o comando que agendou. `ravena.marry.wait_ms`, `app.outcome` (inclui `already_claimed` e a resposta do waifuletes) |
 | `command mu-foto` (atributos extras) | INTERNAL | `ravena.waifu.photo.requested`/`used`/`total` e `ravena.waifu.photo.fallback` (foto pedida inválida, caiu na padrão) |
+| `storage get` / `storage upload` / `storage delete` / `storage delete_group` | INTERNAL | Operações de mídia no storage S3/disco: `ravena.storage.bucket`, `ravena.storage.key`, `ravena.storage.filename`, `ravena.storage.category`, `ravena.chat.id`, `ravena.storage.source` (s3/s3-legacy/cache/disk), `ravena.storage.size`, `ravena.storage.deleted_count`, `app.outcome` (ok/rejected/error), `app.reject.reason` (not_found) |
 
 **Resultado do comando quando o microsserviço rejeita.** Os hooks de HTTP ligam cada chamada ao waifuletes/Jardim ao span do comando. Se o código do comando não definiu `app.outcome`, vale a última resposta de parceiro a uma **operação mutável** (POST/PUT/PATCH/DELETE). Se o comando só fez leituras, vale a última resposta:
 - 4xx → `rejected` + `downstream_<status>`;

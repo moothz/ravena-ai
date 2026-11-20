@@ -66,15 +66,15 @@ class S3Setup {
 
 			if (this.retentionDays > 0) {
 				this.logger.info(
-					`Configurando retenção de ${this.retentionDays} dias para o bucket ${this.bucket}...`
+					`Configurando retenção de ${this.retentionDays} dias para o prefixo whatsgo-medias/ no bucket ${this.bucket}...`
 				);
 				const body =
 					'<?xml version="1.0" encoding="UTF-8"?>' +
 					'<LifecycleConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">' +
-					"<Rule><ID>ravena-expiry</ID><Status>Enabled</Status><Filter><Prefix></Prefix></Filter>" +
+					"<Rule><ID>ravena-whatsgo-expiry</ID><Status>Enabled</Status><Filter><Prefix>whatsgo-medias/</Prefix></Filter>" +
 					`<Expiration><Days>${this.retentionDays}</Days></Expiration></Rule>` +
 					"</LifecycleConfiguration>";
-				// PUT substitui a configuração inteira, então não acumula regras duplicadas
+				// PUT substitui a configuração inteira, garantindo que apenas mídias efêmeras do WhatsApp expirem
 				const res = await this.request("PUT", "lifecycle=", body, {
 					"content-md5": crypto.createHash("md5").update(body).digest("base64"),
 					"content-type": "application/xml"

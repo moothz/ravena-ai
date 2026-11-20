@@ -17,6 +17,7 @@ const path = require("path");
 const mime = require("mime-types");
 const Logger = require("../utils/Logger");
 const urlShortenerService = require("./UrlShortenerService");
+const telemetry = require("../telemetry");
 
 class StorageService {
 	constructor(options = {}) {
@@ -291,96 +292,137 @@ class StorageService {
 	async upload(data, fileName, { groupId, category, mimetype, metadata = {}, bucket } = {}) {
 		const targetBucket = bucket || this.bucket;
 		const key = this.buildKey(fileName, { groupId, category });
+		const cleanCategory = category || "custom-commands";
 
-		let bufferData;
-		if (typeof data === "string") {
-			// Se for string base64 pura ou dataURI
-			const cleanBase64 = data.replace(/^data:[^;]+;base64,/, "");
-			bufferData = Buffer.from(cleanBase64, "base64");
-		} else if (Buffer.isBuffer(data)) {
-			bufferData = data;
-		}
+		return telemetry.withSpan(
+			"storage upload",
+			{
+				attributes: {
+					"ravena.storage.bucket": targetBucket,
+					"ravena.storage.key": key,
+					"ravena.chat.id": telemetry.chatIdAttr(groupId),
+					"ravena.storage.category": cleanCategory
+				}
+			},
+			async (span) => {
+				let bufferData;
+				if (typeof data === "string") {
+					// Se for string base64 pura ou dataURI
+					const cleanBase64 = data.replace(/^data:[^;]+;base64,/, "");
+					bufferData = Buffer.from(cleanBase64, "base64");
+				} else if (Buffer.isBuffer(data)) {
+					bufferData = data;
+				}
 
-		const detectedMime = mimetype || mime.lookup(fileName) || "application/octet-stream";
+				const detectedMime = mimetype || mime.lookup(fileName) || "application/octet-stream";
 
-		if (!this.enabled || !this.client) {
-			// Modo local fallback
-			const localPath = path.join(this.localMediaDir, path.basename(fileName));
-			await fsPromises.mkdir(path.dirname(localPath), { recursive: true });
-			if (bufferData) {
-				await fsPromises.writeFile(localPath, bufferData);
-			}
-			return {
-				key,
-				bucket: "local",
-				size: bufferData ? bufferData.length : 0,
-				mimetype: detectedMime,
-				localPath
-			};
-		}
-
-		try {
-			if (bufferData) {
-				const command = new PutObjectCommand({
-					Bucket: targetBucket,
-					Key: key,
-					Body: bufferData,
-					ContentType: detectedMime,
-					Metadata: {
-						groupId: groupId || "",
-						category: category || "",
-						originalName: path.basename(fileName),
-						...metadata
+				if (!this.enabled || !this.client) {
+					// Modo local fallback
+					const localPath = path.join(this.localMediaDir, path.basename(fileName));
+					await fsPromises.mkdir(path.dirname(localPath), { recursive: true });
+					if (bufferData) {
+						await fsPromises.writeFile(localPath, bufferData);
 					}
-				});
+					telemetry.setAttrs(
+						{
+							"ravena.storage.source": "disk",
+							"ravena.storage.size": bufferData ? bufferData.length : 0,
+							"app.outcome": "ok"
+						},
+						span
+					);
+					return {
+						key,
+						bucket: "local",
+						size: bufferData ? bufferData.length : 0,
+						mimetype: detectedMime,
+						localPath
+					};
+				}
 
-				const response = await this.client.send(command);
-				this.logger.debug(
-					`[upload] Objeto salvo no S3 (${targetBucket}): ${key} (${bufferData.length} bytes)`
-				);
+				try {
+					if (bufferData) {
+						const command = new PutObjectCommand({
+							Bucket: targetBucket,
+							Key: key,
+							Body: bufferData,
+							ContentType: detectedMime,
+							Metadata: {
+								groupId: groupId || "",
+								category: category || "",
+								originalName: path.basename(fileName),
+								...metadata
+							}
+						});
 
-				// Opcionalmente atualiza o cache local
-				await this._saveToCache(key, bufferData, targetBucket);
+						const response = await this.client.send(command);
+						this.logger.debug(
+							`[upload] Objeto salvo no S3 (${targetBucket}): ${key} (${bufferData.length} bytes)`
+						);
 
-				return {
-					key,
-					bucket: targetBucket,
-					size: bufferData.length,
-					mimetype: detectedMime,
-					eTag: response.ETag
-				};
-			} else {
-				// Upload via streaming com @aws-sdk/lib-storage
-				const uploadParallel = new Upload({
-					client: this.client,
-					params: {
-						Bucket: targetBucket,
-						Key: key,
-						Body: data,
-						ContentType: detectedMime,
-						Metadata: {
-							groupId: groupId || "",
-							category: category || "",
-							originalName: path.basename(fileName),
-							...metadata
-						}
+						// Opcionalmente atualiza o cache local
+						await this._saveToCache(key, bufferData, targetBucket);
+
+						telemetry.setAttrs(
+							{
+								"ravena.storage.source": "s3",
+								"ravena.storage.size": bufferData.length,
+								"app.outcome": "ok"
+							},
+							span
+						);
+
+						return {
+							key,
+							bucket: targetBucket,
+							size: bufferData.length,
+							mimetype: detectedMime,
+							eTag: response.ETag
+						};
+					} else {
+						// Upload via streaming com @aws-sdk/lib-storage
+						const uploadParallel = new Upload({
+							client: this.client,
+							params: {
+								Bucket: targetBucket,
+								Key: key,
+								Body: data,
+								ContentType: detectedMime,
+								Metadata: {
+									groupId: groupId || "",
+									category: category || "",
+									originalName: path.basename(fileName),
+									...metadata
+								}
+							}
+						});
+
+						const result = await uploadParallel.done();
+						this.logger.debug(`[upload-stream] Objeto salvo no S3 (${targetBucket}): ${key}`);
+
+						telemetry.setAttrs(
+							{
+								"ravena.storage.source": "s3",
+								"app.outcome": "ok"
+							},
+							span
+						);
+
+						return {
+							key,
+							bucket: targetBucket,
+							mimetype: detectedMime,
+							eTag: result.ETag
+						};
 					}
-				});
-
-				const result = await uploadParallel.done();
-				this.logger.debug(`[upload-stream] Objeto salvo no S3 (${targetBucket}): ${key}`);
-
-				return {
-					key,
-					bucket: targetBucket,
-					mimetype: detectedMime,
-					eTag: result.ETag
-				};
+				} catch (error) {
+					this.logger.error(`Erro ao fazer upload no S3 (${targetBucket}/${key}):`, error);
+					telemetry.recordError(span, error);
+					telemetry.setAttrs({ "app.outcome": "error" }, span);
+					throw error;
+				}
 			}
-		} catch (error) {
-			this.logger.error(`Erro ao fazer upload no S3 (${targetBucket}/${key}):`, error);
-			throw error;
-		}
+		);
 	}
 
 	/**
@@ -396,141 +438,228 @@ class StorageService {
 		const cleanFileName = path.basename(fileNameOrKey);
 		const targetCategory = category || "custom-commands";
 
-		// 1. Checa o cache efêmero local primeiro
-		const cachedBuffer = await this._getFromCache(fileNameOrKey, targetBucket);
-		if (cachedBuffer) {
-			const detectedMime = mime.lookup(cleanFileName) || "application/octet-stream";
-			return {
-				buffer: cachedBuffer,
-				mimetype: detectedMime,
-				size: cachedBuffer.length,
-				key: fileNameOrKey,
-				source: "cache",
-				bucket: targetBucket
-			};
-		}
-
-		// 2. Se o S3 estiver habilitado, tenta buscar
-		if (this.enabled && this.client) {
-			// Se já for uma chave com caminho completo
-			if (fileNameOrKey.includes("/")) {
-				const s3Obj = await this._fetchFromS3(fileNameOrKey, targetBucket);
-				if (s3Obj) {
-					await this._saveToCache(fileNameOrKey, s3Obj.buffer, targetBucket);
-					return { ...s3Obj, key: fileNameOrKey, source: "s3", bucket: targetBucket };
+		return telemetry.withSpan(
+			"storage get",
+			{
+				attributes: {
+					"ravena.storage.bucket": targetBucket,
+					"ravena.storage.filename": cleanFileName,
+					"ravena.chat.id": telemetry.chatIdAttr(groupId),
+					"ravena.storage.category": targetCategory
 				}
-			} else {
-				// Se groupId for fornecido, tenta na categoria solicitada: {groupId}/{categoria}/{fileName}
-				if (groupId) {
-					const primaryKey = `${groupId}/${targetCategory}/${cleanFileName}`;
-					const s3Obj = await this._fetchFromS3(primaryKey, targetBucket);
-					if (s3Obj) {
-						await this._saveToCache(primaryKey, s3Obj.buffer, targetBucket);
-						return { ...s3Obj, key: primaryKey, source: "s3", bucket: targetBucket };
-					}
-
-					// Tenta outras categorias do mesmo grupo
-					for (const cat of this.knownCategories) {
-						if (cat === targetCategory) continue;
-						const candidateKey = `${groupId}/${cat}/${cleanFileName}`;
-						const candidateObj = await this._fetchFromS3(candidateKey, targetBucket);
-						if (candidateObj) {
-							await this._saveToCache(candidateKey, candidateObj.buffer, targetBucket);
-							return { ...candidateObj, key: candidateKey, source: "s3", bucket: targetBucket };
-						}
-					}
-				} else if (category) {
-					// Categoria sem grupo (ex: marriages/characterId.jpg, lembretes/123.jpg)
-					const categoryKey = `${category}/${cleanFileName}`;
-					const s3Obj = await this._fetchFromS3(categoryKey, targetBucket);
-					if (s3Obj) {
-						await this._saveToCache(categoryKey, s3Obj.buffer, targetBucket);
-						return { ...s3Obj, key: categoryKey, source: "s3", bucket: targetBucket };
-					}
-				}
-
-				// Tenta na pasta legacy/
-				const legacyKey = `legacy/${cleanFileName}`;
-				const legacyObj = await this._fetchFromS3(legacyKey, targetBucket);
-				if (legacyObj) {
-					await this._saveToCache(legacyKey, legacyObj.buffer, targetBucket);
-					return { ...legacyObj, key: legacyKey, source: "s3-legacy", bucket: targetBucket };
-				}
-			}
-		}
-
-		// 3. Fallback: Disco local (data/media ou pasta de migração)
-		const migrationDirs = [
-			this.migrationBackupDir,
-			"/app/downloads/ravena_data_migration",
-			"/mnt/ks500gb/ravena_data_migration",
-			"/home/moothz/ravena_data_migration"
-		].filter((dir, idx, arr) => dir && arr.indexOf(dir) === idx && fs.existsSync(dir));
-
-		const localPathsToTry = [
-			path.join(this.localMediaDir, cleanFileName),
-			path.join(this.localMediaDir, fileNameOrKey)
-		];
-
-		for (const mDir of migrationDirs) {
-			localPathsToTry.push(path.join(mDir, cleanFileName));
-			localPathsToTry.push(path.join(mDir, fileNameOrKey));
-		}
-
-		if (category) {
-			localPathsToTry.unshift(path.join(this.localMediaDir, category, cleanFileName));
-			for (const mDir of migrationDirs) {
-				localPathsToTry.unshift(path.join(mDir, category, cleanFileName));
-			}
-		}
-
-		for (const candidatePath of localPathsToTry) {
-			try {
-				if (fs.existsSync(candidatePath)) {
-					const fileBuffer = await fsPromises.readFile(candidatePath);
-					const detectedMime = mime.lookup(candidatePath) || "application/octet-stream";
-
-					this.logger.debug(
-						`[get] Mídia encontrada no disco local: ${candidatePath} (${fileBuffer.length} bytes)`
+			},
+			async (span) => {
+				// 1. Checa o cache efêmero local primeiro
+				const cachedBuffer = await this._getFromCache(fileNameOrKey, targetBucket);
+				if (cachedBuffer) {
+					const detectedMime = mime.lookup(cleanFileName) || "application/octet-stream";
+					telemetry.setAttrs(
+						{
+							"ravena.storage.source": "cache",
+							"ravena.storage.size": cachedBuffer.length,
+							"app.outcome": "ok"
+						},
+						span
 					);
-
-					// Lazy Upload em background para o S3 se habilitado
-					if (this.enabled && this.client) {
-						const targetKey = this.buildKey(cleanFileName, { groupId, category: targetCategory });
-						this.upload(fileBuffer, cleanFileName, {
-							groupId,
-							category: targetCategory,
-							mimetype: detectedMime,
-							bucket: targetBucket
-						}).catch((uploadErr) => {
-							this.logger.warn(
-								`[lazy-upload] Falha ao sincronizar ${targetKey} para o S3:`,
-								uploadErr.message
-							);
-						});
-					}
-
-					await this._saveToCache(cleanFileName, fileBuffer, targetBucket);
-
 					return {
-						buffer: fileBuffer,
+						buffer: cachedBuffer,
 						mimetype: detectedMime,
-						size: fileBuffer.length,
-						key: cleanFileName,
-						source: "disk",
+						size: cachedBuffer.length,
+						key: fileNameOrKey,
+						source: "cache",
 						bucket: targetBucket
 					};
 				}
-			} catch (diskErr) {
-				this.logger.debug(
-					`Erro ao tentar ler arquivo do disco (${candidatePath}):`,
-					diskErr.message
+
+				// 2. Se o S3 estiver habilitado, tenta buscar
+				if (this.enabled && this.client) {
+					// Se já for uma chave com caminho completo
+					if (fileNameOrKey.includes("/")) {
+						const s3Obj = await this._fetchFromS3(fileNameOrKey, targetBucket);
+						if (s3Obj) {
+							await this._saveToCache(fileNameOrKey, s3Obj.buffer, targetBucket);
+							telemetry.setAttrs(
+								{
+									"ravena.storage.source": "s3",
+									"ravena.storage.key": fileNameOrKey,
+									"ravena.storage.size": s3Obj.size,
+									"app.outcome": "ok"
+								},
+								span
+							);
+							return { ...s3Obj, key: fileNameOrKey, source: "s3", bucket: targetBucket };
+						}
+					} else {
+						// Se groupId for fornecido, tenta na categoria solicitada: {groupId}/{categoria}/{fileName}
+						if (groupId) {
+							const primaryKey = `${groupId}/${targetCategory}/${cleanFileName}`;
+							const s3Obj = await this._fetchFromS3(primaryKey, targetBucket);
+							if (s3Obj) {
+								await this._saveToCache(primaryKey, s3Obj.buffer, targetBucket);
+								telemetry.setAttrs(
+									{
+										"ravena.storage.source": "s3",
+										"ravena.storage.key": primaryKey,
+										"ravena.storage.size": s3Obj.size,
+										"app.outcome": "ok"
+									},
+									span
+								);
+								return { ...s3Obj, key: primaryKey, source: "s3", bucket: targetBucket };
+							}
+
+							// Tenta outras categorias do mesmo grupo
+							for (const cat of this.knownCategories) {
+								if (cat === targetCategory) continue;
+								const candidateKey = `${groupId}/${cat}/${cleanFileName}`;
+								const candidateObj = await this._fetchFromS3(candidateKey, targetBucket);
+								if (candidateObj) {
+									await this._saveToCache(candidateKey, candidateObj.buffer, targetBucket);
+									telemetry.setAttrs(
+										{
+											"ravena.storage.source": "s3",
+											"ravena.storage.key": candidateKey,
+											"ravena.storage.size": candidateObj.size,
+											"app.outcome": "ok"
+										},
+										span
+									);
+									return { ...candidateObj, key: candidateKey, source: "s3", bucket: targetBucket };
+								}
+							}
+						} else if (category) {
+							// Categoria sem grupo (ex: marriages/characterId.jpg, lembretes/123.jpg)
+							const categoryKey = `${category}/${cleanFileName}`;
+							const s3Obj = await this._fetchFromS3(categoryKey, targetBucket);
+							if (s3Obj) {
+								await this._saveToCache(categoryKey, s3Obj.buffer, targetBucket);
+								telemetry.setAttrs(
+									{
+										"ravena.storage.source": "s3",
+										"ravena.storage.key": categoryKey,
+										"ravena.storage.size": s3Obj.size,
+										"app.outcome": "ok"
+									},
+									span
+								);
+								return { ...s3Obj, key: categoryKey, source: "s3", bucket: targetBucket };
+							}
+						}
+
+						// Tenta na pasta legacy/
+						const legacyKey = `legacy/${cleanFileName}`;
+						const legacyObj = await this._fetchFromS3(legacyKey, targetBucket);
+						if (legacyObj) {
+							await this._saveToCache(legacyKey, legacyObj.buffer, targetBucket);
+							telemetry.setAttrs(
+								{
+									"ravena.storage.source": "s3-legacy",
+									"ravena.storage.key": legacyKey,
+									"ravena.storage.size": legacyObj.size,
+									"app.outcome": "ok"
+								},
+								span
+							);
+							return { ...legacyObj, key: legacyKey, source: "s3-legacy", bucket: targetBucket };
+						}
+					}
+				}
+
+				// 3. Fallback: Disco local (data/media ou pasta de migração)
+				const migrationDirs = [
+					this.migrationBackupDir,
+					"/app/downloads/ravena_data_migration",
+					"/mnt/ks500gb/ravena_data_migration",
+					"/home/moothz/ravena_data_migration"
+				].filter((dir, idx, arr) => dir && arr.indexOf(dir) === idx && fs.existsSync(dir));
+
+				const localPathsToTry = [
+					path.join(this.localMediaDir, cleanFileName),
+					path.join(this.localMediaDir, fileNameOrKey)
+				];
+
+				for (const mDir of migrationDirs) {
+					localPathsToTry.push(path.join(mDir, cleanFileName));
+					localPathsToTry.push(path.join(mDir, fileNameOrKey));
+				}
+
+				if (category) {
+					localPathsToTry.unshift(path.join(this.localMediaDir, category, cleanFileName));
+					for (const mDir of migrationDirs) {
+						localPathsToTry.unshift(path.join(mDir, category, cleanFileName));
+					}
+				}
+
+				for (const candidatePath of localPathsToTry) {
+					try {
+						if (fs.existsSync(candidatePath)) {
+							const fileBuffer = await fsPromises.readFile(candidatePath);
+							const detectedMime = mime.lookup(candidatePath) || "application/octet-stream";
+
+							this.logger.debug(
+								`[get] Mídia encontrada no disco local: ${candidatePath} (${fileBuffer.length} bytes)`
+							);
+
+							// Lazy Upload em background para o S3 se habilitado
+							if (this.enabled && this.client) {
+								const targetKey = this.buildKey(cleanFileName, {
+									groupId,
+									category: targetCategory
+								});
+								this.upload(fileBuffer, cleanFileName, {
+									groupId,
+									category: targetCategory,
+									mimetype: detectedMime,
+									bucket: targetBucket
+								}).catch((uploadErr) => {
+									this.logger.warn(
+										`[lazy-upload] Falha ao sincronizar ${targetKey} para o S3:`,
+										uploadErr.message
+									);
+								});
+							}
+
+							await this._saveToCache(cleanFileName, fileBuffer, targetBucket);
+
+							telemetry.setAttrs(
+								{
+									"ravena.storage.source": "disk",
+									"ravena.storage.key": cleanFileName,
+									"ravena.storage.size": fileBuffer.length,
+									"app.outcome": "ok"
+								},
+								span
+							);
+
+							return {
+								buffer: fileBuffer,
+								mimetype: detectedMime,
+								size: fileBuffer.length,
+								key: cleanFileName,
+								source: "disk",
+								bucket: targetBucket
+							};
+						}
+					} catch (diskErr) {
+						this.logger.debug(
+							`Erro ao tentar ler arquivo do disco (${candidatePath}):`,
+							diskErr.message
+						);
+					}
+				}
+
+				telemetry.setAttrs(
+					{
+						"app.outcome": "rejected",
+						"app.reject.reason": "not_found"
+					},
+					span
+				);
+
+				throw new Error(
+					`Arquivo de mídia não encontrado no S3 (${targetBucket}) nem no disco local: ${fileNameOrKey}`
 				);
 			}
-		}
-
-		throw new Error(
-			`Arquivo de mídia não encontrado no S3 (${targetBucket}) nem no disco local: ${fileNameOrKey}`
 		);
 	}
 
@@ -715,22 +844,35 @@ class StorageService {
 		const targetBucket = bucket || this.bucket;
 		const key = this.buildKey(fileNameOrKey, { groupId, category });
 
-		if (this.enabled && this.client) {
-			try {
-				await this.client.send(
-					new DeleteObjectCommand({
-						Bucket: targetBucket,
-						Key: key
-					})
-				);
-				this.logger.debug(`[delete] Objeto removido do S3 (${targetBucket}): ${key}`);
-			} catch (err) {
-				this.logger.warn(`Erro ao deletar objeto do S3 (${targetBucket}/${key}):`, err.message);
-			}
-		}
+		return telemetry.withSpan(
+			"storage delete",
+			{
+				attributes: {
+					"ravena.storage.bucket": targetBucket,
+					"ravena.storage.key": key,
+					"ravena.chat.id": telemetry.chatIdAttr(groupId),
+					"ravena.storage.category": category
+				}
+			},
+			async () => {
+				if (this.enabled && this.client) {
+					try {
+						await this.client.send(
+							new DeleteObjectCommand({
+								Bucket: targetBucket,
+								Key: key
+							})
+						);
+						this.logger.debug(`[delete] Objeto removido do S3 (${targetBucket}): ${key}`);
+					} catch (err) {
+						this.logger.warn(`Erro ao deletar objeto do S3 (${targetBucket}/${key}):`, err.message);
+					}
+				}
 
-		// Remove também do cache se existir
-		await this._removeFromCache(key, targetBucket);
+				// Remove também do cache se existir
+				await this._removeFromCache(key, targetBucket);
+			}
+		);
 	}
 
 	/**
@@ -742,45 +884,67 @@ class StorageService {
 		const targetBucket = bucket || this.bucket;
 		if (!this.enabled || !this.client || !groupId) return 0;
 
-		const prefix = `${groupId}/`;
-		this.logger.info(
-			`[deleteGroup] Deletando todos os objetos do grupo: ${prefix} (${targetBucket})`
-		);
-
-		let deletedCount = 0;
-		let continuationToken = null;
-
-		try {
-			do {
-				const listCmd = new ListObjectsV2Command({
-					Bucket: targetBucket,
-					Prefix: prefix,
-					ContinuationToken: continuationToken
-				});
-				const listRes = await this.client.send(listCmd);
-
-				if (listRes.Contents && listRes.Contents.length > 0) {
-					const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key }));
-					await this.client.send(
-						new DeleteObjectsCommand({
-							Bucket: targetBucket,
-							Delete: { Objects: objectsToDelete }
-						})
-					);
-					deletedCount += objectsToDelete.length;
+		return telemetry.withSpan(
+			"storage delete_group",
+			{
+				attributes: {
+					"ravena.storage.bucket": targetBucket,
+					"ravena.chat.id": telemetry.chatIdAttr(groupId)
 				}
+			},
+			async (span) => {
+				const prefix = `${groupId}/`;
+				this.logger.info(
+					`[deleteGroup] Deletando todos os objetos do grupo: ${prefix} (${targetBucket})`
+				);
 
-				continuationToken = listRes.NextContinuationToken;
-			} while (continuationToken);
+				let deletedCount = 0;
+				let continuationToken = null;
 
-			this.logger.info(
-				`[deleteGroup] Total de ${deletedCount} objetos removidos para ${groupId} em ${targetBucket}`
-			);
-			return deletedCount;
-		} catch (err) {
-			this.logger.error(`Erro ao deletar grupo ${groupId} do S3 (${targetBucket}):`, err);
-			throw err;
-		}
+				try {
+					do {
+						const listCmd = new ListObjectsV2Command({
+							Bucket: targetBucket,
+							Prefix: prefix,
+							ContinuationToken: continuationToken
+						});
+						const listRes = await this.client.send(listCmd);
+
+						if (listRes.Contents && listRes.Contents.length > 0) {
+							const objectsToDelete = listRes.Contents.map((obj) => ({ Key: obj.Key }));
+							await this.client.send(
+								new DeleteObjectsCommand({
+									Bucket: targetBucket,
+									Delete: { Objects: objectsToDelete }
+								})
+							);
+							deletedCount += objectsToDelete.length;
+						}
+
+						continuationToken = listRes.NextContinuationToken;
+					} while (continuationToken);
+
+					this.logger.info(
+						`[deleteGroup] Total de ${deletedCount} objetos removidos para ${groupId} em ${targetBucket}`
+					);
+
+					telemetry.setAttrs(
+						{
+							"ravena.storage.deleted_count": deletedCount,
+							"app.outcome": "ok"
+						},
+						span
+					);
+
+					return deletedCount;
+				} catch (err) {
+					this.logger.error(`Erro ao deletar grupo ${groupId} do S3 (${targetBucket}):`, err);
+					telemetry.recordError(span, err);
+					telemetry.setAttrs({ "app.outcome": "error" }, span);
+					throw err;
+				}
+			}
+		);
 	}
 
 	/**
