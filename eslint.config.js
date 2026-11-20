@@ -13,7 +13,7 @@ module.exports = [
 			"uploads/**",
 			"media/**",
 			"data/**",
-			"public/**",
+			"public/**/*",
 			"old/**",
 			".Trash-1000/**",
 			".tmp-*/**",
@@ -22,6 +22,7 @@ module.exports = [
 			"!public/scripts.js",
 			"!public/dashboard.js",
 			"!public/management.js",
+			"!public/admin/**",
 			"coverage/**"
 		]
 	},
