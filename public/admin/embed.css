@@ -23,3 +23,43 @@ html.ravena-embed .top-navbar > .brand-badge {
 html.ravena-embed header.header:not(:has(.header-actions)) {
 	display: none;
 }
+
+/*
+ * Celular: dentro do painel, a navegação própria da tela (Instâncias, Sair, Página Pública) repete
+ * a do painel e gasta a primeira tela; some. Sem margem lateral extra: o painel já dá a borda.
+ */
+@media (max-width: 640px) {
+	html.ravena-embed .top-actions a[href="/logout"],
+	html.ravena-embed .top-actions a[href="/instances"],
+	html.ravena-embed .top-actions a[href="/eventos"],
+	html.ravena-embed .top-actions a[href="/ravenabank"] {
+		display: none;
+	}
+
+	/* /banco/admin: sem a marca e sem esses links, a barra do topo fica vazia. */
+	html.ravena-embed
+		.top-navbar:not(
+			:has(
+				.top-actions
+					> :not(a[href="/logout"], a[href="/instances"], a[href="/eventos"], a[href="/ravenabank"])
+			)
+		) {
+		display: none;
+	}
+
+	html.ravena-embed body {
+		padding: 0 !important;
+	}
+
+	html.ravena-embed .admin-container {
+		padding-top: 12px;
+	}
+
+	html.ravena-embed .admin-container {
+		padding-left: 12px;
+		padding-right: 12px;
+		border-left: 0;
+		border-right: 0;
+		border-radius: 0;
+	}
+}

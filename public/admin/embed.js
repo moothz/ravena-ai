@@ -1,13 +1,20 @@
 /*
  * Modo embutido das telas antigas de admin (?embed=1), usado pelo painel /admin.
  *
- * Sem ?embed=1 este script não faz nada: a tela continua exatamente como antes.
+ * Em todas as telas antigas carrega legacy-mobile.css (só age até 640 px de largura).
+ * Sem ?embed=1 é só isso: no computador a tela continua exatamente como antes.
  * Com ?embed=1 ele marca o <html> com a classe "ravena-embed" (embed.css esconde o
  * cabeçalho próprio da tela, que o painel já mostra) e faz os links que saem da tela
  * (Sair, Instâncias...) abrirem na janela de cima, e não dentro do iframe.
  */
 (() => {
 	"use strict";
+	// Correções de celular (até 640 px) valem dentro e fora do painel.
+	const mobile = document.createElement("link");
+	mobile.rel = "stylesheet";
+	mobile.href = "/admin/legacy-mobile.css";
+	document.head.append(mobile);
+
 	let embedded = false;
 	try {
 		embedded = new URLSearchParams(location.search).get("embed") === "1";
