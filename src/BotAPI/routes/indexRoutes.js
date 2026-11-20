@@ -75,8 +75,63 @@ async function assetVersion(relPath) {
 	}
 }
 
+let cachedCemiterio = null;
+let lastCemiterioCheck = 0;
+
+function parseDateForSort(val) {
+	if (!val) return 0;
+	if (typeof val === "number") return val;
+	const s = String(val).trim();
+	const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+	if (dmy) {
+		const t = new Date(
+			parseInt(dmy[3], 10),
+			parseInt(dmy[2], 10) - 1,
+			parseInt(dmy[1], 10)
+		).getTime();
+		return isNaN(t) ? 0 : t;
+	}
+	const t = new Date(s).getTime();
+	return isNaN(t) ? 0 : t;
+}
+
+async function getCemiterioBots() {
+	const now = Date.now();
+	if (cachedCemiterio && now - lastCemiterioCheck < 15000) {
+		return cachedCemiterio;
+	}
+	try {
+		const botsJsonPath = path.join(__dirname, "../../../bots.json");
+		const raw = await fs.readFile(botsJsonPath, "utf8");
+		const all = JSON.parse(raw) || [];
+		cachedCemiterio = all
+			.filter((b) => b && b.banido === true && b.enabled === false)
+			.map((b) => ({
+				id: b.nome,
+				nomeExibir: b.nomeExibir || b.nome,
+				dataNascimento: b.dataNascimento || null,
+				dataMorte: b.dataMorte || null
+			}))
+			.sort((a, b) => {
+				const timeA = parseDateForSort(a.dataMorte);
+				const timeB = parseDateForSort(b.dataMorte);
+				if (timeB !== timeA) return timeB - timeA;
+				return parseDateForSort(b.dataNascimento) - parseDateForSort(a.dataNascimento);
+			});
+		lastCemiterioCheck = now;
+		return cachedCemiterio;
+	} catch {
+		return cachedCemiterio || [];
+	}
+}
+
 function registerIndexRoutes(api) {
 	const app = api.app;
+
+	api.invalidateCemiterioCache = () => {
+		cachedCemiterio = null;
+		lastCemiterioCheck = 0;
+	};
 
 	// Rota para o dashboard clássico legado
 	app.get(["/classic", "/legado"], (req, res) => {
@@ -163,11 +218,14 @@ function registerIndexRoutes(api) {
 				api.logger.warn("Erro ao buscar avisos de status no /health:", annErr);
 			}
 
+			const cemiterio = await getCemiterioBots();
+
 			res.json({
 				status: "ok",
 				timestamp: Date.now(),
 				isAdmin,
 				announcements,
+				cemiterio,
 				bots: api.bots
 					.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
 					.map((bot) => {
@@ -206,6 +264,7 @@ function registerIndexRoutes(api) {
 				timestamp: Date.now(),
 				isAdmin,
 				message: "Erro ao processar dados",
+				cemiterio: [],
 				bots: []
 			});
 		}

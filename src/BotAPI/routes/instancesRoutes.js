@@ -960,6 +960,7 @@ function registerInstancesRoutes(api) {
 			});
 
 			await fs.writeFile(botsJsonPath, JSON.stringify(cleanBotsData, null, 2), "utf8");
+			api.invalidateCemiterioCache?.();
 
 			let synchronizedCount = 0;
 			for (const botConfig of cleanBotsData) {
@@ -1003,6 +1004,9 @@ function registerInstancesRoutes(api) {
 					liveBot.aiPersonality = botConfig.aiPersonality || "";
 					liveBot.supportMsg = botConfig.msgSuporte || botConfig.supportMsg || null;
 					liveBot.numeroResponsavel = botConfig.numeroResponsavel || null;
+					if (botConfig.dataNascimento !== undefined)
+						liveBot.dataNascimento = botConfig.dataNascimento;
+					if (botConfig.dataMorte !== undefined) liveBot.dataMorte = botConfig.dataMorte;
 					if (botConfig.managementUser) liveBot.managementUser = botConfig.managementUser;
 					if (botConfig.managementPW) liveBot.managementPW = botConfig.managementPW;
 					if (botConfig.grupoLogs !== undefined) liveBot.grupoLogs = botConfig.grupoLogs;

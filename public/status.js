@@ -368,9 +368,100 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	}
 
+	let cemeteryExpanded = false;
+
+	function parseDate(str) {
+		if (!str) return null;
+		if (typeof str === "number") {
+			const d = new Date(str);
+			return isNaN(d.getTime()) ? null : d;
+		}
+		const s = String(str).trim();
+		const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+		if (dmy) {
+			const d = new Date(
+				parseInt(dmy[3], 10),
+				parseInt(dmy[2], 10) - 1,
+				parseInt(dmy[1], 10)
+			);
+			return isNaN(d.getTime()) ? null : d;
+		}
+		const d = new Date(s);
+		return isNaN(d.getTime()) ? null : d;
+	}
+
+	function calculateLifetime(startDate, endDate) {
+		const d1 = parseDate(startDate);
+		const d2 = parseDate(endDate);
+		if (!d1 || !d2) return null;
+
+		let start = d1;
+		let end = d2;
+		if (start > end) {
+			start = d2;
+			end = d1;
+		}
+
+		let years = end.getFullYear() - start.getFullYear();
+		let months = end.getMonth() - start.getMonth();
+		let days = end.getDate() - start.getDate();
+
+		if (days < 0) {
+			months--;
+			const prevMonthDate = new Date(end.getFullYear(), end.getMonth(), 0);
+			days += prevMonthDate.getDate();
+		}
+		if (months < 0) {
+			years--;
+			months += 12;
+		}
+
+		const parts = [];
+		if (years > 0) parts.push(`${years} ${years === 1 ? "ano" : "anos"}`);
+		if (months > 0) parts.push(`${months} ${months === 1 ? "mês" : "meses"}`);
+		if (days > 0 || parts.length === 0) parts.push(`${days} ${days === 1 ? "dia" : "dias"}`);
+
+		return parts.join(", ");
+	}
+
+	function renderCemeteryItem(bot) {
+		const safeNome = escapeHtml(bot.nomeExibir || bot.id);
+		const avatar = avatarSrc(bot.id);
+
+		let datesText;
+		if (bot.dataNascimento || bot.dataMorte) {
+			const parts = [];
+			if (bot.dataNascimento) parts.push(`★ ${escapeHtml(bot.dataNascimento)}`);
+			if (bot.dataMorte) parts.push(`✝ ${escapeHtml(bot.dataMorte)}`);
+			datesText = parts.join(" • ");
+		} else {
+			datesText = "In memorian";
+		}
+
+		const lifetime =
+			bot.dataNascimento && bot.dataMorte
+				? calculateLifetime(bot.dataNascimento, bot.dataMorte)
+				: null;
+
+		return `
+            <div class="cemetery-card" style="display: flex; align-items: center; gap: 12px; background: rgba(18, 18, 24, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 10px 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                <img src="${avatar}" onerror="this.onerror=null;this.src='${FALLBACK_AVATAR}';" alt="${safeNome}" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); opacity: 0.75; border: 1px solid #444; flex-shrink: 0;">
+                <div style="overflow: hidden; flex: 1; text-align: left;">
+                    <div style="font-size: 13px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${safeNome}">${safeNome}</div>
+                    <div style="font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${datesText}">${datesText}</div>
+                    ${lifetime ? `<div style="font-size: 11px; color: var(--status-gold, #ffc107); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Tempo de vida: ${lifetime}">⏳ ${lifetime}</div>` : ""}
+                </div>
+            </div>
+        `;
+	}
+
 	/** Partes do bot que exigem recriar a grade (seções, cards, links); o resto muda no lugar. */
 	function computeGridSignature(bots) {
-		return JSON.stringify(
+		const cemiterio =
+			healthData && Array.isArray(healthData.cemiterio) ? healthData.cemiterio : [];
+		return JSON.stringify([
+			cemeteryExpanded,
+			cemiterio.map((c) => [c.id, c.nomeExibir, c.dataNascimento, c.dataMorte]),
 			bots.map((bot) => {
 				const view = computeBotView(bot);
 				return [
@@ -384,7 +475,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					view.isBanned
 				];
 			})
-		);
+		]);
 	}
 
 	function renderBots() {
@@ -460,6 +551,31 @@ document.addEventListener("DOMContentLoaded", () => {
             `);
 		}
 
+		const cemiterio =
+			healthData && Array.isArray(healthData.cemiterio) ? [...healthData.cemiterio] : [];
+		if (cemiterio.length > 0) {
+			cemiterio.sort((a, b) => {
+				const timeA = parseDate(a.dataMorte)?.getTime() || 0;
+				const timeB = parseDate(b.dataMorte)?.getTime() || 0;
+				if (timeB !== timeA) return timeB - timeA;
+				const birthA = parseDate(a.dataNascimento)?.getTime() || 0;
+				const birthB = parseDate(b.dataNascimento)?.getTime() || 0;
+				return birthB - birthA;
+			});
+
+			sections.push(`
+                <div class="cemetery-section" style="margin-top: 10px;">
+                    <button type="button" class="cemetery-toggle-btn" id="cemetery-toggle-btn" style="width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(30, 24, 34, 0.65); border: 1px solid rgba(255, 75, 75, 0.3); border-radius: 6px; cursor: pointer; color: #ffb4b4; font-weight: 600; font-size: 13px; font-family: inherit;">
+                        <span>⚰️ Cemitério - Banidas 🪦 (${cemiterio.length})</span>
+                        <i class="fas fa-chevron-${cemeteryExpanded ? "up" : "down"}" id="cemetery-chevron" style="transition: transform 0.2s;"></i>
+                    </button>
+                    <div class="cemetery-container" id="cemetery-list" style="margin-top: 12px; display: ${cemeteryExpanded ? "grid" : "none"}; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;">
+                        ${cemiterio.map(renderCemeteryItem).join("")}
+                    </div>
+                </div>
+            `);
+		}
+
 		// Preserva o foco do teclado/leitor de tela através do re-render (card ou link do WhatsApp)
 		let focusBotId = null;
 		let focusWaBtn = false;
@@ -473,6 +589,19 @@ document.addEventListener("DOMContentLoaded", () => {
 		}
 
 		botsContainer.innerHTML = `<div class="meu-computador">${sections.join('<hr class="win-xp-separator">')}</div>`;
+
+		const cemeteryBtn = botsContainer.querySelector("#cemetery-toggle-btn");
+		if (cemeteryBtn) {
+			cemeteryBtn.addEventListener("click", () => {
+				cemeteryExpanded = !cemeteryExpanded;
+				const list = botsContainer.querySelector("#cemetery-list");
+				const chevron = botsContainer.querySelector("#cemetery-chevron");
+				if (list) list.style.display = cemeteryExpanded ? "grid" : "none";
+				if (chevron) {
+					chevron.className = `fas fa-chevron-${cemeteryExpanded ? "up" : "down"}`;
+				}
+			});
+		}
 
 		if (focusBotId !== null) {
 			const item = findDriveItems(focusBotId)[0];

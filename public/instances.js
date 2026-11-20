@@ -595,6 +595,23 @@ document.addEventListener("DOMContentLoaded", () => {
                     </div>
                 </div>
 
+                <!-- Seção Cemitério (visível apenas para banido == true && enabled == false) -->
+                <div class="form-section section-cemiterio" style="display: ${bot.banido && bot.enabled === false ? "block" : "none"}; border: 1px solid rgba(255, 75, 75, 0.4); background: rgba(30, 20, 25, 0.35);">
+                    <div class="form-section-title" style="color: #ff8585;"><i class="fas fa-cross"></i> ⚰️ Cemitério / In Memorian (Instância Banida) 🪦</div>
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Data de Nascimento / Criação (dataNascimento)</label>
+                            <input type="text" class="form-control field-data-nascimento" value="${bot.dataNascimento || ""}" placeholder="ex: 15/01/2023 ou 2023-01-15">
+                            <div class="field-hint">Data em que a botinha entrou em operação (opcional).</div>
+                        </div>
+                        <div class="form-group">
+                            <label>Data de Falecimento / Ban (dataMorte)</label>
+                            <input type="text" class="form-control field-data-morte" value="${bot.dataMorte || ""}" placeholder="ex: 20/11/2026 ou 2026-11-20">
+                            <div class="field-hint">Data em que a botinha foi banida (opcional).</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Seção 3: Personalidade & Mensagens -->
                 <div class="form-section">
                     <div class="form-section-title"><i class="fas fa-brain"></i> Personalidade da IA & Mensagens de Suporte</div>
@@ -832,6 +849,18 @@ document.addEventListener("DOMContentLoaded", () => {
 				showToast(`Nova senha gerada para '${bot.nome}'! Lembre-se de salvar.`, "info");
 			});
 		}
+
+		// Visibilidade dinâmica da seção de cemitério
+		const updateCemiterioVisibility = () => {
+			const isBan = card.querySelector(".field-banido")?.checked;
+			const isEn = card.querySelector(".field-enabled")?.checked;
+			const cemSec = card.querySelector(".section-cemiterio");
+			if (cemSec) {
+				cemSec.style.display = isBan && !isEn ? "block" : "none";
+			}
+		};
+		card.querySelector(".field-banido")?.addEventListener("change", updateCemiterioVisibility);
+		card.querySelector(".field-enabled")?.addEventListener("change", updateCemiterioVisibility);
 
 		// Construtor de Extras
 		const extrasContainer = card.querySelector(`#extras-container-${bot.nome}`);
@@ -1111,6 +1140,9 @@ document.addEventListener("DOMContentLoaded", () => {
 		bot.aiPersonality = getVal(".field-ai-personality");
 		bot.msgSuporte = getVal(".field-msg-suporte");
 		bot.numeroResponsavel = getVal(".field-numero-responsavel");
+
+		bot.dataNascimento = getVal(".field-data-nascimento") || undefined;
+		bot.dataMorte = getVal(".field-data-morte") || undefined;
 
 		bot.grupoLogs = getVal(".field-grupo-logs") || null;
 		bot.grupoAvisos = getVal(".field-grupo-avisos") || null;

@@ -103,6 +103,138 @@ const Formatters = {
         if (!phoneNumber) return '#';
         const cleanNumber = String(phoneNumber).replace(/\D/g, '');
         return `https://wa.me/${cleanNumber}`;
+    },
+
+    formatWhatsAppMarkup(text) {
+        if (!text || typeof text !== 'string') return '';
+
+        let escaped = this.escapeHtml(text);
+
+        // Blocos de código multilinhas (```codigo```)
+        const codeBlocks = [];
+        escaped = escaped.replace(/```([\s\S]*?)```/g, (match, code) => {
+            const id = codeBlocks.length;
+            codeBlocks.push(`<pre style="background: rgba(0,0,0,0.5); padding: 8px 10px; border-radius: 4px; overflow-x: auto; font-family: monospace;"><code>${code}</code></pre>`);
+            return `\x00CODEBLOCK_${id}\x00`;
+        });
+
+        // Código inline (`codigo`)
+        const inlineCodes = [];
+        escaped = escaped.replace(/`([^`\n]+?)`/g, (match, code) => {
+            const id = inlineCodes.length;
+            inlineCodes.push(`<code style="background: rgba(0,0,0,0.4); padding: 2px 5px; border-radius: 3px; font-family: monospace;">${code}</code>`);
+            return `\x00INLINECODE_${id}\x00`;
+        });
+
+        // Citações / Quotes (> texto)
+        const lines = escaped.split('\n');
+        const processedLines = [];
+        let quoteBuffer = [];
+
+        const flushQuotes = () => {
+            if (quoteBuffer.length > 0) {
+                processedLines.push(`<blockquote style="border-left: 3px solid var(--neon-cyan); margin: 6px 0; padding-left: 8px; color: #bbb;">${quoteBuffer.join('<br>')}</blockquote>`);
+                quoteBuffer = [];
+            }
+        };
+
+        for (const line of lines) {
+            const match = line.match(/^(&gt;|>)\s?(.*)$/);
+            if (match) {
+                quoteBuffer.push(match[2]);
+            } else {
+                flushQuotes();
+                processedLines.push(line);
+            }
+        }
+        flushQuotes();
+        escaped = processedLines.join('\n');
+
+        // Negrito (*texto*)
+        escaped = escaped.replace(/(^|[\s>(~_])\*([^*\n]+?)\*(?=[^\w*]|$)/g, (m, p, inner) => {
+            if (/^\s*$/.test(inner)) return m;
+            return `${p}<strong>${inner}</strong>`;
+        });
+
+        // Itálico (_texto_)
+        escaped = escaped.replace(/(^|[\s>(~*])_([^_\n]+?)_(?=[^\w_]|$)/g, (m, p, inner) => {
+            if (/^\s*$/.test(inner)) return m;
+            return `${p}<em>${inner}</em>`;
+        });
+
+        // Tachado (~texto~)
+        escaped = escaped.replace(/(^|[\s>(_*])~([^~\n]+?)~(?=[^\w~]|$)/g, (m, p, inner) => {
+            if (/^\s*$/.test(inner)) return m;
+            return `${p}<del>${inner}</del>`;
+        });
+
+        // URLs clicáveis
+        escaped = escaped.replace(
+            /(https?:\/\/[^\s<]+)/gi,
+            '<a href="$1" target="_blank" rel="noopener noreferrer" style="color: var(--neon-cyan); text-decoration: underline;">$1</a>'
+        );
+
+        // Restaura blocos de código
+        escaped = escaped.replace(/\x00CODEBLOCK_(\d+)\x00/g, (m, id) => codeBlocks[Number(id)] || '');
+        escaped = escaped.replace(
+            /\x00INLINECODE_(\d+)\x00/g,
+            (m, id) => inlineCodes[Number(id)] || ''
+        );
+
+        // Quebras de linha (\n -> <br>)
+        escaped = escaped.replace(/\n/g, '<br>');
+
+        return escaped;
+    },
+
+    parseDate(str) {
+        if (!str) return null;
+        if (typeof str === 'number') {
+            const d = new Date(str);
+            return isNaN(d.getTime()) ? null : d;
+        }
+        const s = String(str).trim();
+        const dmy = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+        if (dmy) {
+            const d = new Date(parseInt(dmy[3], 10), parseInt(dmy[2], 10) - 1, parseInt(dmy[1], 10));
+            return isNaN(d.getTime()) ? null : d;
+        }
+        const d = new Date(s);
+        return isNaN(d.getTime()) ? null : d;
+    },
+
+    calculateLifetime(startDate, endDate) {
+        const d1 = this.parseDate(startDate);
+        const d2 = this.parseDate(endDate);
+        if (!d1 || !d2) return null;
+
+        let start = d1;
+        let end = d2;
+        if (start > end) {
+            start = d2;
+            end = d1;
+        }
+
+        let years = end.getFullYear() - start.getFullYear();
+        let months = end.getMonth() - start.getMonth();
+        let days = end.getDate() - start.getDate();
+
+        if (days < 0) {
+            months--;
+            const prevMonthDate = new Date(end.getFullYear(), end.getMonth(), 0);
+            days += prevMonthDate.getDate();
+        }
+        if (months < 0) {
+            years--;
+            months += 12;
+        }
+
+        const parts = [];
+        if (years > 0) parts.push(`${years} ${years === 1 ? 'ano' : 'anos'}`);
+        if (months > 0) parts.push(`${months} ${months === 1 ? 'mês' : 'meses'}`);
+        if (days > 0 || parts.length === 0) parts.push(`${days} ${days === 1 ? 'dia' : 'dias'}`);
+
+        return parts.join(', ');
     }
 };
 

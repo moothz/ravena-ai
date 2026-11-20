@@ -21,6 +21,7 @@ WindowManager.register('status', {
 
     render(wb) {
         const body = wb.body;
+        wb.cemeteryExpanded = wb.cemeteryExpanded ?? false;
 
         const update = () => {
             const data = window.RavenaOS ? window.RavenaOS.state.healthData : null;
@@ -92,10 +93,37 @@ WindowManager.register('status', {
                 `;
             }
 
+            // Cemitério de Banidas
+            const cemiterio = (data && Array.isArray(data.cemiterio)) ? [...data.cemiterio] : [];
+            if (cemiterio.length > 0) {
+                // Ordenação por dataMorte decrescente (a mais recente primeiro)
+                cemiterio.sort((a, b) => {
+                    const timeA = Formatters.parseDate ? (Formatters.parseDate(a.dataMorte)?.getTime() || 0) : 0;
+                    const timeB = Formatters.parseDate ? (Formatters.parseDate(b.dataMorte)?.getTime() || 0) : 0;
+                    if (timeB !== timeA) return timeB - timeA;
+                    const birthA = Formatters.parseDate ? (Formatters.parseDate(a.dataNascimento)?.getTime() || 0) : 0;
+                    const birthB = Formatters.parseDate ? (Formatters.parseDate(b.dataNascimento)?.getTime() || 0) : 0;
+                    return birthB - birthA;
+                });
+
+                html += `<hr class="win-xp-separator">`;
+                html += `
+                    <div class="cemetery-section" style="margin-top: 10px;">
+                        <button type="button" class="os-btn cemetery-toggle-btn" id="cemetery-toggle-btn" style="width: 100%; display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: rgba(30, 24, 34, 0.65); border: 1px solid rgba(255, 75, 75, 0.3); border-radius: 6px; cursor: pointer; color: #ffb4b4; font-weight: 600; font-size: 13px; font-family: inherit;">
+                            <span>⚰️ Cemitério - Banidas 🪦 (${cemiterio.length})</span>
+                            <i class="fas fa-chevron-${wb.cemeteryExpanded ? 'up' : 'down'}" id="cemetery-chevron" style="transition: transform 0.2s;"></i>
+                        </button>
+                        <div class="cemetery-container" id="cemetery-list" style="margin-top: 12px; display: ${wb.cemeteryExpanded ? 'grid' : 'none'}; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px;">
+                            ${cemiterio.map(b => this.renderCemeteryItem(b)).join('')}
+                        </div>
+                    </div>
+                `;
+            }
+
             html += '</div>';
             body.innerHTML = html;
 
-            this.attachListeners(body, data);
+            this.attachListeners(body, data, wb);
         };
 
         update();
@@ -302,7 +330,51 @@ WindowManager.register('status', {
         });
     },
 
-    attachListeners(body, data) {
+    renderCemeteryItem(bot) {
+        const esc = Formatters.escapeHtml;
+        const safeNome = esc(bot.nomeExibir || bot.id);
+        const avatar = `img/profiles/${encodeURIComponent(bot.id)}.jpg`;
+
+        let datesText;
+        if (bot.dataNascimento || bot.dataMorte) {
+            const parts = [];
+            if (bot.dataNascimento) parts.push(`★ ${esc(bot.dataNascimento)}`);
+            if (bot.dataMorte) parts.push(`✝ ${esc(bot.dataMorte)}`);
+            datesText = parts.join(' • ');
+        } else {
+            datesText = 'In memorian';
+        }
+
+        const lifetime = (Formatters.calculateLifetime && bot.dataNascimento && bot.dataMorte)
+            ? Formatters.calculateLifetime(bot.dataNascimento, bot.dataMorte)
+            : null;
+
+        return `
+            <div class="cemetery-card" style="display: flex; align-items: center; gap: 12px; background: rgba(18, 18, 24, 0.85); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; padding: 10px 12px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+                <img src="${avatar}" onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" alt="${safeNome}" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover; filter: grayscale(100%); opacity: 0.75; border: 1px solid #444; flex-shrink: 0;">
+                <div style="overflow: hidden; flex: 1; text-align: left;">
+                    <div style="font-size: 13px; font-weight: 600; color: #ddd; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${safeNome}">${safeNome}</div>
+                    <div style="font-size: 11px; color: #999; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="${datesText}">${datesText}</div>
+                    ${lifetime ? `<div style="font-size: 11px; color: var(--gold-color, #ffc107); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;" title="Tempo de vida: ${lifetime}">⏳ ${lifetime}</div>` : ''}
+                </div>
+            </div>
+        `;
+    },
+
+    attachListeners(body, data, wb) {
+        const cemeteryBtn = body.querySelector('#cemetery-toggle-btn');
+        if (cemeteryBtn && wb) {
+            cemeteryBtn.addEventListener('click', () => {
+                wb.cemeteryExpanded = !wb.cemeteryExpanded;
+                const list = body.querySelector('#cemetery-list');
+                const chevron = body.querySelector('#cemetery-chevron');
+                if (list) list.style.display = wb.cemeteryExpanded ? 'grid' : 'none';
+                if (chevron) {
+                    chevron.className = `fas fa-chevron-${wb.cemeteryExpanded ? 'up' : 'down'}`;
+                }
+            });
+        }
+
         body.querySelectorAll('.drive-item').forEach(el => {
             const botId = el.dataset.botId;
             const phone = el.dataset.phone;
