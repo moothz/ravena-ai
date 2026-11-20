@@ -123,10 +123,11 @@
 			headers: { Accept: "application/json" }
 		});
 		if (!res.ok) {
-			throw new HttpError(
-				res.status,
-				res.status === 401 ? "Sessão de admin expirada." : `HTTP ${res.status}`
-			);
+			const reasons = {
+				401: "sessão de admin expirada",
+				429: "muitas requisições seguidas, tente de novo em um minuto"
+			};
+			throw new HttpError(res.status, reasons[res.status] || `HTTP ${res.status}`);
 		}
 		return res.json();
 	}
@@ -1261,6 +1262,16 @@
 	}
 
 	/* ── Início ─────────────────────────────────────────────────── */
+
+	// Entrou por ?auth=…: o cookie de sessão já foi criado, então tira a credencial da barra
+	// de endereço (não fica no histórico, em favoritos nem em capturas de tela).
+	(() => {
+		const params = new URLSearchParams(location.search);
+		if (!params.has("auth")) return;
+		params.delete("auth");
+		const qs = params.toString();
+		history.replaceState(null, "", `${location.pathname}${qs ? `?${qs}` : ""}${location.hash}`);
+	})();
 
 	initTheme();
 	buildSidebar();

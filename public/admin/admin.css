@@ -156,6 +156,7 @@ button {
 	border-radius: var(--radius-control);
 	background: var(--panel);
 	color: var(--fg);
+	font-family: var(--font-sans);
 	font-size: 12.5px;
 	text-decoration: none;
 	cursor: pointer;
@@ -167,6 +168,11 @@ button {
 
 .btn:hover {
 	background: var(--hover);
+}
+
+.btn[aria-disabled="true"] {
+	opacity: 0.5;
+	pointer-events: none;
 }
 
 .btn-quiet {
@@ -782,6 +788,22 @@ th.num {
 
 	.nav-list {
 		display: contents;
+	}
+
+	.nav-list > li {
+		flex: none;
+	}
+
+	.nav-item .nav-text {
+		overflow: visible;
+	}
+
+	.grid {
+		grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+	}
+
+	.cell .value {
+		font-size: 17px;
 	}
 
 	.nav-item {
