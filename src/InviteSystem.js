@@ -519,7 +519,7 @@ class InviteSystem {
 		const communityLink = this.getCommunityLink();
 		return (
 			"Já tem um bot no grupo! Todos os bots rodam o mesmo código, no mesmo servidor e não adianta trocar um pelo outro, pois a instabilidade pode afetar qualquer um deles em períodos aleatórios.\n\n" +
-			"⚠️ *Atenção:* Remover o bot do grupo pode ocasionar o bloqueio se ele foi adicionado recentemente, e seu grupo não terá prioridade para voltar a ter o bot. Por isso, se quiser continuar usando, é importante pedir ajuda em vez de remover!\n\n" +
+			"⚠️ *Atenção:* Remover o bot do grupo pode ocasionar o bloqueio se ele foi adicionado recentemente, e seu grupo não terá prioridade para voltar a ter o bot.\nSe quiser remover o bot, envie *!g-sair* dentro do grupo!\nPor isso, se quiser continuar usando, é importante pedir ajuda em vez de remover!\n\n" +
 			`Se precisar de ajuda, chame no !grupao / comunidade da ravena:\n${communityLink}`
 		);
 	}
