@@ -1829,9 +1829,11 @@ async function main() {
 				pclock += H;
 				await s._loadParams(st, pclock);
 				assert.strictEqual(st.listAnnotations().length, 2);
-				// Chave só acrescentada (constante passou a ser exposta): guardada, sem anotação
+				// Chave só acrescentada num deploy (version nova: constante passou a ser exposta): guardada,
+				// sem anotação
 				st8.params.waifuletes = {
 					...st8.params.waifuletes,
+					version: "def",
 					params: {
 						...st8.params.waifuletes.params,
 						roll: { ROLLS_PER_HOUR: 10, CHANCE: 3 }
@@ -1842,6 +1844,35 @@ async function main() {
 				assert.deepStrictEqual([r.waifuletes.changes, r.waifuletes.added], [0, 2]);
 				assert.strictEqual(st.listAnnotations().length, 2);
 				assert.strictEqual(st.getParams("waifuletes")["roll.CHANCE"], 3);
+				// Chave nova com a mesma version (dado mudou sem deploy de código): vira anotação
+				st8.params.waifuletes = {
+					...st8.params.waifuletes,
+					params: { ...st8.params.waifuletes.params, daily: { DAILY_KAKERA_AMOUNT: 100, BONUS: 5 } }
+				};
+				pclock += H;
+				r = await s._loadParams(st, pclock);
+				assert.deepStrictEqual([r.waifuletes.changes, r.waifuletes.added], [1, 1]);
+				assert.ok(
+					st.listAnnotations().some((a) => a.label === "waifuletes: daily.BONUS novo (5)"),
+					JSON.stringify(st.listAnnotations().map((a) => a.label))
+				);
+				// Item novo de catálogo (catalog.*): anotado mesmo com version nova
+				st8.params.waifuletes = {
+					...st8.params.waifuletes,
+					version: "ghi",
+					params: {
+						...st8.params.waifuletes.params,
+						catalog: { plants: { rosa: { price: 10 } } },
+						extra: { K: 1 }
+					}
+				};
+				pclock += H;
+				r = await s._loadParams(st, pclock);
+				assert.deepStrictEqual([r.waifuletes.changes, r.waifuletes.added], [1, 2]);
+				const cat = st.listAnnotations().find((a) => /catalog/.test(a.label));
+				assert.strictEqual(cat.label, "waifuletes: catalog.plants.rosa.price novo (10)");
+				assert.deepStrictEqual(cat.detail.added, [{ key: "extra.K", from: null, to: 1 }]);
+				assert.strictEqual(st.listAnnotations().length, 4);
 				// Formato novo (schemaVersion mudou): só regrava a base, sem anotar
 				st8.params.waifuletes = {
 					...st8.params.waifuletes,
@@ -1851,7 +1882,7 @@ async function main() {
 				pclock += H;
 				r = await s._loadParams(st, pclock);
 				assert.strictEqual(r.waifuletes.changes, 0);
-				assert.strictEqual(st.listAnnotations().length, 2);
+				assert.strictEqual(st.listAnnotations().length, 4);
 				assert.deepStrictEqual(st.getParams("waifuletes"), { "outro.FORMATO": 1 });
 				// Câmbio das Runas mexe em todas as moedas: anotação em "todas", hora menos de 2 h → sem aviso
 				runas = { ...runas, params: { ...runas.params, "cambio.BASE_RUNAS_PER_ZINTHOS": 0.3 } };

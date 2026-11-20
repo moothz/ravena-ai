@@ -104,7 +104,7 @@ O painel da economia (Grafana, aba **Mudanças**) compara os 7 dias antes e depo
 - `docker exec ravena-ai node scripts/economy-annotate.js "<o que mudou e por quê>" <moeda> [hora]`, ou o cartão "Painel da economia" do admin do RavenaBank (`/banco/admin` → Configurações & Economia), se a ravena tiver esse cartão.
 - `<moeda>`: a moeda cujo fluxo muda (`zinthos`, `petalitas` ou `runas`); se mudar mais de uma, `todas`.
 - `[hora]`: sem ela, vale agora (deploy). Para evento ou script, passe o início real do efeito em ISO com fuso, ex.: `2026-11-21T14:30:00-03:00`.
-Melhor ainda: transforme o número solto em constante exposta na rota (vira caso A e se registra sozinho). Ao expor constante nova, atualize a documentação da rota; a ravena aceita chave nova sem quebrar e não a trata como mudança.
+Melhor ainda: transforme o número solto em constante exposta na rota (vira caso A e se registra sozinho). Ao expor constante nova, atualize a documentação da rota; a ravena aceita chave nova sem quebrar e, se ela chega junto com um deploy (`version` nova), não a trata como mudança; chave nova sem deploy (mesma `version`) ou em `catalog.*` vira anotação automática.
 
 **4. Conferir e decidir (quem faz o deploy):** `docker exec ravena-ai node scripts/economy-annotate.js --listar` (ou o cartão no admin) mostra as anotações com um id. Só as **possíveis mudanças** (marca cinza nos gráficos e a tabela "Possíveis mudanças a decidir" na aba Mudanças, detectadas nos dados) precisam de decisão: `--confirmar <id> ["texto com o porquê"]` ou `--descartar <id>`.
 

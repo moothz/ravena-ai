@@ -677,9 +677,11 @@ class EconomyAnalyticsService {
 	/**
 	 * Parâmetros de balanceamento: compara com a leitura anterior de cada serviço e registra o que mudou
 	 * como anotação automática (origin 'auto'). A primeira leitura só guarda. Serviço sem a rota (404)
-	 * fica de fora sem erro. Não viram anotação: chave só acrescentada (valor novo sem antigo: constante
-	 * passou a ser exposta, nada mudou no jogo; vai para a base e para o log) e leitura com schemaVersion
-	 * diferente da anterior (formato mudou: só regrava a base).
+	 * fica de fora sem erro. Chave acrescentada (valor novo sem antigo) vira anotação quando a version do
+	 * serviço é a mesma da leitura anterior (dado ou catálogo mudou sem deploy de código) ou quando começa
+	 * com "catalog." (item novo de catálogo, relido a quente); com version nova ou sem version, é o deploy
+	 * passando a expor constantes, nada mudou no jogo: vai só para a base, o log e o detail. Leitura com
+	 * schemaVersion diferente da anterior (formato mudou) só regrava a base.
 	 *
 	 * Hora: a mudança aconteceu em (leitura anterior, esta leitura]. Se o serviço subiu nesse intervalo
 	 * (startedAt), é a hora exata; senão vai para a hora cheia da leitura, nunca antes da leitura anterior,
@@ -743,16 +745,27 @@ class EconomyAnalyticsService {
 						? null
 						: String(got.schemaVersion);
 				const schemaChanged = prevSchema !== null && schema !== null && prevSchema !== schema;
+				const prevVersion = store.getMeta(`params_version:${r.service}`);
 				const all = Changes.diffParams(prev, got.params);
 				const added = all.filter((c) => c.from === null);
-				const changes = schemaChanged ? [] : all.filter((c) => c.from !== null);
+				// Chave nova vira anotação quando é mudança de dado sem deploy de código (mesma version da
+				// leitura anterior, conhecida) ou item de catálogo (catalog.*, relido a quente no Jardim);
+				// com version nova ou desconhecida é o deploy passando a expor constantes: só log e detail
+				const sameVersion = !!got.version && prevVersion === got.version;
+				const addedNoted = added.filter((c) => sameVersion || c.key.startsWith("catalog."));
+				const addedQuiet = added.filter((c) => !addedNoted.includes(c));
+				const changes = schemaChanged
+					? []
+					: [...all.filter((c) => c.from !== null), ...addedNoted].sort((a, b) =>
+							a.key < b.key ? -1 : a.key > b.key ? 1 : 0
+						);
 				if (schemaChanged) {
 					logger.info(
 						`[economy] ${r.service}: formato dos parâmetros mudou (schemaVersion ${prevSchema} → ${schema}); base regravada sem anotar.`
 					);
-				} else if (added.length) {
+				} else if (addedQuiet.length) {
 					logger.info(
-						`[economy] ${r.service}: ${added.length} parâmetro(s) passaram a ser expostos (${added
+						`[economy] ${r.service}: ${addedQuiet.length} parâmetro(s) passaram a ser expostos (${addedQuiet
 							.map((c) => c.key)
 							.join(", ")
 							.slice(0, 300)}); só guardados, sem anotação.`
@@ -777,7 +790,7 @@ class EconomyAnalyticsService {
 							service: r.service,
 							version: got.version,
 							changes,
-							...(added.length ? { added } : {}),
+							...(addedQuiet.length ? { added: addedQuiet } : {}),
 							between: [prevTs || null, readAt],
 							startedAt: got.startedAt || null,
 							exact
@@ -790,6 +803,7 @@ class EconomyAnalyticsService {
 				if (!prev || all.length) store.replaceParams(r.service, got.params, readAt);
 				store.setMeta(`params_ts:${r.service}`, readAt);
 				if (schema !== null) store.setMeta(`params_schema:${r.service}`, schema);
+				store.setMeta(`params_version:${r.service}`, got.version || "");
 				store.setMeta(`params_available:${r.service}`, 1);
 				out[r.service] = {
 					ok: true,
