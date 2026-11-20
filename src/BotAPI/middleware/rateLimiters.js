@@ -2,9 +2,14 @@ const rateLimit = require("express-rate-limit");
 
 /**
  * Cria os rate limiters padrão da BotAPI
+ * @param {Object} [options]
+ * @param {(req: import("express").Request) => boolean} [options.isAdmin] - Quando informado, as
+ *   requisições de admin autenticado (cookie de sessão ou Basic Auth) não contam no strictLimiter:
+ *   o limite de 10/min por IP é compartilhado entre as rotas e um painel de admin aberto o estoura.
  * @returns {{ generalLimiter: import("express").RequestHandler, strictLimiter: import("express").RequestHandler }}
  */
-function createRateLimiters() {
+function createRateLimiters(options = {}) {
+	const { isAdmin } = options;
 	const generalLimiter = rateLimit({
 		windowMs: 1 * 60 * 1000, // 1 minuto
 		max: 100, // 100 requisições por IP
@@ -20,7 +25,8 @@ function createRateLimiters() {
 		message: { status: "error", message: "Limite excedido. Tente novamente em breve." },
 		standardHeaders: true,
 		legacyHeaders: false,
-		validate: { trustProxy: false }
+		validate: { trustProxy: false },
+		skip: (req) => (typeof isAdmin === "function" ? isAdmin(req) : false)
 	});
 
 	return { generalLimiter, strictLimiter };

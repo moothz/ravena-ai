@@ -125,7 +125,10 @@ class BotAPI {
 		this.upsApiSecret = process.env.UPS_API_SECRET ?? false;
 
 		// Middlewares de rate limiting e upload
-		const { generalLimiter, strictLimiter } = createRateLimiters();
+		// O strictLimiter não conta requisições de admin autenticado (ver rateLimiters.js)
+		const { generalLimiter, strictLimiter } = createRateLimiters({
+			isAdmin: (req) => isAdmin(this, req)
+		});
 		this.generalLimiter = generalLimiter;
 		this.strictLimiter = strictLimiter;
 
