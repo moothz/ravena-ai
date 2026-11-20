@@ -1750,6 +1750,7 @@ document.addEventListener('DOMContentLoaded', () => {
         tbody.innerHTML = '';
 
         const { storeKey, kind } = parseStreamPlatform(platform);
+        const isVideoKind = kind === 'video';
         let streams = (groupData[storeKey] || []).map((s, idx) => ({ ...s, _originalIndex: idx }));
         if (kind === 'video') {
             streams = streams.filter(s => s.notifyVideos !== false);
