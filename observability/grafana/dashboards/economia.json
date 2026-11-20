@@ -1187,7 +1187,7 @@
     "spec": {
      "id": 5,
      "title": "Massa total — ${moeda} (12 semanas)",
-     "description": "Massa total da moeda. Marcas = mudanças registradas. Zinthos: histórico reconstruído pelo extrato antes da primeira carga (só o total). Petalitas: só desde a primeira carga. Runas: retratos diários do banco.",
+     "description": "Massa total da moeda. Marcas = mudanças registradas. Zinthos: histórico reconstruído pelo extrato antes da primeira carga (só o total). Petalitas: só desde a primeira carga. Runas: retratos diários do banco. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -1205,8 +1205,8 @@
            },
            "spec": {
             "queryType": "time series",
-            "queryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", total AS \"Massa\" FROM balances\nWHERE currency = '${moeda}' AND ts >= $__to - 12 * 604800000 AND ts < $__to ORDER BY ts",
-            "rawQueryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", total AS \"Massa\" FROM balances\nWHERE currency = '${moeda}' AND ts >= $__to - 12 * 604800000 AND ts < $__to ORDER BY ts",
+            "queryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", total AS \"Massa\" FROM balances\nWHERE currency = '${moeda}' AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to ORDER BY ts",
+            "rawQueryText": "SELECT ts / 1000 AS time, CASE currency WHEN 'zinthos' THEN 'Zinthos' WHEN 'petalitas' THEN 'Petalitas' ELSE 'Runas' END AS \"Moeda\", total AS \"Massa\" FROM balances\nWHERE currency = '${moeda}' AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to ORDER BY ts",
             "timeColumns": [
              "time"
             ]
@@ -1830,7 +1830,7 @@
     "spec": {
      "id": 8,
      "title": "Fatia da massa com os 10% maiores saldos — ${moeda} (12 semanas)",
-     "description": "",
+     "description": "Parte da massa nas mãos dos 10% com mais saldo (entre quem tem saldo > 0). Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -1848,8 +1848,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT ts / 1000 AS time, ROUND(100.0 * top10_share, 2) AS \"10% maiores (%)\" FROM balances\nWHERE currency = '${moeda}' AND ts >= $__to - 12 * 604800000 AND ts < $__to AND top10_share IS NOT NULL ORDER BY ts",
-            "rawQueryText": "SELECT ts / 1000 AS time, ROUND(100.0 * top10_share, 2) AS \"10% maiores (%)\" FROM balances\nWHERE currency = '${moeda}' AND ts >= $__to - 12 * 604800000 AND ts < $__to AND top10_share IS NOT NULL ORDER BY ts",
+            "queryText": "SELECT ts / 1000 AS time, ROUND(100.0 * top10_share, 2) AS \"10% maiores (%)\" FROM balances\nWHERE currency = '${moeda}' AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to AND top10_share IS NOT NULL ORDER BY ts",
+            "rawQueryText": "SELECT ts / 1000 AS time, ROUND(100.0 * top10_share, 2) AS \"10% maiores (%)\" FROM balances\nWHERE currency = '${moeda}' AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to AND top10_share IS NOT NULL ORDER BY ts",
             "timeColumns": [
              "time"
             ]
@@ -1889,7 +1889,7 @@
     "spec": {
      "id": 9,
      "title": "Saldo típico: mediana e p90 — ${moeda} (12 semanas)",
-     "description": "Entre as contas com saldo > 0. Escala logarítmica: mediana e p90 costumam ficar em grandezas diferentes.",
+     "description": "Entre as contas com saldo > 0. Escala logarítmica: mediana e p90 costumam ficar em grandezas diferentes. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -1907,8 +1907,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT ts / 1000 AS time, p50 AS \"Mediana\", p90 AS \"p90\" FROM balances\nWHERE currency = '${moeda}' AND ts >= $__to - 12 * 604800000 AND ts < $__to AND p50 IS NOT NULL ORDER BY ts",
-            "rawQueryText": "SELECT ts / 1000 AS time, p50 AS \"Mediana\", p90 AS \"p90\" FROM balances\nWHERE currency = '${moeda}' AND ts >= $__to - 12 * 604800000 AND ts < $__to AND p50 IS NOT NULL ORDER BY ts",
+            "queryText": "SELECT ts / 1000 AS time, p50 AS \"Mediana\", p90 AS \"p90\" FROM balances\nWHERE currency = '${moeda}' AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to AND p50 IS NOT NULL ORDER BY ts",
+            "rawQueryText": "SELECT ts / 1000 AS time, p50 AS \"Mediana\", p90 AS \"p90\" FROM balances\nWHERE currency = '${moeda}' AND ts >= MIN($__from, $__to - 12 * 604800000) AND ts < $__to AND p50 IS NOT NULL ORDER BY ts",
             "timeColumns": [
              "time"
             ]
@@ -2072,7 +2072,7 @@
     "spec": {
      "id": 12,
      "title": "Fatia recebida pela faixa de maior e de menor saldo — ${moeda} (12 semanas)",
-     "description": "",
+     "description": "Quanto do recebido de motivos de criação foi para a faixa de maior e de menor saldo, por dia. Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas.",
      "links": [],
      "data": {
       "kind": "QueryGroup",
@@ -2090,8 +2090,8 @@
            },
            "spec": {
             "queryType": "table",
-            "queryText": "SELECT day / 1000 AS time,\n  ROUND(100.0 * SUM(CASE WHEN q = 5 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q5 (maiores saldos)\",\n  ROUND(100.0 * SUM(CASE WHEN q = 1 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q1 (menores saldos)\"\nFROM received_by_quintile\nWHERE currency = '${moeda}' AND day >= $__to - 12 * 604800000 AND day < $__to\nGROUP BY day ORDER BY day",
-            "rawQueryText": "SELECT day / 1000 AS time,\n  ROUND(100.0 * SUM(CASE WHEN q = 5 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q5 (maiores saldos)\",\n  ROUND(100.0 * SUM(CASE WHEN q = 1 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q1 (menores saldos)\"\nFROM received_by_quintile\nWHERE currency = '${moeda}' AND day >= $__to - 12 * 604800000 AND day < $__to\nGROUP BY day ORDER BY day",
+            "queryText": "SELECT day / 1000 AS time,\n  ROUND(100.0 * SUM(CASE WHEN q = 5 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q5 (maiores saldos)\",\n  ROUND(100.0 * SUM(CASE WHEN q = 1 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q1 (menores saldos)\"\nFROM received_by_quintile\nWHERE currency = '${moeda}' AND day >= MIN($__from, $__to - 12 * 604800000) AND day < $__to\nGROUP BY day ORDER BY day",
+            "rawQueryText": "SELECT day / 1000 AS time,\n  ROUND(100.0 * SUM(CASE WHEN q = 5 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q5 (maiores saldos)\",\n  ROUND(100.0 * SUM(CASE WHEN q = 1 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS \"Q1 (menores saldos)\"\nFROM received_by_quintile\nWHERE currency = '${moeda}' AND day >= MIN($__from, $__to - 12 * 604800000) AND day < $__to\nGROUP BY day ORDER BY day",
             "timeColumns": [
              "time"
             ]

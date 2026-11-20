@@ -27,6 +27,11 @@ TIME_NOTE = ("O analytics.db guarda epoch em ms; o frser-sqlite-datasource lê c
              "por isso o / 1000 nos SELECT.")
 
 MS = "${moedas:sqlstring}"
+# Painéis "(12 semanas)": a janela sai do SQL, ancorada no fim do período ($__to − 12 semanas). O timeFrom "84d"
+# continua para o eixo do gráfico mostrar as 12 semanas com período relativo (o padrão); com período absoluto o
+# Grafana ignora o timeFrom e o eixo mostra o período escolhido, por isso o MIN com $__from (nada some à esquerda).
+W12 = f"MIN({FROM}, {TO} - 12 * {WEEK})"
+W12_NOTE = " Com período absoluto no seletor, o Grafana mostra o período escolhido em vez das 12 semanas."
 # Cor fixa por moeda (tema escuro, o padrão do compose); validadas para daltonismo (ver plano do painel)
 CUR_COLOR = {"Zinthos": "#7D9DE3", "Runas": "#82DFEA", "Petalitas": "#B76271"}
 AMBER, CRIT, OKC = "#e5a650", "#e0645c", "#6fb98a"
@@ -389,8 +394,8 @@ FROM rs ORDER BY ts DESC
 y = 18
 moeda_p.append(panel("timeseries", "Massa total — ${moeda} (12 semanas)", f"""
 SELECT ts / 1000 AS time, {CUR_LABEL.format(c="currency")} AS "Moeda", total AS "Massa" FROM balances
-WHERE currency = {M} AND ts >= {TO} - 12 * {WEEK} AND ts < {TO} ORDER BY ts
-""", 0, y + 1, 24, 8, desc="Massa total da moeda. Marcas = mudanças registradas. Zinthos: histórico reconstruído pelo extrato antes da primeira carga (só o total). Petalitas: só desde a primeira carga. Runas: retratos diários do banco.",
+WHERE currency = {M} AND ts >= {W12} AND ts < {TO} ORDER BY ts
+""", 0, y + 1, 24, 8, desc="Massa total da moeda. Marcas = mudanças registradas. Zinthos: histórico reconstruído pelo extrato antes da primeira carga (só o total). Petalitas: só desde a primeira carga. Runas: retratos diários do banco." + W12_NOTE,
     time_cols=["time"], qtype="time series", overrides=cur_colors(), extra={"timeFrom": "84d"},
     defaults={"unit": "locale", "noValue": "sem retrato", "displayName": "${__field.labels.Moeda}",
               "custom": {"fillOpacity": 6, "lineWidth": 2, "showPoints": "never", "spanNulls": True}}))
@@ -420,12 +425,13 @@ GROUP BY 1, f.reason ORDER BY 1
     options={"legend": {"displayMode": "table", "placement": "right", "calcs": ["sum"]}}, qtype="time series"))
 moeda_p.append(panel("timeseries", "Fatia da massa com os 10% maiores saldos — ${moeda} (12 semanas)", f"""
 SELECT ts / 1000 AS time, ROUND(100.0 * top10_share, 2) AS "10% maiores (%)" FROM balances
-WHERE currency = {M} AND ts >= {TO} - 12 * {WEEK} AND ts < {TO} AND top10_share IS NOT NULL ORDER BY ts
-""", 0, y + 17, 12, 7, time_cols=["time"], defaults={"unit": "percent", "min": 0, "max": 100}, extra={"timeFrom": "84d"}))
+WHERE currency = {M} AND ts >= {W12} AND ts < {TO} AND top10_share IS NOT NULL ORDER BY ts
+""", 0, y + 17, 12, 7, desc="Parte da massa nas mãos dos 10% com mais saldo (entre quem tem saldo > 0)." + W12_NOTE,
+    time_cols=["time"], defaults={"unit": "percent", "min": 0, "max": 100}, extra={"timeFrom": "84d"}))
 moeda_p.append(panel("timeseries", "Saldo típico: mediana e p90 — ${moeda} (12 semanas)", f"""
 SELECT ts / 1000 AS time, p50 AS "Mediana", p90 AS "p90" FROM balances
-WHERE currency = {M} AND ts >= {TO} - 12 * {WEEK} AND ts < {TO} AND p50 IS NOT NULL ORDER BY ts
-""", 12, y + 17, 12, 7, desc="Entre as contas com saldo > 0. Escala logarítmica: mediana e p90 costumam ficar em grandezas diferentes.",
+WHERE currency = {M} AND ts >= {W12} AND ts < {TO} AND p50 IS NOT NULL ORDER BY ts
+""", 12, y + 17, 12, 7, desc="Entre as contas com saldo > 0. Escala logarítmica: mediana e p90 costumam ficar em grandezas diferentes." + W12_NOTE,
     time_cols=["time"], defaults={"unit": "locale", "custom": {"scaleDistribution": {"type": "log", "log": 10}}}, extra={"timeFrom": "84d"}))
 
 moeda_p.append(panel("timeseries", "Conferência: estoque × fluxos — ${moeda} (período selecionado)", so_sql_m(), 0, y + 24, 24, 6,
@@ -456,9 +462,10 @@ SELECT day / 1000 AS time,
   ROUND(100.0 * SUM(CASE WHEN q = 5 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS "Q5 (maiores saldos)",
   ROUND(100.0 * SUM(CASE WHEN q = 1 THEN received_sum END) / NULLIF(SUM(received_sum), 0), 1) AS "Q1 (menores saldos)"
 FROM received_by_quintile
-WHERE currency = {M} AND day >= {TO} - 12 * {WEEK} AND day < {TO}
+WHERE currency = {M} AND day >= {W12} AND day < {TO}
 GROUP BY day ORDER BY day
-""", 12, 2, 12, 8, time_cols=["time"], defaults={"unit": "percent", "min": 0, "max": 100, "noValue": "sem extrato / sem dados"},
+""", 12, 2, 12, 8, desc="Quanto do recebido de motivos de criação foi para a faixa de maior e de menor saldo, por dia." + W12_NOTE,
+    time_cols=["time"], defaults={"unit": "percent", "min": 0, "max": 100, "noValue": "sem extrato / sem dados"},
     extra={"timeFrom": "84d"}))
 quem_p.append(panel("bargauge", "Massa por faixa de saldo — ${moeda} (retrato mais recente)", f"""
 SELECT q1_sum AS "Q1 (menores)", q2_sum AS "Q2", q3_sum AS "Q3", q4_sum AS "Q4", q5_sum AS "Q5 (maiores)" FROM balances
