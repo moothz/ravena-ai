@@ -14,13 +14,15 @@
  *   Estado       lamp(estado, palavra) · pill(texto, tipo) · coinEmblem(moeda, px)
  *   Texto        fmt · fmt2 · plural · relTime · dateFmt   (de lib.js, sem DOM)
  *   Dados        api(path, {fresh}) · send(método, path, corpo) · settle({...}) · invalidate(prefixo)
- *                HttpError (status, message) · onSessionExpired(fn)
+ *                HttpError (status, message, serverMessage, body) · onSessionExpired(fn)
  *   Avisos       errorNotice(erro, "o quê") · loading(texto) · empty(texto, dica) · toast(msg, {kind})
  *   Layout       card({title, actions, body, pill}) · rows(itens) · rowItem({...}) · secLabel(t)
  *                kv(pares) · tiles(itens) · crumbs(itens) · note(texto) · legacyEmbed(src, título)
+ *                loadAreaCss(área, href)
  *   Navegação    subnav(itens, ativo, {label}) · externalLink(href, rótulo, {missing})
  *                focusAfterRender(chave)
  *   Formulários  field({...}) · form({...}) · searchBox({...}) · confirmInline(botão, {...})
+ *                busy(botão, rótulo, fn) · copyText(texto, {...})
  *   Tabelas      dataTable(colunas, linhas, {...})  (vira cartões em largura estreita)
  *   Tempo        poll(fn, ms) (só com a aba visível) · debounce(fn, ms)
  *   Links        getLinks() · grafanaLink(painel, params) · panelLinks()
@@ -281,13 +283,19 @@ export function coinEmblem(coin, size = 18) {
 
 /* ── Dados: leitura com cache, escrita com mensagens claras ─────── */
 
-/** Falha HTTP com status e motivo em pt-BR (message). */
+/**
+ * Falha HTTP com status e motivo em pt-BR (message). serverMessage guarda a mensagem que o
+ * servidor mandou (body.message ou body.error) em qualquer status, inclusive 5xx, onde ela não
+ * entra no message (costuma ser técnica); body é o JSON da resposta, quando houver.
+ */
 export class HttpError extends Error {
 	constructor(status, message, body = null) {
 		super(message);
 		this.name = "HttpError";
 		this.status = status;
 		this.body = body;
+		const m = body && (typeof body.message === "string" ? body.message : body.error);
+		this.serverMessage = typeof m === "string" && m ? m : null;
 	}
 }
 
@@ -309,12 +317,12 @@ async function failure(res) {
 		body = null;
 	}
 	if (res.status === 401) sessionListeners.forEach((fn) => fn());
-	// A mensagem do servidor (já em pt-BR nas rotas novas) vem junto do motivo padrão.
-	const serverMsg = body && typeof body.message === "string" ? body.message : body && body.error;
-	const reason = httpReason(res.status);
-	const msg =
-		serverMsg && res.status !== 401 && res.status < 500 ? `${reason}: ${serverMsg}` : reason;
-	return new HttpError(res.status, msg, body);
+	// A mensagem do servidor (já em pt-BR nas rotas novas) vem junto do motivo padrão; em 5xx
+	// ela fica só em err.serverMessage.
+	const err = new HttpError(res.status, httpReason(res.status), body);
+	if (err.serverMessage && res.status !== 401 && res.status < 500)
+		err.message = `${err.message}: ${err.serverMessage}`;
+	return err;
 }
 
 /**
@@ -647,6 +655,29 @@ export function crumbs(items) {
 }
 
 /**
+ * Carrega uma vez a folha de estilo própria de uma área (o /admin só traz o admin.css).
+ * Devolve uma promessa que resolve quando a folha carrega (ou falha, ou passa 1,5 s): quem
+ * quiser evitar o "pisca sem estilo" na primeira visita faz await antes de desenhar.
+ *   loadAreaCss("banco", "/admin/areas/banco.css?v=1");
+ * @param {string} area - id da área (vai em data-area-css)
+ * @param {string} href
+ * @returns {Promise<void>}
+ */
+export function loadAreaCss(area, href) {
+	const prev = document.querySelector(`link[data-area-css="${CSS.escape(area)}"]`);
+	if (prev) return prev.ready || Promise.resolve();
+	const link = h("link", { rel: "stylesheet", href, "data-area-css": area });
+	link.ready = new Promise((ok) => {
+		const done = () => ok();
+		link.addEventListener("load", done, { once: true });
+		link.addEventListener("error", done, { once: true });
+		setTimeout(done, 1500);
+	});
+	document.head.append(link);
+	return link.ready;
+}
+
+/**
  * Tela antiga embutida (iframe ?embed=1, mesma origem e sessão) com a faixa
  * "tela antiga, migração em andamento". Só para as áreas provisórias.
  * @param {string} src - ex. "/instances"
@@ -965,16 +996,81 @@ export function searchBox(o) {
 }
 
 /**
+ * Roda fn com o botão ocupado: aria-busy (sem `disabled`, que tira o foco e ele não volta),
+ * cliques repetidos ignorados e, com `label`, girando com o rótulo de espera. O
+ * conteúdo original volta no fim. Erro vira toast.
+ *   btn.onclick = () => busy(btn, "Rodando…", () => send("POST", "/api/x/run"));
+ * @param {HTMLElement} btn
+ * @param {string|null} label - rótulo de espera (null mantém o conteúdo do botão)
+ * @param {() => any} fn
+ * @returns {Promise<boolean>} se deu certo (false também quando o botão já estava ocupado)
+ */
+export async function busy(btn, label, fn) {
+	if (btn.getAttribute("aria-busy") === "true" || btn.getAttribute("aria-disabled") === "true")
+		return false;
+	const kids = label ? [...btn.childNodes] : null;
+	btn.setAttribute("aria-busy", "true");
+	if (label) btn.replaceChildren(h("span", { class: "spinner", "aria-hidden": "true" }), label);
+	try {
+		await fn();
+		return true;
+	} catch (err) {
+		toast(err && err.message ? err.message : "Não deu certo", { kind: "error" });
+		return false;
+	} finally {
+		btn.removeAttribute("aria-busy");
+		if (kids) btn.replaceChildren(...kids);
+	}
+}
+
+/**
+ * Copia um texto para a área de transferência, com aviso. Se o navegador bloquear e houver um
+ * campo (`select`), o texto fica selecionado nele para Ctrl+C.
+ * @param {string} text
+ * @param {{ ok?: string, select?: HTMLInputElement|HTMLTextAreaElement }} [opts] - ok: aviso
+ * @returns {Promise<boolean>}
+ */
+export async function copyText(text, { ok = "Copiado", select } = {}) {
+	try {
+		await navigator.clipboard.writeText(text);
+		toast(ok, { kind: "ok" });
+		return true;
+	} catch {
+		if (select) {
+			select.focus();
+			select.select();
+			const done = document.execCommand && document.execCommand("copy");
+			toast(done ? ok : "Texto selecionado: copie com Ctrl+C", { kind: done ? "ok" : "" });
+			return !!done;
+		}
+		toast("Não deu para copiar (o navegador bloqueou a área de transferência)", {
+			kind: "error"
+		});
+		return false;
+	}
+}
+
+/**
  * Confirmação no próprio lugar do botão: o botão some e aparece "pergunta · Não · <ação>".
  * "Não" e Esc cancelam (o foco volta ao botão); a ação perigosa chama onConfirm (pode ser
  * async: fica "…" até terminar). Nunca window.confirm.
+ * - question: texto ou função (lida a cada clique, ex. "e mais 2 instâncias");
+ * - content: função que monta algo a mais entre a pergunta e os botões (ex. um field() com o
+ *   valor a confirmar). Com content, a caixa vira bloco, o 1º campo ganha o foco e Enter num
+ *   campo de uma linha confirma. onConfirm recebe a caixa (para ler o campo) e pode devolver
+ *   false para continuar aberta (valor inválido: avise e devolva false);
+ * - label: nome acessível do grupo (padrão: a pergunta).
+ * Para a confirmação ocupar a barra inteira de ações, ponha a classe .confirm-bar no pai.
  * @param {HTMLButtonElement} trigger
- * @param {{ question: string, confirmLabel: string, cancelLabel?: string, danger?: boolean,
- *   onConfirm: () => any }} o
+ * @param {{ question: string|(() => string), confirmLabel: string, cancelLabel?: string,
+ *   danger?: boolean, content?: () => Node, label?: string, class?: string,
+ *   onConfirm: (box: HTMLElement) => any }} o
  * @returns {HTMLButtonElement} o próprio trigger (para encadear no h())
  */
 export function confirmInline(trigger, o) {
 	trigger.addEventListener("click", () => {
+		const question = typeof o.question === "function" ? o.question() : o.question;
+		const extra = typeof o.content === "function" ? o.content() : null;
 		const cancel = h("button", {
 			type: "button",
 			class: "btn btn-quiet",
@@ -985,13 +1081,22 @@ export function confirmInline(trigger, o) {
 			class: `btn${o.danger === false ? " btn-primary" : " btn-danger"}`,
 			text: o.confirmLabel
 		});
-		const box = h(
-			"span",
-			{ class: "confirm", role: "group", "aria-label": o.question },
-			h("span", { class: "q", text: o.question }),
-			cancel,
-			go
-		);
+		const cls = `confirm${extra ? " confirm-block" : ""}${o.class ? ` ${o.class}` : ""}`;
+		const box = extra
+			? h(
+					"div",
+					{ class: cls, role: "group", "aria-label": o.label || question },
+					h("span", { class: "q", text: question }),
+					extra,
+					h("span", { class: "confirm-btns" }, cancel, go)
+				)
+			: h(
+					"span",
+					{ class: cls, role: "group", "aria-label": o.label || question },
+					h("span", { class: "q", text: question }),
+					cancel,
+					go
+				);
 		const restore = () => {
 			box.replaceWith(trigger);
 			trigger.focus();
@@ -1001,27 +1106,43 @@ export function confirmInline(trigger, o) {
 			if (ev.key === "Escape") {
 				ev.preventDefault();
 				restore();
+			} else if (
+				ev.key === "Enter" &&
+				extra &&
+				ev.target instanceof HTMLInputElement &&
+				extra.contains(ev.target)
+			) {
+				ev.preventDefault();
+				go.click();
 			}
 		});
 		go.addEventListener("click", async () => {
+			if (go.disabled) return;
 			go.disabled = true;
 			cancel.disabled = true;
 			const label = go.textContent;
 			go.textContent = "…";
+			const reopen = () => {
+				go.disabled = false;
+				cancel.disabled = false;
+				go.textContent = label;
+			};
 			try {
-				await o.onConfirm();
-				if (box.isConnected) box.replaceWith(trigger);
+				const r = await o.onConfirm(box);
+				if (r === false) {
+					if (box.isConnected) reopen();
+				} else if (box.isConnected) box.replaceWith(trigger);
 			} catch (err) {
 				toast(err && err.message ? err.message : "Não deu certo", { kind: "error" });
-				if (box.isConnected) {
-					go.disabled = false;
-					cancel.disabled = false;
-					go.textContent = label;
-				}
+				if (box.isConnected) reopen();
 			}
 		});
 		trigger.replaceWith(box);
-		cancel.focus();
+		const firstField = extra && extra.querySelector("input, textarea, select");
+		if (firstField) {
+			firstField.focus();
+			if (typeof firstField.select === "function") firstField.select();
+		} else cancel.focus();
 	});
 	return trigger;
 }

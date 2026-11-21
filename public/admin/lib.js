@@ -133,13 +133,25 @@ export const SERVICE_NAMES = {
 	nudenet: "NudeNet"
 };
 
-/** "ok" | "down" | "unknown" — "sem dado" é diferente de "fora". */
+/**
+ * "ok" | "backup" | "down" | "unknown". "backup" (na reserva): o principal não respondeu e um
+ * reserva atende; "sem dado" é diferente de "fora".
+ */
 export function serviceKind(value) {
 	const status = typeof value === "object" && value ? value.status : value;
 	if (status === "up" || status === "online" || status === "ok") return "ok";
+	if (status === "backup") return "backup";
 	if (status === "down" || status === "offline") return "down";
 	return "unknown";
 }
+
+/** Palavra de cada serviceKind (para lâmpada/pílula). */
+export const SERVICE_KIND_WORD = {
+	ok: "no ar",
+	backup: "na reserva",
+	down: "fora do ar",
+	unknown: "sem dado"
+};
 
 /** Evento em andamento (ScheduledEventService marca "ativo"; o horário confirma). */
 export function isEventActive(e, now = Date.now()) {
@@ -259,6 +271,7 @@ export function deriveNeeds(d = {}) {
 	const services = Object.entries(d.services || {});
 	const svcName = ([k]) => SERVICE_NAMES[k] || k;
 	const svcDown = services.filter(([, v]) => serviceKind(v) === "down");
+	const svcBackup = services.filter(([, v]) => serviceKind(v) === "backup");
 	const svcUnknown = services.filter(([, v]) => serviceKind(v) === "unknown");
 	// Mais de 3 serviços fora viram uma linha só (no celular, 8 linhas iguais empurram o resto).
 	if (svcDown.length > 3) {
@@ -278,6 +291,16 @@ export function deriveNeeds(d = {}) {
 				where: "Provedores"
 			});
 		}
+	}
+
+	for (const entry of svcBackup) {
+		needs.push({
+			state: "attention",
+			title: `${svcName(entry)} na reserva`,
+			detail: "O principal não respondeu; um reserva está atendendo",
+			href: "#/provedores",
+			where: "Provedores"
+		});
 	}
 
 	if (llmFailing(d.llm)) {

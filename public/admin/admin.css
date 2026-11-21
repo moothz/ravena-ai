@@ -234,6 +234,12 @@ button {
 	pointer-events: none;
 }
 
+/* Ocupado (busy()): continua focável (o foco não se perde), só não aceita clique. */
+.btn[aria-busy="true"] {
+	opacity: 0.55;
+	cursor: progress;
+}
+
 .btn-quiet {
 	border-color: transparent;
 	background: transparent;
@@ -1203,6 +1209,34 @@ table.dt {
 	font-weight: 600;
 }
 
+/* Confirmação com conteúdo (campo): bloco com os botões embaixo, à direita. */
+.confirm-block {
+	display: grid;
+	gap: 0.5rem;
+	width: min(24rem, 100%);
+	text-align: left;
+}
+
+.confirm-block .fld {
+	color: var(--fg);
+}
+
+.confirm-btns {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	justify-content: flex-end;
+}
+
+/* .confirm-bar no pai: a confirmação aberta ocupa a barra e esconde as outras ações. */
+.confirm-bar:has(> .confirm) > :not(.confirm) {
+	display: none;
+}
+
+.confirm-bar > .confirm {
+	flex: 1;
+}
+
 /* Avisos passageiros (toast). */
 .toasts {
 	position: fixed;
@@ -1786,10 +1820,33 @@ table.dt {
 	.brand,
 	.topbar-needs,
 	.crumbs a,
+	.ext-link,
 	.fld input:not([type="checkbox"]),
 	.fld select,
 	.search-box {
 		min-height: var(--touch-min);
+	}
+
+	/* Links da trilha e de ação são inline: sem isto a altura de toque não pega. */
+	.crumbs a,
+	.ext-link {
+		display: inline-flex;
+		align-items: center;
+	}
+
+	/* Em flex o espaço antes do "↗" some: o vão faz esse papel. */
+	.ext-link {
+		flex-wrap: wrap;
+		column-gap: 0.25em;
+	}
+
+	/* O campo da busca ocupa a caixa toda (44 px), não só os 32 px do meio. */
+	.search-box {
+		padding-block: 0;
+	}
+
+	.search-box input {
+		min-height: calc(var(--touch-min) - 2px);
 	}
 
 	.field {

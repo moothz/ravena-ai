@@ -94,6 +94,7 @@ function stateTiles(p, extra) {
 	const on = bots.filter((b) => b.connected).length;
 	const services = Object.values(p.services || {});
 	const svcDown = services.filter((v) => serviceKind(v) === "down").length;
+	const svcBackup = services.filter((v) => serviceKind(v) === "backup").length;
 	const svcUnknown = services.filter((v) => serviceKind(v) === "unknown").length;
 	const llm = p.llm || {};
 	const events = p.events || [];
@@ -116,10 +117,12 @@ function stateTiles(p, extra) {
 			value: `${fmt(services.length - svcDown - svcUnknown)} de ${fmt(services.length)}`,
 			detail: svcDown
 				? `${fmt(svcDown)} fora do ar`
-				: svcUnknown
-					? `no ar · ${fmt(svcUnknown)} sem dado`
-					: "todos no ar",
-			attention: svcDown > 0,
+				: svcBackup
+					? `${fmt(svcBackup)} na reserva`
+					: svcUnknown
+						? `no ar · ${fmt(svcUnknown)} sem dado`
+						: "todos no ar",
+			attention: svcDown + svcBackup > 0,
 			href: "#/provedores",
 			error: p.servicesError
 		},

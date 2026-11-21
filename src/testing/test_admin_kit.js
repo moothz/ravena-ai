@@ -157,6 +157,15 @@ async function runTests() {
 	assert.strictEqual(lib.countActionable(needs), 5, "sem dado não conta como 'precisa de você'");
 	assert.strictEqual(needs[needs.length - 1].state, "off", "sem dado fica no fim");
 	assert.deepStrictEqual(lib.deriveNeeds({}), [], "sem leitura nenhuma, lista vazia");
+	assert.strictEqual(lib.serviceKind({ status: "backup" }), "backup");
+	assert.strictEqual(lib.serviceKind("online"), "ok");
+	assert.strictEqual(lib.serviceKind(undefined), "unknown");
+	const reserva = lib.deriveNeeds({ services: { llm: { status: "backup" } } });
+	assert.deepStrictEqual(
+		reserva.map((n) => [n.state, n.title, n.href]),
+		[["attention", "LLM na reserva", "#/provedores"]],
+		"serviço na reserva pede atenção (não é 'sem dado')"
+	);
 	const many = lib.deriveNeeds({ services: { a: "down", b: "down", c: "down", d: "down" } });
 	assert.strictEqual(many.length, 1, "mais de 3 serviços fora viram uma linha");
 	console.log("✓ deriveNeeds e countActionable.");
