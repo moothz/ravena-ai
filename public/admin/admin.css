@@ -1,6 +1,10 @@
 /*
  * Componentes do painel de admin unificado. Só lê os tokens de tokens.css.
  * Escala: rótulo 11 mono caixa alta · texto 13 · detalhe 12 · título 18 · número 20 (em rem).
+ *
+ * Partes: base · topo · botões · casca (menu, conteúdo) · kit (card, rows, tiles, pill, kv,
+ * crumbs, subnav, confirm, form, search, dataTable, toast, embed, log) · celular · toque ·
+ * movimento reduzido. A lista das classes do kit está em admin-kit.md.
  */
 
 * {
@@ -14,7 +18,7 @@
 
 html,
 body {
-	height: 100%;
+	min-height: 100%;
 }
 
 body {
@@ -23,6 +27,7 @@ body {
 	color: var(--fg);
 	font: var(--text-md) / 1.45 var(--font-sans);
 	-webkit-font-smoothing: antialiased;
+	overflow-x: hidden;
 }
 
 a {
@@ -32,6 +37,13 @@ a {
 :focus-visible {
 	outline: 2px solid var(--focus);
 	outline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+p {
+	margin: 0;
 }
 
 .mono,
@@ -58,6 +70,16 @@ code {
 	letter-spacing: 0.1em;
 	text-transform: uppercase;
 	color: var(--faint);
+}
+
+.sr-only,
+.btn-label-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
 }
 
 .skip {
@@ -105,12 +127,13 @@ code {
 
 .brand {
 	display: flex;
-	align-items: baseline;
+	align-items: center;
 	gap: 0.375rem;
 	text-decoration: none;
 	color: var(--fg);
 	border-radius: var(--radius-row);
 	padding: 0.125rem 0.25rem;
+	flex: none;
 }
 
 .brand-mark {
@@ -137,36 +160,35 @@ code {
 	width: 1px;
 	height: 1rem;
 	background: var(--hairline-strong);
+	flex: none;
 }
 
-.topbar-summary {
-	display: flex;
-	align-items: center;
-	gap: 0.875rem;
-	min-width: 0;
-	overflow: hidden;
-	white-space: nowrap;
-	font: var(--text-xs) var(--font-mono);
-	color: var(--muted);
-}
-
-.summary-item {
+/* "N precisam de você": âmbar só quando há o que fazer; sempre com palavra. */
+.topbar-needs {
 	display: inline-flex;
 	align-items: center;
-	gap: 0.375rem;
-	text-decoration: none;
-	color: inherit;
+	gap: 0.4375rem;
+	min-width: 0;
+	padding: 0.125rem 0.375rem;
 	border-radius: var(--radius-row);
-	padding: 0.125rem 0.25rem;
+	color: var(--muted);
+	font-size: var(--text-sm);
+	text-decoration: none;
+	white-space: nowrap;
 }
 
-.summary-item:hover {
-	color: var(--fg);
+.topbar-needs-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
-.summary-item .count {
-	color: var(--fg);
-	font-weight: 500;
+.topbar-needs[data-state="attention"] {
+	color: var(--attention);
+	font-weight: 600;
+}
+
+.topbar-needs:hover {
+	background: var(--hover);
 }
 
 /* ── Botões ────────────────────────────────────────────────────── */
@@ -179,8 +201,9 @@ button {
 .btn {
 	display: inline-flex;
 	align-items: center;
+	justify-content: center;
 	gap: 0.375rem;
-	height: var(--control-h);
+	min-height: var(--control-h);
 	padding: 0 0.625rem;
 	border: 1px solid var(--control-border);
 	border-radius: var(--radius-control);
@@ -188,6 +211,7 @@ button {
 	color: var(--fg);
 	font-family: var(--font-sans);
 	font-size: var(--text-sm);
+	line-height: 1.2;
 	text-decoration: none;
 	cursor: pointer;
 	white-space: nowrap;
@@ -200,8 +224,13 @@ button {
 	background: var(--hover);
 }
 
+.btn:disabled,
 .btn[aria-disabled="true"] {
-	opacity: 0.5;
+	opacity: 0.55;
+	cursor: default;
+}
+
+.btn[aria-disabled="true"] {
 	pointer-events: none;
 }
 
@@ -215,8 +244,31 @@ button {
 	color: var(--fg);
 }
 
+.btn-primary {
+	background: var(--fg);
+	border-color: var(--fg);
+	color: var(--on-fg);
+	font-weight: 600;
+}
+
+.btn-primary:hover {
+	background: var(--fg);
+	opacity: 0.88;
+}
+
+.btn-danger {
+	color: var(--destructive);
+	border-color: var(--destructive);
+	font-weight: 600;
+}
+
+.btn-danger.btn-quiet {
+	border-color: transparent;
+}
+
 .btn svg,
-.nav-item svg {
+.nav-item svg,
+.icon {
 	width: 0.875rem;
 	height: 0.875rem;
 	flex: none;
@@ -230,34 +282,36 @@ button {
 	border: 1px solid var(--hairline-strong);
 	border-radius: var(--radius-pill);
 	background: var(--work);
+	flex: none;
 }
 
-.seg button {
-	height: 1.5rem;
+.seg button,
+.seg .seg-link {
+	display: inline-flex;
+	align-items: center;
+	min-height: 1.5rem;
 	padding: 0 0.5625rem;
 	border: 0;
 	border-radius: var(--radius-row);
 	background: transparent;
 	color: var(--muted);
 	font-size: var(--text-sm);
+	text-decoration: none;
 	cursor: pointer;
 }
 
-.seg button:hover {
+.seg button:hover,
+.seg .seg-link:hover {
 	color: var(--fg);
 	background: var(--hover);
 }
 
-.seg button[aria-pressed="true"] {
+.seg button[aria-pressed="true"],
+.seg .seg-link[aria-current="true"] {
 	background: var(--raised);
 	color: var(--fg);
 	font-weight: 600;
 	box-shadow: inset 0 0 0 1px var(--control-border);
-}
-
-/* Botão único de tema: só no celular (no desktop fica o segmentado). */
-.theme-cycle {
-	display: none;
 }
 
 /* ── Estrutura ─────────────────────────────────────────────────── */
@@ -265,14 +319,14 @@ button {
 .shell {
 	display: grid;
 	grid-template-columns: 14.5rem minmax(0, 1fr);
-	min-height: calc(100% - var(--topbar-h));
+	min-height: calc(100dvh - var(--topbar-h));
 }
 
 .sidebar {
 	position: sticky;
 	top: var(--topbar-h);
 	align-self: start;
-	height: calc(100vh - var(--topbar-h));
+	height: calc(100dvh - var(--topbar-h));
 	overflow-y: auto;
 	padding: 0.625rem 0.5rem 1rem;
 	background: var(--panel);
@@ -300,7 +354,7 @@ button {
 	grid-template-columns: 1rem minmax(0, 1fr) auto;
 	align-items: center;
 	gap: 0.5rem;
-	height: 1.875rem;
+	min-height: 1.875rem;
 	padding: 0 0.5rem;
 	border-radius: var(--radius-row);
 	color: var(--muted);
@@ -331,6 +385,41 @@ button {
 .nav-item .nav-meta {
 	font: var(--text-xs) var(--font-mono);
 	color: var(--faint);
+	white-space: nowrap;
+}
+
+/* Contador de "pede atenção" (âmbar, com número: não é só cor). */
+.nav-badge {
+	min-width: 1.25rem;
+	padding: 0 0.3125rem;
+	border: 1px solid var(--attention);
+	border-radius: 999px;
+	background: var(--attention-bg);
+	color: var(--attention);
+	font: 600 var(--text-xs) / 1.125rem var(--font-mono);
+	text-align: center;
+}
+
+.nav-out {
+	grid-template-columns: minmax(0, 1fr) auto;
+	padding-left: 2rem;
+}
+
+.nav-out.is-disabled {
+	color: var(--faint);
+	cursor: default;
+}
+
+.nav-out.is-disabled:hover {
+	background: none;
+	color: var(--faint);
+}
+
+.nav-hint {
+	margin: 0.375rem 0.5rem 0;
+	font-size: var(--text-xs);
+	color: var(--faint);
+	overflow-wrap: anywhere;
 }
 
 .nav-item:focus-visible {
@@ -343,7 +432,7 @@ button {
 	outline: none;
 }
 
-/* ── Cabeçalho de área e abas compactas ─────────────────────────── */
+/* ── Cabeçalho da área ──────────────────────────────────────────── */
 
 .view-head {
 	display: flex;
@@ -353,21 +442,50 @@ button {
 	margin-bottom: 1rem;
 }
 
+.view-titles {
+	margin-right: auto;
+	min-width: 0;
+}
+
 .view-title {
-	margin: 0;
 	font-size: var(--text-lg);
 	font-weight: 600;
 	letter-spacing: -0.01em;
 }
 
 .view-desc {
-	margin: 0.125rem 0 0;
+	margin-top: 0.125rem;
 	color: var(--muted);
 	max-width: 70ch;
 }
 
-/* Abas compactas, arredondadas, do tamanho do conteúdo (não de largura total). */
-.tabs {
+.view-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.view-actions:empty {
+	display: none;
+}
+
+.view-root,
+.stack {
+	display: grid;
+	gap: 1rem;
+	align-content: start;
+	min-width: 0;
+}
+
+#view-body[aria-busy="true"] > .view-root:not(:empty) {
+	opacity: 0.6;
+	transition: opacity 150ms 150ms;
+}
+
+/* ── Abas internas (subnav): compactas e arredondadas ───────────── */
+
+.subnav {
 	display: inline-flex;
 	flex-wrap: wrap;
 	gap: 0.125rem;
@@ -375,174 +493,441 @@ button {
 	border: 1px solid var(--hairline-strong);
 	border-radius: var(--radius-pill);
 	background: var(--work);
+	max-width: 100%;
 }
 
-.tab {
+.subnav-tab {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.375rem;
-	height: 1.625rem;
+	min-height: 1.625rem;
 	padding: 0 0.625rem;
-	border: 0;
 	border-radius: var(--radius-row);
-	background: transparent;
 	color: var(--muted);
 	font-size: var(--text-sm);
-	cursor: pointer;
+	text-decoration: none;
+	white-space: nowrap;
 }
 
-.tab svg {
+.subnav-tab svg {
 	width: 0.75rem;
 	height: 0.75rem;
-	flex: none;
 }
 
-.tab:hover {
+.subnav-tab:hover {
 	background: var(--hover);
 	color: var(--fg);
 }
 
-.tab[aria-selected="true"] {
+.subnav-tab[aria-selected="true"] {
 	background: var(--raised);
 	color: var(--fg);
 	font-weight: 600;
 	box-shadow: inset 0 0 0 1px var(--control-border);
 }
 
-/* ── Grade de blocos (estilo painel: colados numa grade só) ─────── */
+/* ── Kit: cartão ────────────────────────────────────────────────── */
 
-.grid {
-	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(min(100%, 12.5rem), 1fr));
-	border-top: 1px solid var(--hairline-strong);
-	border-left: 1px solid var(--hairline-strong);
-	margin-bottom: 1.25rem;
-}
-
-.cell {
+.card {
 	min-width: 0;
-	padding: 0.75rem 0.875rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
 	background: var(--panel);
-	border-right: 1px solid var(--hairline-strong);
-	border-bottom: 1px solid var(--hairline-strong);
-	display: grid;
+}
+
+.card > .hd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 0.625rem;
+	padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.card-title {
+	font-size: var(--text-md);
+	font-weight: 600;
+	margin-right: auto;
+}
+
+.card-actions {
+	display: flex;
+	flex-wrap: wrap;
 	gap: 0.375rem;
-	align-content: start;
+	align-items: center;
 }
 
-.cell.wants-you {
-	box-shadow: inset 2px 0 0 var(--attention);
+.card > .bd {
+	padding: 0.75rem;
+	display: grid;
+	gap: 0.75rem;
 }
 
-.cell .value {
-	font: 500 var(--text-xl) / 1.15 var(--font-mono);
+.sec-label {
+	font: 500 var(--text-xs) / 1.2 var(--font-mono);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--faint);
+	margin: 0.25rem 0.125rem -0.5rem;
+}
+
+.note-in {
+	font-size: var(--text-sm);
+	color: var(--muted);
+	border: 1px dashed var(--hairline-strong);
+	border-radius: var(--radius-row);
+	padding: 0.5rem 0.625rem;
+}
+
+/* ── Kit: pílula, lista de definição, trilha ───────────────────── */
+
+.pill {
+	display: inline-block;
+	padding: 0.0625rem 0.4375rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-pill);
+	color: var(--muted);
+	font: var(--text-xs) / 1.4 var(--font-mono);
+	white-space: nowrap;
+}
+
+.pill.att {
+	border-color: var(--attention);
+	color: var(--attention);
+	background: var(--attention-bg);
+}
+
+.pill.ok {
+	border-color: var(--ok);
+	color: var(--ok);
+}
+
+.pill.bad {
+	border-color: var(--destructive);
+	color: var(--destructive);
+}
+
+.kv {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 0.375rem 0.875rem;
+	margin: 0;
+	font-size: var(--text-md);
+}
+
+.kv dt {
+	color: var(--muted);
+}
+
+.kv dd {
+	margin: 0;
 	font-variant-numeric: tabular-nums;
 	overflow-wrap: anywhere;
 }
 
-.cell .value[data-state="error"] {
-	font: 500 var(--text-md) / 1.3 var(--font-sans);
-	color: var(--muted);
-}
-
-.cell .sub {
-	font-size: var(--text-sm);
-	color: var(--muted);
-}
-
-a.cell {
-	text-decoration: none;
-	color: inherit;
-	transition: background-color 100ms;
-}
-
-a.cell:hover {
-	background: var(--raised);
-}
-
-a.cell:focus-visible {
-	outline-offset: -2px;
-}
-
-.section {
-	margin: 0 0 1.375rem;
-}
-
-.section-head {
+.crumbs {
 	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
 	align-items: center;
-	gap: 0.5rem;
-	margin-bottom: 0.5rem;
-}
-
-.section-head .rule {
-	flex: 1;
-	height: 1px;
-	background: var(--hairline);
-}
-
-/* ── Lista "precisa de você" ───────────────────────────────────── */
-
-.needs {
 	list-style: none;
-	margin: 0 0 1.25rem;
+	margin: 0;
 	padding: 0;
-	border: 1px solid var(--hairline-strong);
-	background: var(--panel);
-}
-
-.needs li + li {
-	border-top: 1px solid var(--hairline);
-}
-
-.needs a {
-	display: grid;
-	grid-template-columns: 0.875rem minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 0.25rem 0.625rem;
-	min-height: 2.5rem;
-	padding: 0.5rem 0.875rem;
-	color: inherit;
-	text-decoration: none;
-}
-
-.needs a:hover {
-	background: var(--raised);
-}
-
-.needs a:focus-visible {
-	outline-offset: -2px;
-}
-
-.needs .what {
-	font-weight: 500;
-	min-width: 0;
-}
-
-.needs .detail {
-	grid-column: 2 / -1;
 	font-size: var(--text-sm);
 	color: var(--muted);
 }
 
-.needs .where {
-	font: var(--text-xs) var(--font-mono);
+.crumbs li + li::before {
+	content: "/";
+	margin-right: 0.375rem;
 	color: var(--faint);
+}
+
+.crumbs a {
+	color: var(--muted);
+	text-underline-offset: 2px;
+}
+
+.crumbs [aria-current="page"] {
+	color: var(--fg);
+}
+
+/* ── Kit: faixa de números (tiles) ──────────────────────────────── */
+
+/* Blocos colados: a linha entre eles é a sombra de 1 px de cada bloco (sem buraco cinza no fim). */
+.tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+	gap: 1px;
+	background: var(--panel);
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	overflow: hidden;
+}
+
+.tile {
+	display: grid;
+	gap: 0.125rem;
+	align-content: start;
+	min-width: 0;
+	padding: 0.625rem 0.75rem;
+	background: var(--panel);
+	box-shadow: 0 0 0 1px var(--hairline-strong);
+	color: inherit;
+	text-decoration: none;
+}
+
+a.tile:hover {
+	background: var(--raised);
+}
+
+a.tile:focus-visible {
+	outline-offset: -2px;
+}
+
+.tile.att {
+	box-shadow:
+		inset 2px 0 0 var(--attention),
+		0 0 0 1px var(--hairline-strong);
+}
+
+.tile .v {
+	font: 600 var(--text-xl) / 1.2 var(--font-sans);
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.tile .v-error {
+	font: 500 var(--text-sm) / 1.3 var(--font-sans);
+	color: var(--muted);
+}
+
+.tile .v-error .status {
+	white-space: normal;
+}
+
+.tile .d,
+.tile .label {
+	overflow-wrap: anywhere;
+}
+
+.tile .d {
+	color: var(--muted);
+	font-size: var(--text-sm);
+}
+
+.tile .d.att {
+	color: var(--attention);
+}
+
+/* ── Kit: linhas tocáveis (rowItem) ─────────────────────────────── */
+
+.rows {
+	display: grid;
+	overflow: hidden;
+}
+
+.rw {
+	display: grid;
+	grid-template-columns: 2.25rem minmax(0, 1fr) auto auto;
+	gap: 0 0.75rem;
+	align-items: center;
+	min-height: 3.5rem;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+	color: inherit;
+	text-decoration: none;
+}
+
+.rw:last-child {
+	border-bottom: 0;
+}
+
+a.rw:hover {
+	background: var(--hover);
+}
+
+a.rw:focus-visible {
+	outline-offset: -2px;
+}
+
+.rw[aria-disabled="true"] .tx b {
+	color: var(--muted);
+}
+
+.rw-static {
+	grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+}
+
+.rw .ic {
+	width: 2.25rem;
+	height: 2.25rem;
+	display: grid;
+	place-items: center;
+	border-radius: 0.5rem;
+	background: var(--raised);
+	border: 1px solid var(--hairline-strong);
+	color: var(--fg);
+}
+
+.rw .ic svg {
+	width: 1.125rem;
+	height: 1.125rem;
+}
+
+.rw .lt {
+	font-weight: 700;
+	font-size: 1rem;
+}
+
+.rw .lt[data-kind="grafana"] {
+	color: var(--panel-grafana);
+}
+
+.rw .lt[data-kind="waifuletes"] {
+	color: var(--panel-waifuletes);
+}
+
+.rw .lt[data-kind="jardim"] {
+	color: var(--panel-jardim);
+}
+
+.rw .tx {
+	min-width: 0;
+	display: grid;
+	gap: 1px;
+}
+
+.rw .tx b {
+	font-weight: 600;
+	font-size: var(--text-base);
+}
+
+.rw-sub {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow: hidden;
+	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
-.needs-empty {
-	padding: 0.875rem;
-	margin-bottom: 1.25rem;
-	border: 1px solid var(--hairline-strong);
-	background: var(--panel);
+.rw-sub.att {
+	color: var(--attention);
+}
+
+.rw-hint {
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	white-space: normal;
+}
+
+.rw .n {
+	min-width: 1.4rem;
+	padding: 0.0625rem 0.375rem;
+	border: 1px solid var(--attention);
+	border-radius: 999px;
+	background: var(--attention-bg);
+	color: var(--attention);
+	font: 600 var(--text-xs) / 1.3 var(--font-mono);
+	text-align: center;
+}
+
+.rw .chev {
+	width: 1rem;
+	color: var(--faint);
+	font-size: 1.125rem;
+	line-height: 1;
+	text-align: center;
+}
+
+/* ── Visão geral: "Precisa de você" ─────────────────────────────── */
+
+.needs {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+}
+
+.need {
+	display: flex;
+	align-items: stretch;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.need:last-child {
+	border-bottom: 0;
+}
+
+.need-main {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.625rem;
+	align-items: center;
+	min-height: 3rem;
+	padding: 0.5625rem 0.75rem;
+	color: inherit;
+	text-decoration: none;
+}
+
+.need-main:hover {
+	background: var(--hover);
+}
+
+.need-main:focus-visible,
+.need-ext:focus-visible {
+	outline-offset: -2px;
+}
+
+.need .what {
+	min-width: 0;
+	display: grid;
+	gap: 1px;
+}
+
+.need .what b {
+	font-weight: 600;
+}
+
+.need .what span {
 	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow-wrap: anywhere;
+}
+
+.need .go {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	white-space: nowrap;
+}
+
+.need-ext {
+	display: flex;
+	align-items: center;
+	padding: 0 0.75rem;
+	border-left: 1px solid var(--hairline);
+	color: var(--muted);
+	font-size: var(--text-sm);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.need-ext:hover {
+	background: var(--hover);
+	color: var(--fg);
+}
+
+.needs-empty {
 	display: flex;
 	align-items: center;
 	gap: 0.5rem;
+	padding: 0.875rem 0.75rem;
+	color: var(--muted);
 }
 
-/* ── Lâmpadas de estado (glifo quadrado + palavra; nunca só a cor) ── */
+/* ── Lâmpadas de estado (glifo + palavra; nunca só a cor) ───────── */
 
 .lamp {
 	width: 0.625rem;
@@ -631,22 +1016,21 @@ a.cell:focus-visible {
 	white-space: nowrap;
 }
 
-/* ── Tabelas ──────────────────────────────────────────────────── */
+/* ── Kit: tabela que vira cartões (dataTable) ───────────────────── */
 
-.table-wrap {
+.dt-wrap {
+	container-type: inline-size;
 	overflow-x: auto;
-	border: 1px solid var(--hairline-strong);
-	background: var(--panel);
-	margin-bottom: 1.25rem;
+	min-width: 0;
 }
 
-table {
+table.dt {
 	width: 100%;
 	border-collapse: collapse;
 	font-size: var(--text-md);
 }
 
-th {
+.dt th {
 	text-align: left;
 	font: 500 var(--text-xs) var(--font-mono);
 	letter-spacing: 0.08em;
@@ -658,47 +1042,314 @@ th {
 	white-space: nowrap;
 }
 
-td {
+.dt td {
 	padding: 0.5rem 0.75rem;
 	border-bottom: 1px solid var(--hairline);
 	vertical-align: middle;
 }
 
-tr:last-child td {
+.dt tr:last-child td {
 	border-bottom: 0;
 }
 
-tbody tr:hover td {
+.dt tbody tr:hover td {
 	background: var(--raised);
 }
 
-td.num,
-th.num {
+.dt tr.click {
+	cursor: pointer;
+}
+
+.dt tr.undone td {
+	color: var(--faint);
+	text-decoration: line-through;
+}
+
+.dt td.num,
+.dt th.num {
 	text-align: right;
 	font-family: var(--font-mono);
 	font-variant-numeric: tabular-nums;
 	white-space: nowrap;
 }
 
+@container (max-width: 34rem) {
+	.dt thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+
+	.dt,
+	.dt tbody,
+	.dt tr,
+	.dt td {
+		display: block;
+	}
+
+	.dt tr {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--hairline);
+	}
+
+	.dt tr:last-child {
+		border-bottom: 0;
+	}
+
+	.dt td {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.125rem 0;
+		border: 0;
+		text-align: right;
+	}
+
+	.dt td::before {
+		content: attr(data-label);
+		color: var(--muted);
+		font-size: var(--text-sm);
+		text-align: left;
+	}
+
+	.dt td.primary {
+		display: block;
+		padding-bottom: 0.25rem;
+		font-weight: 600;
+		text-align: left;
+	}
+
+	.dt td.primary::before {
+		content: none;
+	}
+
+	.dt tbody tr:hover td {
+		background: none;
+	}
+}
+
+/* ── Kit: avisos e estados ──────────────────────────────────────── */
+
 .empty {
+	display: grid;
+	gap: 0.25rem;
 	padding: 1rem 0.875rem;
 	color: var(--muted);
 	border: 1px dashed var(--control-border);
+	border-radius: var(--radius-row);
 	background: var(--panel);
-	margin-bottom: 1.25rem;
+}
+
+.card .empty {
+	border: 0;
+	background: none;
 }
 
 .notice {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
 	padding: 0.625rem 0.75rem;
 	border: 1px solid var(--control-border);
+	border-radius: var(--radius-row);
 	background: var(--panel);
-	margin-bottom: 1rem;
 	color: var(--muted);
 }
 
 .notice.error {
 	border-color: var(--destructive);
 	color: var(--fg);
+}
+
+.loading {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--muted);
+}
+
+.spinner {
+	width: 0.75rem;
+	height: 0.75rem;
+	border: 2px solid var(--hairline-strong);
+	border-top-color: var(--fg);
+	border-radius: 50%;
+	animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Confirmação no próprio lugar do botão. */
+.confirm {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.375rem 0.5rem;
+	border: 1px solid var(--attention);
+	border-radius: var(--radius-row);
+	background: var(--attention-bg);
+	font-size: var(--text-sm);
+	max-width: 100%;
+}
+
+.confirm .q {
+	font-weight: 600;
+}
+
+/* Avisos passageiros (toast). */
+.toasts {
+	position: fixed;
+	left: 50%;
+	bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+	transform: translateX(-50%);
+	z-index: 20;
+	display: grid;
+	gap: 0.5rem;
+	width: max-content;
+	max-width: calc(100vw - 2rem);
+	pointer-events: none;
+}
+
+.toast {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.875rem;
+	border-radius: var(--radius-pill);
+	background: var(--fg);
+	color: var(--on-fg);
+	font-size: var(--text-md);
+	box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+	pointer-events: auto;
+	cursor: pointer;
+}
+
+.toast.error {
+	background: var(--destructive);
+	color: var(--work);
+}
+
+/* ── Kit: formulário, busca, link externo ───────────────────────── */
+
+.form {
+	display: grid;
+	gap: 0.625rem;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.25rem), 1fr));
+}
+
+.fld {
+	display: grid;
+	gap: 0.25rem;
+	align-content: start;
+	min-width: 0;
+	font-size: var(--text-sm);
+	color: var(--muted);
+}
+
+.fld.wide,
+.form-actions {
+	grid-column: 1 / -1;
+}
+
+.fld-check {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--fg);
+}
+
+.fld-hint {
+	color: var(--faint);
+	font-size: var(--text-xs);
+}
+
+.fld input:not([type="checkbox"]),
+.fld select,
+.fld textarea,
+.search-box {
+	font: inherit;
+	font-size: var(--text-md);
+	color: var(--fg);
+	background: var(--work);
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	padding: 0.3125rem 0.5rem;
+	min-height: var(--control-h);
+	min-width: 0;
+	width: 100%;
+}
+
+.form-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.search {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.search-box {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	min-width: min(100%, 12rem);
+	color: var(--muted);
+}
+
+.search-box input {
+	align-self: stretch;
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--fg);
+	font: inherit;
+}
+
+.search-box:focus-within {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.ext-link .ext,
+.btn .ext {
+	font-size: var(--text-xs);
+}
+
+.is-disabled {
+	color: var(--faint);
+	cursor: default;
+}
+
+.btn.is-disabled {
+	opacity: 1;
+	border-style: dashed;
+}
+
+.ext-hint {
+	font: var(--text-xs) var(--font-mono);
+	color: var(--faint);
+	white-space: normal;
+}
+
+/* Moedas (coinEmblem): alinhadas ao texto. */
+.coin {
+	display: inline-block;
+	vertical-align: -0.2em;
+	flex: none;
 }
 
 /* ── Tela antiga embutida ──────────────────────────────────────── */
@@ -712,25 +1363,18 @@ th.num {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
-	gap: 0.5rem;
-	font: var(--text-xs) var(--font-mono);
+	gap: 0.375rem 0.5rem;
+	padding: 0.25rem 0.25rem 0.25rem 0.625rem;
+	border: 1px dashed var(--hairline-strong);
+	border-radius: var(--radius-row);
+	font-size: var(--text-sm);
 	color: var(--muted);
-}
-
-.tag {
-	display: inline-block;
-	font: 500 0.65625rem / 1rem var(--font-mono);
-	padding: 0 0.375rem;
-	border: 1px solid var(--control-border);
-	border-radius: var(--radius-control);
-	color: var(--muted);
-	white-space: nowrap;
 }
 
 .embed iframe {
 	width: 100%;
 	/* cabe na altura da janela (inclusive tela baixa, como celular deitado) */
-	height: calc(100dvh - 11.5rem);
+	height: calc(100dvh - 12rem);
 	min-height: min(30rem, calc(100dvh - var(--topbar-h)));
 	border: 1px solid var(--hairline-strong);
 	background: var(--embed-bg);
@@ -743,14 +1387,13 @@ th.num {
 	flex-wrap: wrap;
 	align-items: center;
 	gap: 0.5rem;
-	margin-bottom: 0.625rem;
 }
 
 .field {
 	display: inline-flex;
 	align-items: center;
 	gap: 0.5rem;
-	height: var(--control-h);
+	min-height: var(--control-h);
 	padding: 0 0.5rem;
 	border: 1px solid var(--control-border);
 	border-radius: var(--radius-control);
@@ -760,19 +1403,29 @@ th.num {
 }
 
 .field input {
+	align-self: stretch;
 	border: 0;
 	outline: none;
 	background: transparent;
 	color: var(--fg);
 	font: inherit;
 	min-width: 0;
-	width: 13.75rem;
+	width: 15rem;
 	max-width: 100%;
 }
 
 .field:focus-within {
 	outline: 2px solid var(--focus);
 	outline-offset: 1px;
+}
+
+.fld-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--muted);
+	font-size: var(--text-sm);
+	min-width: 0;
 }
 
 .log {
@@ -783,6 +1436,7 @@ th.num {
 	padding: 0.625rem 0.75rem;
 	background: var(--chrome);
 	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
 	font: var(--text-sm) / 1.55 var(--font-mono);
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
@@ -793,290 +1447,62 @@ th.num {
 	color: var(--destructive);
 }
 
-/* ── Formulário simples e listas de links ──────────────────────── */
-
-.form-row {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 0.5rem;
-	margin-bottom: 0.75rem;
+.log .warn {
+	color: var(--attention);
 }
 
-.form-row label {
-	color: var(--muted);
-	font-size: var(--text-sm);
-}
-
-.form-row .field input {
-	width: 20rem;
-}
-
-.cmd-list {
-	list-style: none;
-	margin: 0 0 1.25rem;
-	padding: 0;
-	border: 1px solid var(--hairline-strong);
-	background: var(--panel);
-}
-
-.cmd-list li {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto;
-	gap: 0.25rem 0.75rem;
-	padding: 0.625rem 0.875rem;
-	border-bottom: 1px solid var(--hairline);
-}
-
-.cmd-list li:last-child {
-	border-bottom: 0;
-}
-
-.cmd-list code {
-	font-size: var(--text-sm);
-}
-
-.cmd-list .desc {
-	grid-column: 1 / -1;
-	color: var(--muted);
-	font-size: var(--text-sm);
-}
-
-/* ── Barra inferior e folha "Mais" (só aparecem no celular) ───────── */
+/* ── Barra inferior (só no celular) ─────────────────────────────── */
 
 .bottombar {
 	display: none;
 }
 
-.sheet {
-	margin: auto auto 0;
-	width: 100%;
-	max-width: 32rem;
-	max-height: 85dvh;
-	overflow-y: auto;
-	padding: 0;
-	border: 1px solid var(--hairline-strong);
-	border-bottom: 0;
-	background: var(--panel);
-	color: var(--fg);
-}
-
-.sheet::backdrop {
-	background: rgb(0 0 0 / 0.45);
-}
-
-.sheet-body {
-	padding: 0.75rem 0.75rem calc(0.75rem + env(safe-area-inset-bottom, 0px));
-}
-
-.sheet-body > .label {
-	padding: 0 0.5rem 0.375rem;
-}
-
-.sheet-areas {
-	list-style: none;
-	margin: 0 0 0.75rem;
-	padding: 0;
-}
-
-.sheet-item {
-	display: grid;
-	grid-template-columns: 1.25rem minmax(0, 1fr) auto;
-	align-items: center;
-	gap: 0.75rem;
-	min-height: 3rem;
-	padding: 0 0.5rem;
-	color: var(--fg);
-	text-decoration: none;
-	border-radius: var(--radius-row);
-}
-
-.sheet-item svg {
-	width: 1.125rem;
-	height: 1.125rem;
-}
-
-.sheet-item[aria-current="page"] {
-	background: var(--raised);
-	box-shadow: inset 2px 0 0 var(--selected);
-	font-weight: 600;
-}
-
-.sheet-actions {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	padding-top: 0.75rem;
-	border-top: 1px solid var(--hairline);
-}
-
-.sheet-actions .btn {
-	min-height: var(--touch-min);
-}
-
-.sheet-actions form {
-	margin-left: auto;
+/* Mais: o tema fica no fim da linha. */
+.rw-static .seg {
+	justify-self: end;
 }
 
 /*
  * ── Layout compacto ───────────────────────────────────────────────
  * Janela estreita (celular em pé, janela lateral) ou baixa (celular deitado: 844×390). Nos dois
- * casos a barra lateral e as descrições não cabem: entram a barra inferior e o conteúdo em tela
- * cheia. Tablet em pé (768 px ou mais, alto) fica com a barra lateral.
+ * casos a barra lateral e as descrições não cabem: entram a barra inferior e a página Mais.
+ * Tablet em pé (768 px ou mais, alto) fica com a barra lateral.
  */
 
 @media (max-width: 47.5rem), (max-height: 31.25rem) {
 	.topbar {
 		gap: 0.5rem;
-		padding: 0 0.5rem;
+		padding: 0 max(0.5rem, env(safe-area-inset-right, 0px)) 0
+			max(0.5rem, env(safe-area-inset-left, 0px));
 	}
 
 	.topbar-sep,
-	.brand-sub {
+	.brand-sub,
+	#topbar-theme {
 		display: none;
 	}
 
-	/* O resumo fica, só com lâmpada e contagem; a palavra vai para leitores de tela. */
-	.topbar-summary {
-		gap: 0.25rem;
-	}
-
-	.summary-item {
+	.topbar-needs,
+	.topbar .btn,
+	.brand {
 		min-height: var(--touch-min);
-		padding: 0 0.375rem;
+		align-items: center;
 	}
 
-	.summary-item .word {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
-		white-space: nowrap;
-	}
-
-	.seg-theme {
-		display: none;
-	}
-
-	.theme-cycle {
-		display: inline-flex;
-	}
-
-	.topbar .btn {
-		height: var(--touch-min);
-	}
-
-	/* A linha da faixa de áreas não estica: sobra nenhuma em páginas curtas. */
 	.shell {
 		grid-template-columns: minmax(0, 1fr);
-		grid-template-rows: auto 1fr;
 	}
 
-	/* A barra lateral vira uma faixa rolável de itens compactos. */
 	.sidebar {
-		position: sticky;
-		top: var(--topbar-h);
-		z-index: 4;
-		height: auto;
-		overflow-x: auto;
-		overflow-y: hidden;
-		padding: 0.25rem 0.5rem;
-		border-right: 0;
-		border-bottom: 1px solid var(--hairline-strong);
-		display: flex;
-		gap: 0.125rem;
-		scrollbar-width: thin;
-	}
-
-	.nav-group {
-		display: contents;
-	}
-
-	.nav-group > .label {
 		display: none;
-	}
-
-	.nav-list {
-		display: contents;
-	}
-
-	.nav-list > li {
-		flex: none;
-	}
-
-	.nav-item {
-		grid-template-columns: auto;
-		height: var(--touch-min);
-		padding: 0 0.75rem;
-		white-space: nowrap;
-	}
-
-	.nav-item .nav-text {
-		overflow: visible;
-	}
-
-	.nav-item svg,
-	.nav-item .nav-meta {
-		display: none;
-	}
-
-	.nav-item[aria-current="page"] {
-		box-shadow: inset 0 -2px 0 var(--selected);
 	}
 
 	.main {
 		padding: 1rem 1rem 2.5rem;
 	}
 
-	.grid {
-		grid-template-columns: repeat(auto-fill, minmax(8.75rem, 1fr));
-	}
-
-	.cell .value {
-		font-size: 1.0625rem;
-	}
-
-	.tab,
-	.seg button,
-	.btn {
-		min-height: var(--touch-min);
-	}
-
-	.field {
-		height: var(--touch-min);
-	}
-
-	.embed-bar code {
-		display: none;
-	}
-
-	.field {
-		flex: 1 1 10rem;
-	}
-
-	.field input {
-		width: 100%;
-	}
-
-	/* Navegação: a faixa e o tema/Sair do topo saem; ficam a barra inferior e a folha "Mais". */
-	.sidebar,
-	.topbar .theme-cycle,
-	.topbar a[href="/logout"] {
-		display: none;
-	}
-
-	.shell {
-		grid-template-rows: 1fr;
-	}
-
 	body {
 		padding-bottom: calc(var(--bottombar-h) + env(safe-area-inset-bottom, 0px));
-	}
-
-	.topbar {
-		padding-left: max(0.5rem, env(safe-area-inset-left, 0px));
-		padding-right: max(0.5rem, env(safe-area-inset-right, 0px));
 	}
 
 	.bottombar {
@@ -1101,12 +1527,9 @@ th.num {
 		gap: 0.1875rem;
 		min-width: 0;
 		padding: 0;
-		border: 0;
-		background: none;
 		color: var(--muted);
 		font: 500 0.6875rem / 1 var(--font-sans);
 		text-decoration: none;
-		cursor: pointer;
 	}
 
 	.bottom-item svg {
@@ -1138,15 +1561,12 @@ th.num {
 		min-width: 1.125rem;
 		height: 1.125rem;
 		padding: 0 0.25rem;
+		border: 1px solid var(--attention);
 		border-radius: 999px;
-		background: var(--destructive);
-		color: var(--work);
-		font: 600 0.6875rem / 1.125rem var(--font-mono);
+		background: var(--chrome);
+		color: var(--attention);
+		font: 600 0.6875rem / 1rem var(--font-mono);
 		text-align: center;
-	}
-
-	.bottom-badge[hidden] {
-		display: none;
 	}
 
 	/* Título sem a descrição: a primeira tela fica para o conteúdo. */
@@ -1158,125 +1578,14 @@ th.num {
 		margin-bottom: 0.75rem;
 	}
 
-	/* "Precisa de você": a linha toda é o alvo; o destino vira uma seta. */
-	.needs a {
-		grid-template-columns: 0.875rem minmax(0, 1fr) auto;
-		min-height: 3rem;
-	}
-
-	.needs .where {
-		display: none;
-	}
-
-	.needs a::after {
-		content: "›";
-		grid-column: 3;
-		grid-row: 1;
-		color: var(--faint);
-		font-size: 1.25rem;
-		line-height: 1;
-	}
-
-	/* Telas antigas: a linha inteira abre a tela. */
-	.cmd-list li {
-		position: relative;
-		min-height: 3rem;
-	}
-
-	.cmd-list li a::after {
-		content: "";
-		position: absolute;
-		inset: 0;
-	}
-
-	/* Tabelas largas: rolam de lado com a primeira coluna presa. */
-	.table-wrap th:first-child,
-	.table-wrap td:first-child {
-		position: sticky;
-		left: 0;
-		z-index: 1;
-		background: var(--panel);
-		box-shadow: 1px 0 0 var(--hairline);
-	}
-
-	/*
-	 * Tela antiga embutida e Logs: a página não rola; o iframe (ou o log) ocupa o resto da tela e
-	 * só ele rola. Assim as barras fixas das telas antigas ("Salvar todas") ficam visíveis.
-	 */
-	body[data-view="embed"],
-	body[data-view="logs"] {
-		height: 100dvh;
-		overflow: hidden;
-	}
-
-	body[data-view="embed"] .shell,
-	body[data-view="logs"] .shell {
-		height: calc(100dvh - var(--topbar-h) - var(--bottombar-h) - env(safe-area-inset-bottom, 0px));
-		min-height: 0;
-	}
-
-	body[data-view="embed"] .main,
-	body[data-view="logs"] .main {
-		position: relative;
-		display: flex;
-		flex-direction: column;
-		min-height: 0;
-		overflow: hidden;
-		padding-bottom: 0;
-	}
-
-	body[data-view="embed"] .main {
-		padding: 0.625rem 0 0;
-	}
-
-	body[data-view="embed"] .view-head {
-		margin: 0 0 0.5rem;
-		padding: 0 1rem;
+	.btn,
+	.subnav-tab,
+	.seg button,
+	.seg .seg-link,
+	.field {
 		min-height: var(--touch-min);
 	}
 
-	/* O título deixa espaço para os dois ícones; as abas (Dossiês) descem para a linha de baixo. */
-	body[data-view="embed"] .view-head > div:first-child {
-		display: flex;
-		align-items: center;
-		min-height: var(--touch-min);
-		padding-right: 6rem;
-	}
-
-	body[data-view="embed"] .view-head > .tabs {
-		flex: 1 1 100%;
-		flex-wrap: nowrap;
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	body[data-view="embed"] .view-head > .tabs .tab {
-		flex: none;
-	}
-
-	body[data-view="embed"] #view-body,
-	body[data-view="logs"] #view-body {
-		flex: 1;
-		min-height: 0;
-		display: flex;
-		flex-direction: column;
-	}
-
-	body[data-view="embed"] .embed {
-		flex: 1;
-		min-height: 0;
-		grid-template-rows: 1fr;
-	}
-
-	/* Recarregar e Abrir viram dois ícones na linha do título. */
-	body[data-view="embed"] .embed-bar {
-		position: absolute;
-		top: 0.625rem;
-		right: 0.75rem;
-		gap: 0.25rem;
-	}
-
-	body[data-view="embed"] .embed-bar .tag,
 	.btn-label {
 		position: absolute;
 		width: 1px;
@@ -1286,20 +1595,110 @@ th.num {
 		white-space: nowrap;
 	}
 
-	body[data-view="embed"] .embed-bar .btn {
-		border-color: var(--control-border);
-		width: var(--touch-min);
-		justify-content: center;
-		padding: 0;
+	.btn:has(.btn-label) {
+		min-width: var(--touch-min);
 	}
 
-	body[data-view="embed"] .embed iframe {
+	.need-main {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+	}
+
+	.need .go-where {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+
+	.field {
+		flex: 1 1 10rem;
+	}
+
+	.field input {
+		width: 100%;
+	}
+
+	.fld-inline {
+		flex: 1 1 100%;
+	}
+
+	/*
+	 * Tela antiga embutida e Logs: a página não rola; o iframe (ou o log) ocupa o resto da
+	 * tela e só ele rola. Assim as barras fixas das telas antigas ("Salvar todas") ficam visíveis.
+	 */
+	body[data-layout="embed"],
+	body[data-layout="fill"] {
+		height: 100dvh;
+		overflow: hidden;
+	}
+
+	body[data-layout="embed"] .shell,
+	body[data-layout="fill"] .shell {
+		height: calc(100dvh - var(--topbar-h) - var(--bottombar-h) - env(safe-area-inset-bottom, 0px));
+		min-height: 0;
+	}
+
+	body[data-layout="embed"] .main,
+	body[data-layout="fill"] .main {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		overflow: hidden;
+		padding-bottom: 0;
+	}
+
+	body[data-layout="embed"] .main {
+		padding: 0.625rem 0 0;
+	}
+
+	body[data-layout="embed"] .view-head {
+		margin: 0 0 0.5rem;
+		padding: 0 1rem;
+	}
+
+	body[data-layout="embed"] .view-actions {
+		flex: 1 1 100%;
+	}
+
+	body[data-layout="embed"] .subnav {
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		scrollbar-width: none;
+	}
+
+	body[data-layout="embed"] #view-body,
+	body[data-layout="fill"] #view-body,
+	body[data-layout="embed"] .view-root,
+	body[data-layout="fill"] .view-root {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	body[data-layout="fill"] .view-root {
+		gap: 0.625rem;
+	}
+
+	body[data-layout="embed"] .embed {
+		flex: 1;
+		min-height: 0;
+		grid-template-rows: auto 1fr;
+	}
+
+	body[data-layout="embed"] .embed-bar {
+		margin: 0 1rem;
+		padding: 0 0.25rem 0 0.625rem;
+	}
+
+	body[data-layout="embed"] .embed iframe {
 		height: 100%;
 		min-height: 0;
 		border-width: 1px 0 0;
 	}
 
-	body[data-view="logs"] .log {
+	body[data-layout="fill"] .log {
 		flex: 1;
 		height: auto;
 		min-height: 0;
@@ -1334,28 +1733,67 @@ th.num {
 	}
 }
 
+/* Celular estreito: a linha de "Precisa de você" esconde o destino; o atalho externo desce. */
+@media (max-width: 30rem) {
+	.need {
+		flex-wrap: wrap;
+	}
+
+	.need-ext {
+		flex: 1 1 100%;
+		min-height: var(--touch-min);
+		padding-left: 2.125rem;
+		border-left: 0;
+		border-top: 1px dashed var(--hairline);
+	}
+
+	.rw-static {
+		grid-template-columns: 2.25rem minmax(0, 1fr);
+		row-gap: 0.5rem;
+	}
+
+	.rw-static .seg {
+		grid-column: 2;
+		justify-self: start;
+	}
+}
+
+/* Toque com o menu lateral (tablet): o topo cresce para o tema ter alvos de 44 px. */
+@media (pointer: coarse) and (min-width: 47.5625rem) and (min-height: 31.3125rem) {
+	:root {
+		--topbar-h: 3.5rem;
+	}
+}
+
 /*
  * Tela de toque em qualquer largura (celular deitado, tablet com barra lateral): alvos de 44 px
  * e campos com 16 px (o iOS dá zoom ao focar campo menor).
  */
 @media (pointer: coarse) {
-	.field input,
 	input,
 	select,
-	textarea {
+	textarea,
+	.field input,
+	.search-box input {
 		font-size: max(16px, 1em);
 	}
 
 	.btn,
-	.tab,
+	.subnav-tab,
 	.seg button,
+	.seg .seg-link,
 	.nav-item,
-	.summary-item {
+	.brand,
+	.topbar-needs,
+	.crumbs a,
+	.fld input:not([type="checkbox"]),
+	.fld select,
+	.search-box {
 		min-height: var(--touch-min);
 	}
 
 	.field {
-		height: var(--touch-min);
+		min-height: var(--touch-min);
 	}
 }
 

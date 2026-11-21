@@ -30,6 +30,7 @@
 		/>
 		<link rel="stylesheet" href="/admin/tokens.css?v=1" />
 		<link rel="stylesheet" href="/admin/admin.css?v=1" />
+		<link rel="modulepreload" href="/admin/core.js" />
 	</head>
 	<body>
 		<a class="skip" href="#main">Pular para o conteúdo</a>
@@ -41,15 +42,13 @@
 				<span class="brand-sub">admin</span>
 			</a>
 			<span class="topbar-sep" aria-hidden="true"></span>
-			<span class="topbar-summary" id="topbar-summary" aria-live="polite"></span>
+			<a class="topbar-needs" id="topbar-needs" href="#/geral" aria-live="polite">
+				<span class="lamp" data-state="busy" aria-hidden="true"></span>
+				<span class="topbar-needs-text">Lendo o estado…</span>
+			</a>
 			<span class="spacer"></span>
-			<div class="seg seg-theme" id="theme-switch" role="group" aria-label="Tema">
-				<button type="button" data-theme-choice="auto" aria-pressed="true">Auto</button>
-				<button type="button" data-theme-choice="light" aria-pressed="false">Claro</button>
-				<button type="button" data-theme-choice="dark" aria-pressed="false">Escuro</button>
-			</div>
-			<button type="button" class="btn btn-quiet theme-cycle" id="theme-cycle">Tema: Auto</button>
-			<a class="btn btn-quiet" href="/logout">Sair</a>
+			<span id="topbar-theme"></span>
+			<a class="btn btn-quiet topbar-logout" href="/logout">Sair</a>
 		</header>
 		<div class="banner" id="session-banner" role="alert" hidden>
 			<span class="status"><span class="lamp" data-state="down" aria-hidden="true"></span></span>
@@ -59,22 +58,14 @@
 
 		<div class="shell">
 			<nav class="sidebar" id="sidebar" aria-label="Áreas do painel"></nav>
-			<main class="main" id="main" tabindex="-1"></main>
+			<main class="main" id="main" tabindex="-1">
+				<noscript><p class="notice error">O painel precisa de JavaScript ligado.</p></noscript>
+			</main>
 		</div>
 
-		<!-- Celular: as áreas fora da barra inferior, o tema e o Sair. -->
-		<dialog class="sheet" id="more-sheet" aria-labelledby="more-title">
-			<div class="sheet-body">
-				<p class="label" id="more-title">Mais áreas</p>
-				<ul class="sheet-areas"></ul>
-				<div class="sheet-actions">
-					<button type="button" class="btn" id="theme-cycle-sheet">Tema: Auto</button>
-					<a class="btn" href="/logout">Sair</a>
-					<form method="dialog"><button class="btn btn-quiet" type="submit">Fechar</button></form>
-				</div>
-			</div>
-		</dialog>
+		<nav class="bottombar" id="bottombar" aria-label="Áreas principais"></nav>
+		<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
 
-		<script src="/admin/admin.js?v=1"></script>
+		<script type="module" src="/admin/app.js?v=1"></script>
 	</body>
 </html>

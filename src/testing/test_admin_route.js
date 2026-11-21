@@ -1,18 +1,15 @@
 // src/testing/test_admin_route.js
 // /admin (painel unificado, experimental): exige admin, renova a sessão, não é servido
 // pelo express.static (nem como /admin/ nem como /admin.html) e troca o ?v= dos assets.
-// Também: GET /api/admin/links (com e sem .env) e o redirecionamento das telas antigas
-// (LEGACY_ADMIN_REDIRECTS, ?legado=1, ?auth=).
+// Também: módulos ES do painel (MIME e cache), GET /api/admin/links (com e sem .env) e o
+// redirecionamento das telas antigas (LEGACY_ADMIN_REDIRECTS, ?legado=1, ?auth=).
 
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
 const express = require("express");
-const {
-	registerIndexRoutes,
-	LEGACY_ADMIN_REDIRECTS
-} = require("../BotAPI/routes/indexRoutes");
+const { registerIndexRoutes, LEGACY_ADMIN_REDIRECTS } = require("../BotAPI/routes/indexRoutes");
 const { registerAdminRoutes, buildAdminLinks } = require("../BotAPI/routes/adminRoutes");
 
 const LINK_ENV = [
@@ -65,7 +62,12 @@ async function runTests() {
 				`${route} renova a sessão`
 			);
 			assert.strictEqual(res.headers.get("cache-control"), "no-cache", `${route} sem cache`);
-			assert.ok(!/admin\.js\?v=1"/.test(body), `${route} deve versionar o admin.js pelo mtime`);
+			assert.ok(!/app\.js\?v=1"/.test(body), `${route} deve versionar o app.js pelo mtime`);
+			assert.ok(
+				/<script type="module" src="\/admin\/app\.js\?v=/.test(body),
+				`${route} carrega o app.js como módulo ES`
+			);
+			assert.ok(!/maximum-scale/.test(body), `${route} não trava o zoom do celular`);
 		}
 		console.log("✓ /admin, /admin/ e /admin.html exigem admin e passam pela rota dedicada.");
 
@@ -89,6 +91,35 @@ async function runTests() {
 		const css = await fetch(`${baseUrl}/admin/tokens.css`);
 		assert.strictEqual(css.status, 200, "os assets do painel continuam estáticos");
 		console.log("✓ Assets em /admin/*.css servidos pelo express.static.");
+
+		// Módulos ES: MIME de JavaScript (senão o navegador recusa o import) e revalidação
+		// sempre (são importados sem ?v=, então não podem ficar 1 dia no cache).
+		for (const mod of [
+			"/admin/app.js",
+			"/admin/core.js",
+			"/admin/lib.js",
+			"/admin/areas/geral.js"
+		]) {
+			const res = await fetch(`${baseUrl}${mod}`);
+			assert.strictEqual(res.status, 200, `${mod} servido`);
+			assert.ok(
+				/^(text|application)\/javascript/.test(res.headers.get("content-type") || ""),
+				`${mod} com MIME de JavaScript (veio ${res.headers.get("content-type")})`
+			);
+			assert.strictEqual(res.headers.get("cache-control"), "no-cache", `${mod} revalida sempre`);
+		}
+		const versioned = await fetch(`${baseUrl}/admin/app.js?v=abc`);
+		assert.strictEqual(
+			versioned.headers.get("cache-control"),
+			"no-cache",
+			"módulo do admin revalida mesmo com ?v="
+		);
+		const other = await fetch(`${baseUrl}/banco.js?v=abc`);
+		assert.ok(
+			/max-age=604800/.test(other.headers.get("cache-control") || ""),
+			"assets de fora do admin mantêm o cache de 7 dias com ?v="
+		);
+		console.log("✓ Módulos do /admin com MIME de JavaScript e sem cache longo.");
 
 		// GET /api/admin/links: exige admin; lê do .env a cada pedido
 		const saved = Object.fromEntries(LINK_ENV.map((k) => [k, process.env[k]]));

@@ -37,8 +37,17 @@
 
 	/* Estados: precisa de você (âmbar), falha, tudo certo. */
 	--attention: light-dark(#825200, #e3ad4f);
+	--attention-bg: light-dark(
+		rgba(130, 82, 0, 0.1),
+		rgba(227, 173, 79, 0.12)
+	); /* fundo de pílula/aviso */
 	--destructive: light-dark(#b02a20, #ff7a7a);
 	--ok: light-dark(#3b6620, #93b97f);
+
+	/* Letra dos "outros painéis" na página Mais: G Grafana, W Waifuletes, J Jardim. */
+	--panel-grafana: light-dark(#a0520f, #f0a35e);
+	--panel-waifuletes: light-dark(#8a3d62, #e08ab8);
+	--panel-jardim: light-dark(#3b6620, #93b97f);
 
 	/* Seleção neutra (nunca âmbar) e foco. */
 	--selected: var(--fg);
@@ -60,6 +69,7 @@
 	--text-xs: 0.6875rem; /* 11px: rótulos mono em caixa alta, números pequenos */
 	--text-sm: 0.75rem; /* 12px: detalhes */
 	--text-md: 0.8125rem; /* 13px: texto */
+	--text-base: 0.9375rem; /* 15px: título de linha (rowItem) */
 	--text-lg: 1.125rem; /* 18px: título da área */
 	--text-xl: 1.25rem; /* 20px: número de um bloco */
 

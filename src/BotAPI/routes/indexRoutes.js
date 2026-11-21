@@ -56,6 +56,12 @@ function setStaticCacheHeaders(res, filePath) {
 		res.setHeader("Cache-Control", "no-cache");
 		return;
 	}
+	// Módulos do painel /admin (core.js, areas/*.js...) são importados sem ?v=: revalidam
+	// sempre (ETag), senão um deploy misturaria app.js novo com módulos antigos por até 1 dia.
+	if (isAdminModule(filePath)) {
+		res.setHeader("Cache-Control", "no-cache");
+		return;
+	}
 	const query = (res.req?.originalUrl || res.req?.url || "").split("?")[1] || "";
 	if (/(^|&)v=/.test(query)) {
 		res.setHeader("Cache-Control", `public, max-age=${ONE_WEEK_SECONDS}`);
@@ -63,6 +69,10 @@ function setStaticCacheHeaders(res, filePath) {
 }
 
 const STATIC_OPTIONS = { maxAge: "1d", etag: true, setHeaders: setStaticCacheHeaders };
+
+/** Arquivo .js/.css de public/admin/ (inclusive subpastas como areas/)? */
+const isAdminModule = (filePath) =>
+	/^admin[\\/].+\.(js|css)$/.test(path.relative(PUBLIC_DIR, filePath));
 
 /**
  * Telas antigas de admin que já têm área nativa no /admin: caminho canônico → rota interna
@@ -268,12 +278,12 @@ function registerIndexRoutes(api) {
 			const [vTokens, vCss, vJs] = await Promise.all([
 				assetVersion("admin/tokens.css"),
 				assetVersion("admin/admin.css"),
-				assetVersion("admin/admin.js")
+				assetVersion("admin/app.js")
 			]);
 			const html = rawHtml
 				.replace(/tokens\.css\?v=[^"']+/g, `tokens.css?v=${vTokens}`)
 				.replace(/admin\.css\?v=[^"']+/g, `admin.css?v=${vCss}`)
-				.replace(/admin\.js\?v=[^"']+/g, `admin.js?v=${vJs}`);
+				.replace(/app\.js\?v=[^"']+/g, `app.js?v=${vJs}`);
 			return res.type("html").send(html);
 		} catch {
 			return res.sendFile(ADMIN_VIEW);
