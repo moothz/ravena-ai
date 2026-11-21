@@ -78,5 +78,14 @@ module.exports = [
 				Highcharts: "readonly"
 			}
 		}
+	},
+	{
+		// Painel /admin: módulos ES (app.js, core.js, areas/*.js). embed.js segue como script
+		// clássico (é carregado pelas telas antigas).
+		files: ["public/admin/**/*.js"],
+		ignores: ["public/admin/embed.js"],
+		languageOptions: {
+			sourceType: "module"
+		}
 	}
 ];
