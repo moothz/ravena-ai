@@ -113,9 +113,10 @@ function buildExternalNav() {
 				);
 			})
 		),
-		missing.length
-			? h("p", { class: "nav-hint", text: `Para ligar, defina no .env: ${missing.join(", ")}.` })
-			: null
+		// replaceChildren(null) escreveria "null" na tela quando tudo está configurado
+		...(missing.length
+			? [h("p", { class: "nav-hint", text: `Para ligar, defina no .env: ${missing.join(", ")}.` })]
+			: [])
 	);
 }
 
