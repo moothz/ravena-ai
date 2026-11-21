@@ -2605,8 +2605,12 @@ function makeRollHandler(genderFilter) {
 						eventRarosMult,
 						eventWishMult
 					);
+					const excludedCharacterIds = allRollResults
+						.map((r) => r.character?.id || r.id)
+						.filter(Boolean);
 					const stepPayload = {
 						...basePayload,
+						...(excludedCharacterIds.length > 0 ? { excludeCharacterIds: excludedCharacterIds } : {}),
 						...(finalStepBonuses && Object.keys(finalStepBonuses).length > 0
 							? { bonuses: finalStepBonuses }
 							: {})

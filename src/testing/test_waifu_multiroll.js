@@ -489,6 +489,15 @@ async function runTests() {
 				false,
 				`Roll ${idx + 1} NÃO pode vazar isFreeRoll: true após consumo do bônus da fazenda`
 			);
+			assert.ok(
+				Array.isArray(capturedPayloads[idx]?.excludeCharacterIds),
+				`Roll ${idx + 1} deve conter excludeCharacterIds para evitar personagens repetidos`
+			);
+			assert.strictEqual(
+				capturedPayloads[idx]?.excludeCharacterIds?.length,
+				idx,
+				`Roll ${idx + 1} deve excluir exatamente os ${idx} personagens sorteados anteriormente`
+			);
 		}
 		assert.strictEqual(farmRollsLeft, 0, "Deve ter consumido o 1 roll da fazenda");
 		assert.strictEqual(
