@@ -206,7 +206,9 @@ export async function renderJogador(root, ctx, userId) {
 		externalLink(
 			// var-jogador é o palpite da "pessoa" do analytics (sem a tabela de LIDs e do Telegram);
 			// var-busca com o ID faz a tabela "Encontrar jogador" achar a pessoa certa se o palpite errar.
+			// var-moeda: o painel do jogador abre em Zinthos; daqui o assunto é Runas.
 			grafanaLink("jogador", {
+				"var-moeda": "runas",
 				"var-jogador": grafanaPerson(userId),
 				"var-busca": String(userId)
 			}),
