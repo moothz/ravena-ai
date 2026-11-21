@@ -218,8 +218,9 @@ window.addEventListener("beforeunload", (ev) => {
 });
 
 /**
- * Grava o bots.json: lista atual do servidor + todos os rascunhos pendentes (+ mudanças extra
- * por nome, como o Desativar da lista). Valida antes. Limpa os rascunhos gravados.
+ * Grava o bots.json (o POST leva a lista inteira). Sem patch: lista atual do servidor + todos os
+ * rascunhos pendentes, que são limpos. Com patch (Desativar/Reativar): só aqueles campos sobre a
+ * lista atual; os rascunhos ficam como estão, sem ir junto. Valida antes.
  * @param {{ patch?: Object<string, Object> }} [o] - nome → campos a sobrescrever
  * @returns {Promise<{ saved: string[], message: string, finalName: Object<string, string> }>}
  *   finalName: nome do rascunho novo → nome gravado (o identificador pode ter sido trocado)
@@ -231,7 +232,8 @@ export async function saveAll({ patch = {} } = {}) {
 	} catch (err) {
 		throw new Error(explain(err, "ler a lista atual antes de salvar"));
 	}
-	const pend = pendingDrafts();
+	const onlyPatch = Object.keys(patch).length > 0;
+	const pend = onlyPatch ? [] : pendingDrafts();
 	const edited = new Map();
 	const added = [];
 	const finalName = {};
@@ -259,6 +261,11 @@ export async function saveAll({ patch = {} } = {}) {
 		res = await send("POST", "/api/bots", list);
 	} catch (err) {
 		throw new Error(explain(err, "salvar o bots.json"));
+	}
+	// O rascunho pendente da instância alterada acompanha o campo (senão o desfaria ao salvar).
+	for (const [nome, fields] of Object.entries(patch)) {
+		const d = drafts.get(nome);
+		if (d && "enabled" in fields) d.values.enabled = !!fields.enabled;
 	}
 	const saved = pend.map(([n]) => n);
 	for (const n of saved) drafts.delete(n);
