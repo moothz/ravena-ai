@@ -58,7 +58,9 @@ async function testSameOrigin() {
 	const app = express();
 	app.use(security.createSameOriginGuard({ hasCredentials: (req) => !!req.headers.cookie }));
 	app.post("/escrever", (req, res) => res.json({ ok: true }));
-	app.get("/restart/:botId", (req, res) => res.json({ ok: true }));
+	for (const r of ["restart", "recreate", "reconnect", "qrcode-initconnect"]) {
+		app.get(`/${r}/:botId`, (req, res) => res.json({ ok: true }));
+	}
 	app.get("/ler", (req, res) => res.json({ ok: true }));
 
 	await withServer(app, async (base) => {
@@ -117,6 +119,49 @@ async function testSameOrigin() {
 				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
 				403
 			],
+			[
+				"GET /recreate puxado por outro site",
+				"GET",
+				"/recreate/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
+				403
+			],
+			[
+				"GET /reconnect com Origin de outro site",
+				"GET",
+				"/reconnect/bot1",
+				{ ...cookie, Origin: "https://evil.example" },
+				403
+			],
+			[
+				"GET /qrcode-initconnect puxado por outro site",
+				"GET",
+				"/qrcode-initconnect/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
+				403
+			],
+			[
+				"HTTP puro: navegação com cookie sem Sec-Fetch-Site, Origin nem Referer",
+				"GET",
+				"/recreate/bot1",
+				cookie,
+				403
+			],
+			[
+				"HTTP puro: navegação com cookie e Referer de outro site",
+				"GET",
+				"/restart/bot1",
+				{ ...cookie, Referer: "http://evil.example/pagina" },
+				403
+			],
+			[
+				"HTTP puro: fetch da própria tela (Referer da mesma origem)",
+				"GET",
+				"/restart/bot1",
+				{ ...cookie, Referer: `${base}/admin` },
+				200
+			],
+			["script sem cookie (Authorization) continua igual", "GET", "/recreate/bot1", {}, 200],
 			[
 				"GET de leitura vindo de outro site",
 				"GET",

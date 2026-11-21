@@ -19,8 +19,15 @@ function createFrameAncestorsGuard() {
 
 const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-/** GETs que mudam estado (legado: a tela /instances os chama com fetch da mesma origem). */
-const STATEFUL_GET = /^\/(restart|logout)\/[^/]+\/?$/;
+/**
+ * GETs que mudam estado (legado: as telas de instância os chamam com fetch da mesma origem).
+ * /recreate apaga e recria a instância; /reconnect e /qrcode-initconnect mexem na sessão.
+ */
+const STATEFUL_GET = /^\/(restart|logout|recreate|reconnect|qrcode-initconnect)\/[^/]+\/?$/;
+
+/** A requisição traz o cookie de sessão do painel (que o navegador anexa sozinho). */
+const hasSessionCookie = (req) =>
+	/(?:^|;\s*)ravena_admin_session=/.test(String(req.headers.cookie || ""));
 
 /**
  * Hosts aceitos como origem de uma escrita: o Host da requisição, o X-Forwarded-Host do
@@ -52,7 +59,7 @@ function allowedHosts(req) {
 
 /**
  * Recusa (403) escritas com credencial de admin que vêm de outro site (CSRF): métodos
- * de escrita e os GETs /restart/:botId e /logout/:botId.
+ * de escrita e os GETs que mudam estado de uma instância (STATEFUL_GET).
  *
  * Só olha requisições que carregam credencial (cookie de sessão, Authorization ou ?auth=),
  * porque é aí que o navegador anexa a sessão sozinho. Sem Origin e sem Sec-Fetch-Site
@@ -76,6 +83,19 @@ function createSameOriginGuard({ hasCredentials, logger } = {}) {
 			} catch {
 				crossSite = true;
 			}
+		}
+		// GET que muda estado com o cookie do painel: em HTTP puro uma navegação de outro site não
+		// manda Sec-Fetch-Site nem Origin, então exige prova de mesma origem (o fetch das telas da
+		// Ravena manda o Referer da própria página). curl/scripts com Authorization seguem iguais.
+		if (!crossSite && isStatefulGet && !site && !origin && hasSessionCookie(req)) {
+			let sameReferer = false;
+			try {
+				const ref = req.headers.referer;
+				sameReferer = !!ref && allowedHosts(req).has(new URL(ref).host.toLowerCase());
+			} catch {
+				sameReferer = false;
+			}
+			crossSite = !sameReferer;
 		}
 		if (!crossSite) return next();
 
