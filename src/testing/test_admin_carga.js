@@ -42,7 +42,8 @@ async function runTests() {
 		loads: base.loads.map((l) => (patch[l.source] ? { ...l, ...patch[l.source] } : l))
 	});
 
-	// Situação geral: desligada, parada, e a ordem pausada > com erro > atrasada > rodando/em dia
+	// Situação geral: desligada, parada, e a ordem com erro > atrasada > pausada > sem carga > rodando/em dia
+	// (a mesma do econHealth do kit, que o menu e a Visão geral usam)
 	assert.strictEqual(M.overall(null).word, "sem dado");
 	let o = M.overall({ enabled: false, worker: false });
 	assert.deepStrictEqual([o.word, o.available], ["desligada", false]);
@@ -66,11 +67,25 @@ async function runTests() {
 		"intervalo maior aumenta a tolerância"
 	);
 	const pausedFailing = { ...failing, schedule: { ...base.schedule, paused: true } };
-	assert.strictEqual(
-		M.overall(pausedFailing).word,
-		"pausada",
-		"pausada vem antes de erro, como antes"
-	);
+	assert.strictEqual(M.overall(pausedFailing).word, "com erro", "a pausa não esconde a falha");
+	const pausedLate = { ...late, schedule: { ...late.schedule, paused: true } };
+	assert.strictEqual(M.overall(pausedLate).word, "atrasada", "a pausa não esconde o atraso");
+	const pausedOk = { ...base, schedule: { ...base.schedule, paused: true } };
+	assert.strictEqual(M.overall(pausedOk).word, "pausada");
+	assert.strictEqual(M.overall({ ...pausedOk, loads: [] }).word, "pausada");
+	// Mesma palavra que o econHealth (menu e Visão geral) em todos os casos
+	const kit = await import(pathToFileURL(path.join(__dirname, "../../public/admin/lib.js")).href);
+	for (const st of [
+		base,
+		failing,
+		late,
+		pausedFailing,
+		pausedLate,
+		pausedOk,
+		{ ...base, loads: [] }
+	]) {
+		assert.strictEqual(kit.econHealth(st).word, M.overall(st).word, "mesma ordem nos dois lugares");
+	}
 	// atraso só das fontes principais: "por jogador" com 50 h não acende
 	assert.strictEqual(M.overall(base).word, "em dia");
 	console.log("✓ overall: desligada, parada, pausada, com erro, atrasada, rodando, em dia.");

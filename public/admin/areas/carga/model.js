@@ -59,8 +59,10 @@ export function dayFmt(ts) {
 }
 
 /**
- * Situação geral (pílula do cartão antigo), na mesma ordem: pausada > com erro > atrasada >
- * rodando agora / em dia. Sem a carga de pé: desligada ou parada, com o motivo.
+ * Situação geral, na mesma ordem do econHealth do kit (menu e Visão geral): com erro >
+ * atrasada > pausada > sem carga ainda > rodando agora / em dia. Pausar é escolha de quem
+ * administra e já aparece no agendamento; não pode esconder uma falha ou um atraso, que são o
+ * que pede ação. Sem a carga de pé: desligada ou parada, com o motivo.
  * lamp: estado do kit (ok | attention | down | off | busy).
  * @param {Object|null} st - GET /api/economy/admin/status
  * @returns {{ lamp: string, word: string, reason?: string, available: boolean }}
@@ -87,6 +89,9 @@ export function overall(st) {
 	const now = st.now || Date.now();
 	const main = (st.loads || []).filter((l) => (st.sources || []).includes(l.source));
 	const worstLag = main.reduce((m, l) => Math.max(m, l.okTo ? now - l.okTo : Infinity), 0);
+	if (main.some((l) => !l.lastOk)) return { lamp: "down", word: "com erro", available: true };
+	if (main.length && worstLag > lagLimit(sch))
+		return { lamp: "attention", word: "atrasada", available: true };
 	if (sch.paused) return { lamp: "off", word: "pausada", available: true };
 	if (!main.length) {
 		return {
@@ -95,8 +100,6 @@ export function overall(st) {
 			available: true
 		};
 	}
-	if (main.some((l) => !l.lastOk)) return { lamp: "down", word: "com erro", available: true };
-	if (worstLag > lagLimit(sch)) return { lamp: "attention", word: "atrasada", available: true };
 	if (st.running) return { lamp: "busy", word: "rodando agora", available: true };
 	return { lamp: "ok", word: "em dia", available: true };
 }

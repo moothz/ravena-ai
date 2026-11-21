@@ -114,6 +114,13 @@ async function runTests() {
 	assert.deepStrictEqual(e.late, [{ name: "Zinthos", hours: 5 }]);
 	e = lib.econHealth({ ...base, schedule: { everyHours: 6, paused: true }, loads: [] });
 	assert.strictEqual(e.word, "pausada");
+	e = lib.econHealth({
+		...base,
+		schedule: { everyHours: 1, paused: true },
+		loads: [{ source: "runas", lastOk: false, lastError: "503" }]
+	});
+	assert.strictEqual(e.word, "com erro", "pausa não esconde a falha");
+	assert.strictEqual(lib.econHealth({ ...base, loads: [] }).word, "sem carga ainda");
 	console.log("✓ econHealth (em dia, com erro, atrasada, pausada, desligada).");
 
 	// Precisa de você

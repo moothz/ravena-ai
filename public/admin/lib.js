@@ -236,9 +236,16 @@ export function econHealth(st) {
 			});
 		}
 	}
+	// Ordem única (a área Carga usa a mesma): com erro > atrasada > pausada > sem carga ainda >
+	// rodando agora / em dia. A pausa é escolha de quem administra; não esconde falha nem atraso.
 	if (out.failing.length) Object.assign(out, { state: "down", word: "com erro" });
 	else if (out.late.length) Object.assign(out, { state: "attention", word: "atrasada" });
 	else if (out.paused) Object.assign(out, { state: "off", word: "pausada" });
+	else if (!main.length)
+		Object.assign(out, {
+			state: out.running ? "ok" : "off",
+			word: out.running ? "rodando agora" : "sem carga ainda"
+		});
 	else Object.assign(out, { state: "ok", word: out.running ? "rodando agora" : "em dia" });
 	return out;
 }
