@@ -1,18 +1,10 @@
 /*
- * Peças de tela da área Banco que o kit ainda não tem: paginação por link, bloco de saldo com
- * emblema, botão de copiar e o CSS da área. Candidatas a subir para o core.js.
+ * Peças de tela que só a área Banco usa: paginação por link, bloco de saldo com emblema e o
+ * botão de copiar o ID.
  */
 
-import { h, coinEmblem, toast, fmt, srOnly } from "../../core.js";
+import { h, coinEmblem, copyText, fmt, srOnly } from "../../core.js";
 import { pageWindow } from "./lib.js";
-
-/** Carrega o CSS da área uma vez (o /admin só traz o admin.css). */
-export function ensureCss() {
-	if (document.querySelector('link[data-area-css="banco"]')) return;
-	document.head.append(
-		h("link", { rel: "stylesheet", href: "/admin/areas/banco.css?v=1", "data-area-css": "banco" })
-	);
-}
 
 /**
  * Paginação por links (o endereço guarda a página: voltar funciona).
@@ -98,15 +90,6 @@ export function copyButton(text, label = "Copiar ID") {
 		class: "btn btn-quiet",
 		"data-key": "copiar-id",
 		text: label,
-		onclick: async () => {
-			try {
-				await navigator.clipboard.writeText(text);
-				toast(`ID ${text} copiado`, { kind: "ok" });
-			} catch {
-				toast("Não deu para copiar (o navegador bloqueou a área de transferência)", {
-					kind: "error"
-				});
-			}
-		}
+		onclick: () => copyText(text, { ok: `ID ${text} copiado` })
 	});
 }

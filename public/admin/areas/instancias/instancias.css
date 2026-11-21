@@ -149,22 +149,22 @@
 	}
 
 	.inst-row-msg {
-	position: relative;
-	z-index: 1;
-	font-size: var(--text-sm);
-	color: var(--fg);
-	overflow-wrap: anywhere;
-}
+		position: relative;
+		z-index: 1;
+		font-size: var(--text-sm);
+		color: var(--fg);
+		overflow-wrap: anywhere;
+	}
 
-.inst-row-msg:empty {
-	display: none;
-}
+	.inst-row-msg:empty {
+		display: none;
+	}
 
-.inst-row-msg[data-kind="error"] {
-	color: var(--destructive);
-}
+	.inst-row-msg[data-kind="error"] {
+		color: var(--destructive);
+	}
 
-.inst-acts {
+	.inst-acts {
 		grid-column: 2 / -1;
 		justify-content: flex-start;
 	}
@@ -507,13 +507,6 @@
 }
 
 @media (pointer: coarse) {
-	/* Trilha: o kit dá altura de toque a .crumbs a, mas o link é inline e não a recebe. */
-	.view-root .crumbs a {
-		display: inline-flex;
-		align-items: center;
-		min-height: var(--touch-min);
-	}
-
 	.inst-select,
 	.inst-prop input,
 	.inst-prop select,

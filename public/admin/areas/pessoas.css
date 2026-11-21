@@ -120,15 +120,6 @@
 	min-height: var(--control-h);
 }
 
-/* Toque: a trilha vira alvo de 44 px (o kit não aumenta .crumbs a). */
-@media (pointer: coarse) {
-	.pz .crumbs a {
-		display: inline-flex;
-		align-items: center;
-		min-height: var(--touch-min);
-	}
-}
-
 @media (max-width: 30rem) {
 	.pz .pz-facts li {
 		grid-template-columns: minmax(0, 1fr);

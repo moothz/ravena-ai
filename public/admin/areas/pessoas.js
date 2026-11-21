@@ -22,6 +22,7 @@ import {
 	card,
 	rows,
 	rowItem,
+	loadAreaCss,
 	kv,
 	tiles,
 	crumbs,
@@ -51,18 +52,6 @@ import {
 
 const AREA = "pessoas";
 const enc = encodeURIComponent;
-
-/* CSS próprio da área (o kit não tem carregador de CSS por área). */
-function ensureStyle() {
-	if (document.querySelector('link[data-area-css="pessoas"]')) return;
-	document.head.append(
-		h("link", {
-			rel: "stylesheet",
-			href: "/admin/areas/pessoas.css?v=1",
-			"data-area-css": "pessoas"
-		})
-	);
-}
 
 /** Aba ativa a partir da sub-rota. */
 function tabOf(segs) {
@@ -623,7 +612,7 @@ export default {
 	desc: "Dossiês de pessoas e grupos (o resumo que a IA mantém) e histórico de moderação.",
 	summary: () => ({ text: "dossiês de pessoas e grupos" }),
 	async render(root, ctx) {
-		ensureStyle();
+		loadAreaCss("pessoas", "/admin/areas/pessoas.css?v=2");
 		const tab = tabOf(ctx.segs);
 		const q = (ctx.params.get("q") || "").trim();
 		ctx.head.append(

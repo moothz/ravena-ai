@@ -164,15 +164,6 @@
 	flex: 1;
 }
 
-/* Confirmação ocupa o rodapé inteiro (como no mock) */
-.ev-acts:has(> .confirm) > :not(.confirm) {
-	display: none;
-}
-
-.ev-acts > .confirm {
-	flex: 1;
-}
-
 .ev-acts-page {
 	padding: 0.625rem 0 0;
 }
@@ -330,11 +321,6 @@
 }
 
 @media (pointer: coarse) {
-	[data-view="eventos"] .crumbs a {
-		display: inline-flex;
-		align-items: center;
-	}
-
 	.ev-num {
 		min-height: var(--touch-min);
 		font-size: max(16px, 1em);

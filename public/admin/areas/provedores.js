@@ -29,7 +29,8 @@ import {
 	plural,
 	llmFailing,
 	SERVICE_NAMES,
-	buildHash
+	buildHash,
+	loadAreaCss
 } from "../core.js";
 import { renderGestao } from "./provedores/gestao.js";
 import {
@@ -40,18 +41,6 @@ import {
 	rowCost,
 	statusOf
 } from "./provedores/logic.js";
-
-/** CSS da área, carregado uma vez. */
-function ensureCss() {
-	if (document.querySelector('link[data-area-css="provedores"]')) return;
-	document.head.append(
-		h("link", {
-			rel: "stylesheet",
-			href: "/admin/areas/provedores.css?v=1",
-			"data-area-css": "provedores"
-		})
-	);
-}
 
 const COST_TYPES = [
 	{ id: "text", label: "Modelo de texto" },
@@ -289,7 +278,7 @@ export default {
 		};
 	},
 	async render(root, ctx) {
-		ensureCss();
+		loadAreaCss("provedores", "/admin/areas/provedores.css?v=1");
 		const tab = tabOf(ctx);
 		ctx.head.append(
 			h(

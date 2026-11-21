@@ -16,19 +16,6 @@ import {
 	parseWaMarkup
 } from "./modelo.js";
 
-/* ── CSS da área (o admin.css é do kit; este arquivo só existe nesta área) ── */
-
-export function ensureCss() {
-	if (document.getElementById("css-instancias")) return;
-	document.head.append(
-		h("link", {
-			id: "css-instancias",
-			rel: "stylesheet",
-			href: new URL("./instancias.css?v=1", import.meta.url).href
-		})
-	);
-}
-
 /* ── Rotas da área ─────────────────────────────────────────────── */
 
 // "nova" e "avisos" são reservados: uma instância com esses nomes não teria ficha própria.
@@ -47,7 +34,7 @@ export const loadBots = (fresh = false) =>
 
 /**
  * Mensagem completa de uma falha: o motivo do kit (401/403/409/429…) e, nos erros 5xx, também
- * a mensagem do servidor (o kit a omite ali). what: "reiniciar a ravena-1".
+ * a mensagem do servidor (err.serverMessage). what: "reiniciar a ravena-1".
  */
 export function explain(err, what) {
 	const base =
@@ -56,8 +43,8 @@ export function explain(err, what) {
 			: err && err.message
 				? err.message
 				: "erro desconhecido";
-	const body = err && err.body;
-	const server = body && (typeof body.message === "string" ? body.message : body.error);
+	// O kit guarda a mensagem do servidor em serverMessage (nos 5xx ela não entra no message).
+	const server = err && err.serverMessage;
 	const extra = server && err.status >= 500 && !base.includes(server) ? `: ${server}` : "";
 	let hint = "";
 	if (err && err.status === 401 && err.botAuth)

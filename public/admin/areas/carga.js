@@ -19,6 +19,8 @@ import {
 	pill,
 	lamp,
 	confirmInline,
+	busy,
+	loadAreaCss,
 	toast,
 	errorNotice,
 	empty,
@@ -40,40 +42,9 @@ import {
 import * as M from "./carga/model.js";
 
 const BASE = "/api/economy/admin";
-const CSS_ID = "area-css-carga";
 /** Com rodada em andamento, o estado é relido a cada POLL_MS; sem rodada, a cada IDLE_MS. */
 const POLL_MS = 3000;
 const IDLE_MS = 60000;
-
-function ensureCss() {
-	if (document.getElementById(CSS_ID)) return;
-	document.head.append(
-		h("link", { id: CSS_ID, rel: "stylesheet", href: "/admin/areas/carga.css?v=1" })
-	);
-}
-
-/**
- * Roda fn com o botão ocupado (desabilitado, girando, com o rótulo de espera); erro vira toast.
- * @returns {Promise<boolean>} se deu certo
- */
-async function busy(btn, label, fn) {
-	const kids = [...btn.childNodes];
-	const wasDisabled = btn.disabled;
-	btn.disabled = true;
-	btn.setAttribute("aria-busy", "true");
-	btn.replaceChildren(h("span", { class: "spinner", "aria-hidden": "true" }), label);
-	try {
-		await fn();
-		return true;
-	} catch (err) {
-		toast(err && err.message ? err.message : "Não deu certo", { kind: "error" });
-		return false;
-	} finally {
-		btn.removeAttribute("aria-busy");
-		btn.replaceChildren(...kids);
-		btn.disabled = wasDisabled;
-	}
-}
 
 /** Data absoluta (Brasília) com o tempo relativo embaixo. */
 function when(ts, now) {
@@ -119,7 +90,7 @@ export default {
 		return { text: `${e.word} · ${every}` };
 	},
 	async render(root, ctx) {
-		ensureCss();
+		loadAreaCss("carga", "/admin/areas/carga.css?v=2");
 		const S = {
 			st: null,
 			stError: null,
@@ -175,7 +146,7 @@ export default {
 			}
 			if (!running) S.watchRun = false;
 			// Uma rodada que termina pode ter detectado possíveis mudanças novas
-			const editing = !force && slots.poss.querySelector(".confirm, .cg-edit");
+			const editing = !force && slots.poss.querySelector(".confirm");
 			const loadPossible = (possible || finished) && !editing;
 			if (loadPossible) {
 				if (M.isAvailable(S.st)) {
@@ -385,7 +356,7 @@ export default {
 		}
 
 		function possibleItem(a) {
-			const actions = h("div", { class: "cg-item-actions" });
+			const actions = h("div", { class: "cg-item-actions confirm-bar" });
 			const item = h(
 				"li",
 				{ class: "cg-item" },
@@ -425,74 +396,30 @@ export default {
 					await reload({ force: true });
 				}
 			});
-			ok.addEventListener("click", () => openEdit(item, actions, a, ok));
-			actions.append(ok, no);
-			return item;
-		}
-
-		/** Confirmar no lugar: campo com o texto (pode trocar), "Não" e "Confirmar mudança". */
-		function openEdit(item, actions, a, trigger) {
-			const input = h("input", {
-				type: "text",
-				maxlength: "300",
-				"data-key": `pm-texto-${a.id}`,
-				autocomplete: "off"
-			});
-			input.value = a.label;
-			const cancel = h("button", { type: "button", class: "btn btn-quiet", text: "Não" });
-			const go = h("button", {
-				type: "submit",
-				class: "btn btn-primary",
-				text: "Confirmar mudança"
-			});
-			const edit = h(
-				"form",
-				{ class: "cg-edit", "aria-label": "Confirmar possível mudança" },
-				h(
-					"label",
-					{ class: "fld" },
-					h("span", {
-						class: "fld-label",
-						text: "Texto da mudança (deixe como está ou explique o porquê)"
+			// Confirmar no lugar: campo com o texto (pode trocar), "Não" e "Confirmar mudança".
+			confirmInline(ok, {
+				question: "Confirmar esta possível mudança?",
+				confirmLabel: "Confirmar mudança",
+				danger: false,
+				content: () =>
+					field({
+						label: "Texto da mudança (deixe como está ou explique o porquê)",
+						name: "texto",
+						value: a.label,
+						attrs: { maxlength: "300", autocomplete: "off", "data-key": `pm-texto-${a.id}` }
 					}),
-					input
-				),
-				h("div", { class: "form-actions" }, go, cancel)
-			);
-			const close = () => {
-				edit.remove();
-				actions.hidden = false;
-				trigger.focus();
-			};
-			cancel.addEventListener("click", close);
-			edit.addEventListener("keydown", (ev) => {
-				if (ev.key === "Escape") {
-					ev.preventDefault();
-					close();
+				onConfirm: async (box) => {
+					await send("POST", `${BASE}/annotations/decide`, {
+						id: Number(a.id),
+						decision: "confirmada",
+						texto: box.querySelector("input").value
+					});
+					toast("Mudança confirmada.", { kind: "ok" });
+					await reload({ force: true });
 				}
 			});
-			edit.addEventListener("submit", async (ev) => {
-				ev.preventDefault();
-				await busy(go, "Confirmando…", async () => {
-					cancel.disabled = true;
-					try {
-						await send("POST", `${BASE}/annotations/decide`, {
-							id: Number(a.id),
-							decision: "confirmada",
-							texto: input.value
-						});
-					} finally {
-						cancel.disabled = false;
-					}
-					toast("Mudança confirmada.", { kind: "ok" });
-					edit.remove();
-					await reload({ force: true });
-				});
-			});
-			actions.hidden = true;
-			item.append(edit);
-			input.focus();
-			input.select();
+			actions.append(ok, no);
+			return item;
 		}
 
 		/* ── Registrar mudança (não redesenha: o texto digitado fica) ── */

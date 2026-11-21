@@ -11,8 +11,7 @@
  *   #/banco/config               Números do banco e parâmetros
  */
 
-import { subnav, externalLink, buildHash } from "../core.js";
-import { ensureCss } from "./banco/parts.js";
+import { subnav, externalLink, buildHash, loadAreaCss } from "../core.js";
 import { renderJogadores } from "./banco/jogadores.js";
 import { renderJogador } from "./banco/jogador.js";
 import { renderTransacoes } from "./banco/transacoes.js";
@@ -37,7 +36,7 @@ export default {
 	title: "Banco",
 	desc: "RavenaBank: jogadores, transações, cotações e configuração.",
 	async render(root, ctx) {
-		ensureCss();
+		loadAreaCss("banco", "/admin/areas/banco.css?v=2");
 		const tab = tabOf(ctx);
 		ctx.head.append(
 			subnav(TABS, tab, { label: "Seções do Banco" }),

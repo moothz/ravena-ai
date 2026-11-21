@@ -186,24 +186,9 @@
 	color: var(--destructive);
 }
 
-/* Desfazer na linha: pergunta, valor final e botões. */
+/* Desfazer na linha (confirmInline com o valor final): sem sublinhado herdado da célula. */
 .bk-undo {
-	display: grid;
-	gap: 0.5rem;
-	width: min(24rem, 100%);
-	text-align: left;
 	text-decoration: none;
-}
-
-.bk-undo .fld {
-	color: var(--fg);
-}
-
-.bk-undo-btns {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	justify-content: flex-end;
 }
 
 /* No modo cartão (tabela estreita), o desfazer ocupa a linha toda. */

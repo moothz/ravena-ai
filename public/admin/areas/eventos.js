@@ -20,6 +20,8 @@ import {
 	toast,
 	errorNotice,
 	confirmInline,
+	copyText,
+	loadAreaCss,
 	externalLink,
 	grafanaLink,
 	grafanaMissing,
@@ -59,29 +61,6 @@ import {
 const LIST = "/api/events/admin";
 const GEN = "/api/events/admin/generate-message";
 const HOME = "#/eventos";
-
-/* O kit não tem CSS por área: a folha da área entra uma vez, e a tela espera ela carregar
-   (até 1,5 s) para não piscar sem estilo. */
-function ensureCss() {
-	const prev = document.querySelector('link[data-area-css="eventos"]');
-	if (prev) return prev.dataset.ready ? null : prev.ready;
-	const link = h("link", {
-		rel: "stylesheet",
-		href: "/admin/areas/eventos/eventos.css?v=1",
-		"data-area-css": "eventos"
-	});
-	link.ready = new Promise((ok) => {
-		const done = () => {
-			link.dataset.ready = "1";
-			ok();
-		};
-		link.addEventListener("load", done, { once: true });
-		link.addEventListener("error", done, { once: true });
-		setTimeout(done, 1500);
-	});
-	document.head.append(link);
-	return link.ready;
-}
 
 /* Diferença entre o relógio do servidor e o do navegador (serverTime de cada leitura). */
 const skews = new WeakMap();
@@ -269,7 +248,7 @@ function eventCard(ev, ctx) {
 			h("dt", { text: "Aviso e itens" }),
 			h("dd", { class: "ev-sent", text: startedText(ev) })
 		),
-		h("div", { class: "ev-acts" }, left, h("span", { class: "sp" }), right)
+		h("div", { class: "ev-acts confirm-bar" }, left, h("span", { class: "sp" }), right)
 	);
 }
 
@@ -496,20 +475,6 @@ function bonusSection(title, hint, catalog, values, onChange) {
 	};
 }
 
-async function copyText(textarea) {
-	try {
-		await navigator.clipboard.writeText(textarea.value);
-		toast("Mensagem copiada", { kind: "ok" });
-	} catch {
-		textarea.focus();
-		textarea.select();
-		const ok = document.execCommand && document.execCommand("copy");
-		toast(ok ? "Mensagem copiada" : "Mensagem selecionada: copie com Ctrl+C", {
-			kind: ok ? "ok" : ""
-		});
-	}
-}
-
 async function renderForm(root, ctx) {
 	const idSeg = ctx.segs[0];
 	const isNew = idSeg === "novo";
@@ -574,7 +539,7 @@ async function renderForm(root, ctx) {
 					]),
 					h(
 						"div",
-						{ class: "ev-acts ev-acts-page" },
+						{ class: "ev-acts ev-acts-page confirm-bar" },
 						deleteButton(ev, after, {
 							label:
 								ev.status === "proximo" || ev.status === "normal" ? "Cancelar evento" : "Apagar…"
@@ -750,7 +715,11 @@ async function renderForm(root, ctx) {
 	);
 	const copyBtn = h(
 		"button",
-		{ type: "button", class: "btn btn-quiet", onclick: () => copyText(msgIn) },
+		{
+			type: "button",
+			class: "btn btn-quiet",
+			onclick: () => copyText(msgIn.value, { ok: "Mensagem copiada", select: msgIn })
+		},
 		"Copiar"
 	);
 
@@ -807,7 +776,7 @@ export default {
 		return { text: active ? `${fmt(active)} em andamento` : "nenhum em andamento" };
 	},
 	async render(root, ctx) {
-		await ensureCss();
+		await loadAreaCss("eventos", "/admin/areas/eventos/eventos.css?v=2");
 		if (!ctx.segs.length) return renderList(root, ctx);
 		return renderForm(root, ctx);
 	}

@@ -114,10 +114,14 @@
 	display: none;
 }
 
-.cg-edit {
+/* Confirmar com o campo do texto: a caixa ocupa a linha inteira, embaixo do texto. */
+.cg-item-actions:has(> .confirm-block) {
 	grid-column: 1 / -1;
-	display: grid;
-	gap: 0.5rem;
+	justify-content: stretch;
+}
+
+.cg-item-actions > .confirm-block {
+	width: 100%;
 }
 
 /* Lista estreita: ações embaixo do texto. */

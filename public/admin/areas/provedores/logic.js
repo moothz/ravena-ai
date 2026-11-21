@@ -7,6 +7,8 @@
  * - fila do LLM, uso por provedor e tipo e simulador de custos (as fórmulas da tela antiga).
  */
 
+import { serviceKind } from "../../lib.js";
+
 /** Categorias na ordem da tela antiga, com o nome por extenso. */
 export const CATEGORIES = [
 	{ id: "llm", name: "Inteligência artificial (LLM)" },
@@ -62,11 +64,8 @@ export function categoriesOf(config) {
 
 /** Palavra de status de um valor de /api/services/status: "up" | "backup" | "down" | "unknown". */
 export function statusOf(value) {
-	const s = value && typeof value === "object" ? value.status : value;
-	if (s === "up" || s === "online" || s === "ok") return "up";
-	if (s === "backup") return "backup";
-	if (s === "down" || s === "offline") return "down";
-	return "unknown";
+	const k = serviceKind(value);
+	return k === "ok" ? "up" : k;
 }
 
 /**

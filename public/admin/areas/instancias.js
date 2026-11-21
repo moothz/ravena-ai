@@ -11,8 +11,7 @@
  * Telas em areas/instancias/*.js; regras puras em areas/instancias/modelo.js.
  */
 
-import { subnav, buildHash, fmt } from "../core.js";
-import { ensureCss } from "./instancias/comum.js";
+import { subnav, buildHash, fmt, loadAreaCss } from "../core.js";
 import { renderLista } from "./instancias/lista.js";
 import { renderFicha, renderNova } from "./instancias/ficha.js";
 import { renderAvisos } from "./instancias/avisos.js";
@@ -36,7 +35,7 @@ export default {
 			: { text: `${fmt(bots.length)} conectadas` };
 	},
 	async render(root, ctx) {
-		ensureCss();
+		loadAreaCss("instancias", "/admin/areas/instancias/instancias.css?v=2");
 		const first = ctx.segs[0];
 		ctx.head.append(
 			subnav(AREA_TABS, first === "avisos" ? "avisos" : "lista", { label: "Seções de Instâncias" })

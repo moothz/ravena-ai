@@ -23,6 +23,7 @@ import {
 	form,
 	toast,
 	confirmInline,
+	busy,
 	errorNotice,
 	dataTable,
 	poll,
@@ -101,22 +102,10 @@ async function commit(ctx, target, change, okMsg, goTo) {
 	else ctx.refresh();
 }
 
-/** Botão comum com erro em toast (para ações sem confirmação). */
+/** Botão comum com erro em toast (para ações sem confirmação); busy() mantém o foco. */
 function actionButton(label, props, run) {
 	const b = h("button", { type: "button", class: "btn", ...props }, label);
-	b.addEventListener("click", async () => {
-		// aria-busy em vez de disabled: desabilitar tira o foco e ele não volta após gravar
-		if (b.getAttribute("aria-disabled") === "true" || b.getAttribute("aria-busy") === "true")
-			return;
-		b.setAttribute("aria-busy", "true");
-		try {
-			await run();
-		} catch (err) {
-			toast(err && err.message ? err.message : "Não deu certo", { kind: "error" });
-		} finally {
-			b.removeAttribute("aria-busy");
-		}
-	});
+	b.addEventListener("click", () => busy(b, null, run));
 	return b;
 }
 

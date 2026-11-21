@@ -13,6 +13,7 @@ import {
 	dataTable,
 	searchBox,
 	field,
+	confirmInline,
 	pill,
 	icon,
 	note,
@@ -65,72 +66,45 @@ function undoControl(tx, ctx) {
 		"data-key": `desfazer-${tx.id}`,
 		text: "Desfazer…"
 	});
-	trigger.addEventListener("click", () => {
-		const def = undoDefault(tx);
-		const verb = def.debit ? "a debitar do jogador" : "a devolver ao jogador";
-		const valueField = field({
-			label: `Valor final em Runas (${verb})`,
-			name: "finalRunas",
-			value: money(def.final),
-			attrs: { inputmode: "decimal", autocomplete: "off" },
-			hint: def.debit
-				? `Venda: ${money(tx.runas_amount)} recebidas + 5% (${money(def.fee)}). Os ativos voltam ao jogo.`
-				: `Compra: ${money(tx.runas_amount)} pagas − 5% (${money(def.fee)}). Os ativos voltam ao banco.`
-		});
-		const input = valueField.querySelector("input");
-		const no = h("button", { type: "button", class: "btn btn-quiet", text: "Não" });
-		const go = h("button", { type: "button", class: "btn btn-danger", text: "Desfazer" });
-		const box = h(
-			"div",
-			{ class: "confirm bk-undo", role: "group", "aria-label": `Desfazer a transação #${tx.id}` },
-			h("span", { class: "q", text: `Desfazer #${tx.id}? Sem o limite de 5 minutos.` }),
-			valueField,
-			h("span", { class: "bk-undo-btns" }, no, go)
-		);
-		const restore = () => {
-			box.replaceWith(trigger);
-			trigger.focus();
-		};
-		no.addEventListener("click", restore);
-		box.addEventListener("keydown", (ev) => {
-			if (ev.key === "Escape") {
-				ev.preventDefault();
-				restore();
-			} else if (ev.key === "Enter" && ev.target === input) {
-				ev.preventDefault();
-				go.click();
-			}
-		});
-		go.addEventListener("click", async () => {
+	return confirmInline(trigger, {
+		question: `Desfazer #${tx.id}? Sem o limite de 5 minutos.`,
+		label: `Desfazer a transação #${tx.id}`,
+		confirmLabel: "Desfazer",
+		class: "bk-undo",
+		content: () => {
+			const def = undoDefault(tx);
+			const verb = def.debit ? "a debitar do jogador" : "a devolver ao jogador";
+			return field({
+				label: `Valor final em Runas (${verb})`,
+				name: "finalRunas",
+				value: money(def.final),
+				attrs: { inputmode: "decimal", autocomplete: "off" },
+				hint: def.debit
+					? `Venda: ${money(tx.runas_amount)} recebidas + 5% (${money(def.fee)}). Os ativos voltam ao jogo.`
+					: `Compra: ${money(tx.runas_amount)} pagas − 5% (${money(def.fee)}). Os ativos voltam ao banco.`
+			});
+		},
+		onConfirm: async (box) => {
+			const input = box.querySelector("input");
 			const finalRunas = parseNumber(input.value);
 			if (!Number.isFinite(finalRunas) || finalRunas < 0) {
 				toast("Informe um valor final válido de Runas (maior ou igual a zero).", { kind: "error" });
 				input.focus();
-				return;
+				return false;
 			}
-			go.disabled = true;
-			no.disabled = true;
-			go.textContent = "…";
 			try {
 				const r = await send("POST", "/api/games/bank/admin/undo-transaction", {
 					transactionId: tx.id,
 					finalRunas
 				});
 				if (!r || !r.ok) throw new Error((r && r.error) || "falha ao desfazer a transação");
-				toast(`Transação #${tx.id} desfeita; saldo e ativos atualizados`, { kind: "ok" });
-				ctx.refresh();
 			} catch (err) {
-				toast(`Erro ao desfazer: ${err.message}`, { kind: "error" });
-				go.disabled = false;
-				no.disabled = false;
-				go.textContent = "Desfazer";
+				throw new Error(`Erro ao desfazer: ${err.message}`);
 			}
-		});
-		trigger.replaceWith(box);
-		input.focus();
-		input.select();
+			toast(`Transação #${tx.id} desfeita; saldo e ativos atualizados`, { kind: "ok" });
+			ctx.refresh();
+		}
 	});
-	return trigger;
 }
 
 function statusCell(t) {
