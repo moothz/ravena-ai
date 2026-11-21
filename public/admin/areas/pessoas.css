@@ -1,0 +1,144 @@
+/* Área "Pessoas e grupos" (carregado por areas/pessoas.js). Só var(--…) de tokens.css. */
+
+.pz .pz-subs {
+	display: grid;
+	gap: 1px;
+	min-width: 0;
+}
+
+.pz .pz-ids {
+	font-size: var(--text-xs);
+	color: var(--faint);
+}
+
+.pz .pz-line {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-width: 0;
+}
+
+.pz .pz-line > span:last-child {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.pz .pz-pills {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.pz .pz-pills .pill {
+	white-space: normal;
+}
+
+.pz .pz-sub {
+	margin: 0.25rem 0 0;
+	font-size: var(--text-sm);
+	font-weight: 600;
+	color: var(--muted);
+}
+
+.pz .pz-p {
+	margin: 0;
+}
+
+.pz .pz-list {
+	margin: 0;
+	padding-left: 1.125rem;
+	display: grid;
+	gap: 0.25rem;
+	font-size: var(--text-md);
+	overflow-wrap: anywhere;
+}
+
+.pz .pz-facts {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 0.5rem;
+}
+
+.pz .pz-facts li {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.5rem;
+	align-items: baseline;
+	padding: 0.5rem 0.625rem;
+	border: 1px solid var(--hairline);
+	border-radius: var(--radius-row);
+	background: var(--raised);
+}
+
+.pz .pz-fact {
+	overflow-wrap: anywhere;
+}
+
+.pz .pz-date {
+	font-size: var(--text-xs);
+	white-space: nowrap;
+}
+
+.pz .pz-history {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 0.625rem;
+}
+
+.pz .pz-hist {
+	display: grid;
+	gap: 0.5rem;
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--hairline);
+	border-radius: var(--radius-row);
+}
+
+.pz .pz-hist.latest {
+	border-color: var(--hairline-strong);
+	background: var(--raised);
+}
+
+.pz .pz-hist-hd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.pz .pz-bank {
+	font-size: var(--text-sm);
+}
+
+.pz .pz-bank-slot {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--control-h);
+}
+
+/* Toque: a trilha vira alvo de 44 px (o kit não aumenta .crumbs a). */
+@media (pointer: coarse) {
+	.pz .crumbs a {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--touch-min);
+	}
+}
+
+@media (max-width: 30rem) {
+	.pz .pz-facts li {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.pz .pz-facts li > * {
+		grid-column: 1;
+	}
+
+	.pz .pz-facts li .pill {
+		justify-self: start;
+	}
+}
