@@ -135,7 +135,20 @@ async function runTests() {
 			{ platform: "whatsapp", platform_id: "12@lid" }
 		]
 	};
-	assert.deepStrictEqual(lib.bankCandidates(d), ["5511900000001", "123456789012345"]);
+	assert.deepStrictEqual(lib.bankCandidates(d), ["5511900000001", "123456789012345", "987654321"]);
+	// Telegram: o banco guarda os dígitos do id do autor (como na demo: tg_906652908 → 906652908)
+	assert.deepStrictEqual(
+		lib.bankCandidates({
+			canonical_user_id: "tg_906652908",
+			identities: [{ platform: "telegram", platform_id: "906652908" }]
+		}),
+		["906652908"]
+	);
+	assert.deepStrictEqual(
+		lib.bankCandidates({ identities: [{ platform: "discord", platform_id: "123456789" }] }),
+		[],
+		"outras plataformas ficam de fora"
+	);
 	assert.deepStrictEqual(lib.bankCandidates({ canonical_user_id: "user_fulano" }), []);
 	assert.deepStrictEqual(lib.bankCandidates(null), []);
 	const users = [

@@ -204,7 +204,12 @@ export async function renderJogador(root, ctx, userId) {
 		adjustBtn,
 		impersonateButton(userId, name),
 		externalLink(
-			grafanaLink("jogador", { "var-jogador": grafanaPerson(userId) }),
+			// var-jogador é o palpite da "pessoa" do analytics (sem a tabela de LIDs e do Telegram);
+			// var-busca com o ID faz a tabela "Encontrar jogador" achar a pessoa certa se o palpite errar.
+			grafanaLink("jogador", {
+				"var-jogador": grafanaPerson(userId),
+				"var-busca": String(userId)
+			}),
 			"Histórico no Grafana",
 			{
 				button: true,

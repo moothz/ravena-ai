@@ -110,8 +110,8 @@ async function runTests() {
 		]
 	});
 	assert.strictEqual(e.state, "down");
-	assert.deepStrictEqual(e.failing, [{ name: "Runas", error: "Jardim 503" }]);
-	assert.deepStrictEqual(e.late, [{ name: "Zinthos", hours: 5 }]);
+	assert.deepStrictEqual(e.failing, [{ name: "Runas", source: "runas", error: "Jardim 503" }]);
+	assert.deepStrictEqual(e.late, [{ name: "Zinthos", source: "zinthos", hours: 5 }]);
 	e = lib.econHealth({ ...base, schedule: { everyHours: 6, paused: true }, loads: [] });
 	assert.strictEqual(e.word, "pausada");
 	e = lib.econHealth({
@@ -147,7 +147,7 @@ async function runTests() {
 			]
 		},
 		possible: [{ id: 1 }, { id: 2 }],
-		grafana: (name) => `https://g/${name}`
+		grafana: (name, params) => lib.withParams(`https://g/${name}`, params)
 	});
 	const titles = needs.map((n) => n.title);
 	assert.ok(titles.includes("Ravena B parada"), "instância parada");
@@ -158,9 +158,21 @@ async function runTests() {
 	assert.ok(titles.includes("2 possíveis mudanças da economia para decidir"));
 	assert.ok(titles.includes("Imagine: sem dado"));
 	const llm = needs.find((n) => n.title === "IA com muitas falhas");
-	assert.strictEqual(llm.href, "#/provedores", "LLM leva a Provedores");
+	assert.strictEqual(llm.href, "#/provedores/uso", "falhas de IA levam ao Uso de IA");
 	assert.strictEqual(llm.external.href, "https://g/llm");
-	assert.strictEqual(needs.find((n) => n.title.startsWith("Carga")).href, "#/carga");
+	assert.strictEqual(needs.find((n) => n.title === "Ravena B parada").href, "#/instancias/b");
+	assert.strictEqual(needs.find((n) => n.title === "LLM fora do ar").href, "#/provedores");
+	const carga = needs.find((n) => n.title.startsWith("Carga"));
+	assert.strictEqual(carga.href, "#/carga");
+	assert.strictEqual(carga.external.href, "https://g/economia?dtab=diagnstico&var-moedas=zinthos");
+	assert.strictEqual(
+		needs.find((n) => n.title.includes("possíveis mudanças")).external.href,
+		"https://g/economia?dtab=mudanas"
+	);
+	assert.deepStrictEqual(lib.econGrafana("runas.players", "x"), {
+		dtab: "x",
+		"var-moedas": "runas"
+	});
 	assert.strictEqual(lib.countActionable(needs), 5, "sem dado não conta como 'precisa de você'");
 	assert.strictEqual(needs[needs.length - 1].state, "off", "sem dado fica no fim");
 	assert.deepStrictEqual(lib.deriveNeeds({}), [], "sem leitura nenhuma, lista vazia");

@@ -118,9 +118,13 @@ export async function renderCotacoes(root, ctx) {
 		}),
 		note(
 			`Calculadas todo dia às 04:00 (Brasília)${r.updatedAt ? `; última em ${dateFmt(r.updatedAt)}` : ""}. “Forçar recálculo” refaz agora, sem esperar o horário. `,
-			externalLink(grafanaLink("economia", { dtab: "moeda" }), "Efeito no Grafana", {
-				missing: grafanaMissing()
-			})
+			externalLink(
+				grafanaLink("economia", { dtab: "moeda", "var-moedas": "runas" }),
+				"Efeito no Grafana",
+				{
+					missing: grafanaMissing()
+				}
+			)
 		)
 	);
 }

@@ -198,8 +198,9 @@ export const ECON_SOURCE_NAMES = {
  * Situação da carga da economia a partir de GET /api/economy/admin/status (mesma regra do
  * cartão do /banco/admin: atraso acima de intervalo + 2 h).
  * @param {Object|null} st
- * @returns {{ state: "ok"|"attention"|"down"|"off", word: string, detail?: string, failing: Array<{name: string, error: string}>,
- *   late: Array<{name: string, hours: number}>, paused: boolean, everyHours: number|null, running: boolean,
+ * @returns {{ state: "ok"|"attention"|"down"|"off", word: string, detail?: string,
+ *   failing: Array<{name: string, source: string, error: string}>,
+ *   late: Array<{name: string, source: string, hours: number}>, paused: boolean, everyHours: number|null, running: boolean,
  *   available: boolean }}
  */
 export function econHealth(st) {
@@ -228,10 +229,12 @@ export function econHealth(st) {
 	out.everyHours = sch.everyHours || null;
 	out.running = !!st.running;
 	for (const l of main) {
-		if (!l.lastOk) out.failing.push({ name: name(l.source), error: l.lastError || "erro" });
+		if (!l.lastOk)
+			out.failing.push({ name: name(l.source), source: l.source, error: l.lastError || "erro" });
 		else if (!l.okTo || now - l.okTo > limit) {
 			out.late.push({
 				name: name(l.source),
+				source: l.source,
 				hours: l.okTo ? Math.round((now - l.okTo) / 3600000) : null
 			});
 		}
@@ -248,6 +251,21 @@ export function econHealth(st) {
 		});
 	else Object.assign(out, { state: "ok", word: out.running ? "rodando agora" : "em dia" });
 	return out;
+}
+
+/** Moeda de uma fonte da carga ("runas.players" → "runas"), ou null. */
+const sourceCoin = (src) => {
+	const c = String(src || "").split(".")[0];
+	return ["zinthos", "petalitas", "runas"].includes(c) ? c : null;
+};
+
+/**
+ * Parâmetros do painel da economia no Grafana para uma fonte: a aba e a moeda dela
+ * (var-moedas, a variável do painel desde a v4; antes era var-moeda).
+ */
+export function econGrafana(source, dtab) {
+	const coin = sourceCoin(source);
+	return { dtab, "var-moedas": coin || undefined };
 }
 
 /**
@@ -270,7 +288,7 @@ export function deriveNeeds(d = {}) {
 			state: b.isLive ? "attention" : "down",
 			title: `${b.nomeExibir || b.nome || b.id} ${b.isLive ? "desconectada" : "parada"}`,
 			detail: `Última mensagem ${relTime(b.lastMessageReceived, now)}`,
-			href: "#/instancias",
+			href: b.nome ? buildHash("instancias", [b.nome]) : "#/instancias",
 			where: "Instâncias"
 		});
 	}
@@ -315,8 +333,8 @@ export function deriveNeeds(d = {}) {
 			state: "attention",
 			title: "IA com muitas falhas",
 			detail: `${plural(d.llm.total_failures, "falha", "falhas")} em ${plural(d.llm.total_requests, "requisição", "requisições")} nas últimas 24 h`,
-			href: "#/provedores",
-			where: "Provedores",
+			href: "#/provedores/uso",
+			where: "Uso de IA",
 			external: { href: grafana("llm"), label: "Uso de LLM" }
 		});
 	}
@@ -329,7 +347,7 @@ export function deriveNeeds(d = {}) {
 			detail: f.error,
 			href: "#/carga",
 			where: "Carga",
-			external: { href: grafana("economia"), label: "Grafana" }
+			external: { href: grafana("economia", econGrafana(f.source, "diagnstico")), label: "Grafana" }
 		});
 	}
 	for (const l of econ.late) {
@@ -340,7 +358,7 @@ export function deriveNeeds(d = {}) {
 			detail: "Os gráficos da economia estão parados nessa moeda",
 			href: "#/carga",
 			where: "Carga",
-			external: { href: grafana("economia"), label: "Grafana" }
+			external: { href: grafana("economia", econGrafana(l.source, "diagnstico")), label: "Grafana" }
 		});
 	}
 
@@ -352,7 +370,7 @@ export function deriveNeeds(d = {}) {
 			detail: "O painel marcou mudanças de balanceamento sem anotação",
 			href: "#/carga",
 			where: "Carga",
-			external: { href: grafana("economia"), label: "Grafana" }
+			external: { href: grafana("economia", { dtab: "mudanas" }), label: "Grafana" }
 		});
 	}
 

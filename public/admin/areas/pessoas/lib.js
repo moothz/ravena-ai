@@ -145,9 +145,10 @@ export function mergeGroups(profiles, analyses) {
 }
 
 /**
- * Números (só dígitos) que podem ser a conta da pessoa no RavenaBank: o telefone do id
- * canônico ("wa_5511…") e o número/LID de cada identidade. O banco usa user_id só com
- * dígitos (telefone ou LID). Ignora os curtos (< 8 dígitos), como o MemoryService.
+ * Números (só dígitos) que podem ser a conta da pessoa no RavenaBank: o número do id canônico
+ * ("wa_5511…" ou "tg_906652908") e o número/LID/id de cada identidade. O banco usa user_id só
+ * com os dígitos do autor (telefone, LID ou o id do Telegram). Ignora os curtos (< 8 dígitos),
+ * como o MemoryService.
  * @param {{ canonical_user_id?: string, identities?: Array<{ platform_id?: string, platform?: string }> }} d
  * @returns {string[]}
  */
@@ -158,9 +159,9 @@ export function bankCandidates(d) {
 			.replace(/\D/g, "");
 	const set = new Set();
 	const canon = String((d && d.canonical_user_id) || "");
-	if (/^wa_/.test(canon)) set.add(clean(canon));
+	if (/^(wa|tg)_/.test(canon)) set.add(clean(canon));
 	for (const i of (d && d.identities) || []) {
-		if (i && i.platform && i.platform !== "whatsapp") continue;
+		if (i && i.platform && i.platform !== "whatsapp" && i.platform !== "telegram") continue;
 		set.add(clean(i && i.platform_id));
 	}
 	return [...set].filter((n) => n.length >= 8);
