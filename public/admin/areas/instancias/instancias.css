@@ -1,0 +1,509 @@
+/*
+ * Área Instâncias (carregado por areas/instancias/comum.js). Só var(--…) do tokens.css.
+ */
+
+/* ── Lista ─────────────────────────────────────────────────────── */
+
+.inst-toolbar {
+	gap: 0.5rem 0.75rem;
+}
+
+.inst-toolbar .search {
+	flex: 1 1 14rem;
+	min-width: 0;
+}
+
+.inst-toolbar .search-box {
+	width: 100%;
+}
+
+.inst-filters {
+	flex-wrap: wrap;
+	max-width: 100%;
+}
+
+.inst-select {
+	font: inherit;
+	font-size: var(--text-sm);
+	color: var(--fg);
+	background: var(--work);
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	min-height: var(--control-h);
+	padding: 0 0.5rem;
+	max-width: 100%;
+}
+
+.inst-list {
+	container-type: inline-size;
+	overflow: hidden;
+}
+
+.inst-rows {
+	display: grid;
+}
+
+/* Linha inteira tocável: o link do nome cobre a linha; os botões ficam por cima. */
+.inst-row {
+	position: relative;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.25rem 0.75rem;
+	align-items: center;
+	padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.inst-row:last-child {
+	border-bottom: 0;
+}
+
+.inst-row:hover {
+	background: var(--hover);
+}
+
+.inst-row:focus-within:has(.inst-link:focus-visible) {
+	outline: 2px solid var(--focus);
+	outline-offset: -2px;
+}
+
+.inst-link {
+	color: inherit;
+	text-decoration: none;
+}
+
+.inst-link::after {
+	content: "";
+	position: absolute;
+	inset: 0;
+}
+
+.inst-link:focus-visible {
+	outline: none;
+}
+
+.inst-main {
+	min-width: 0;
+	display: grid;
+	gap: 0.125rem;
+}
+
+.inst-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem 0.5rem;
+	min-width: 0;
+}
+
+.inst-title b {
+	font-weight: 600;
+	font-size: var(--text-base);
+	overflow-wrap: anywhere;
+}
+
+.inst-id {
+	font-size: var(--text-xs);
+}
+
+.inst-sub {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow-wrap: anywhere;
+}
+
+.inst-row-msg {
+	position: relative;
+	z-index: 1;
+	font-size: var(--text-sm);
+	color: var(--fg);
+	overflow-wrap: anywhere;
+}
+
+.inst-row-msg:empty {
+	display: none;
+}
+
+.inst-row-msg[data-kind="error"] {
+	color: var(--destructive);
+}
+
+.inst-acts {
+	position: relative; /* acima do link esticado */
+	z-index: 1;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	justify-content: flex-end;
+	align-items: center;
+}
+
+@container (max-width: 36rem) {
+	.inst-row {
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+
+	.inst-row-msg {
+	position: relative;
+	z-index: 1;
+	font-size: var(--text-sm);
+	color: var(--fg);
+	overflow-wrap: anywhere;
+}
+
+.inst-row-msg:empty {
+	display: none;
+}
+
+.inst-row-msg[data-kind="error"] {
+	color: var(--destructive);
+}
+
+.inst-acts {
+		grid-column: 2 / -1;
+		justify-content: flex-start;
+	}
+}
+
+.view-root .fld input[readonly] {
+	background: var(--panel);
+	color: var(--muted);
+}
+
+.inst-pending a {
+	color: var(--fg);
+}
+
+/* ── Ficha ─────────────────────────────────────────────────────── */
+
+.inst-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem 0.75rem;
+}
+
+.inst-name {
+	font-size: var(--text-lg);
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.inst-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.inst-flags {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.inst-outcome {
+	overflow-wrap: anywhere;
+}
+
+.inst-outcome:not(.error) {
+	color: var(--fg);
+}
+
+.inst-flags-form {
+	grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr));
+	gap: 0.75rem 1rem;
+}
+
+.inst-flags-form .fld-check {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-items: start;
+	gap: 0.125rem 0.5rem;
+}
+
+.inst-flags-form .fld-check input {
+	margin-top: 0.2rem;
+	width: 1rem;
+	height: 1rem;
+}
+
+.inst-flags-form .fld-check .fld-hint {
+	grid-column: 2;
+}
+
+.inst-pw {
+	display: grid;
+	gap: 0.25rem;
+	min-width: 0;
+}
+
+.inst-pw-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.inst-savebar {
+	position: sticky;
+	bottom: 0.5rem;
+	z-index: 2;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.75rem;
+	box-shadow: 0 4px 18px rgb(0 0 0 / 0.12);
+}
+
+@media (max-width: 47.5rem), (max-height: 31.25rem) {
+	.inst-savebar {
+		bottom: calc(var(--bottombar-h) + 0.5rem + env(safe-area-inset-bottom, 0px));
+	}
+}
+
+.inst-inline-err {
+	color: var(--destructive);
+	font-size: var(--text-sm);
+}
+
+.inst-inline-err:empty {
+	display: none;
+}
+
+/* Extras */
+.inst-props {
+	display: grid;
+	gap: 0.5rem;
+}
+
+.inst-prop {
+	display: grid;
+	grid-template-columns: minmax(6rem, 1fr) auto minmax(8rem, 1.5fr) auto;
+	gap: 0.375rem;
+	align-items: center;
+}
+
+.inst-prop input,
+.inst-prop select,
+.inst-add input {
+	font: inherit;
+	font-size: var(--text-md);
+	color: var(--fg);
+	background: var(--work);
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	min-height: var(--control-h);
+	padding: 0.25rem 0.5rem;
+	min-width: 0;
+	width: 100%;
+}
+
+.inst-prop-val {
+	display: flex;
+	min-width: 0;
+}
+
+@media (max-width: 30rem) {
+	.inst-prop {
+		grid-template-columns: 1fr auto;
+	}
+
+	.inst-prop-val {
+		grid-column: 1 / -1;
+		grid-row: 2;
+	}
+}
+
+.inst-add {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.inst-add .search-box {
+	flex: 1 1 12rem;
+	padding: 0;
+	border: 0;
+	background: none;
+}
+
+/* Pareamento */
+.inst-pair-grid {
+	display: grid;
+	gap: 1rem;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr));
+}
+
+.inst-qr-box {
+	display: grid;
+	place-items: center;
+	min-height: 12rem;
+}
+
+.inst-qr {
+	width: min(16rem, 100%);
+	height: auto;
+	border-radius: var(--radius-row);
+	border: 1px solid var(--hairline-strong); /* o PNG do QR já vem com fundo branco */
+}
+
+.inst-pair-code {
+	display: block;
+	padding: 0.75rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	background: var(--work);
+	font-size: var(--text-xl);
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	text-align: center;
+}
+
+.inst-pair-msg {
+	color: var(--muted);
+	font-size: var(--text-sm);
+}
+
+.inst-pair-msg:empty {
+	display: none;
+}
+
+.inst-legacy {
+	font-size: var(--text-sm);
+}
+
+/* ── Avisos de status ──────────────────────────────────────────── */
+
+.inst-markup {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem;
+}
+
+.inst-markup .label {
+	margin: 0 0.25rem;
+}
+
+.inst-mk {
+	font-family: var(--font-mono);
+	min-width: 2.25rem;
+}
+
+.inst-emoji {
+	min-width: 2.25rem;
+	padding: 0 0.375rem;
+	font-size: var(--text-md);
+}
+
+.inst-aviso-form textarea,
+.inst-expiry input {
+	font: inherit;
+	font-size: var(--text-md);
+	color: var(--fg);
+	background: var(--work);
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	padding: 0.375rem 0.5rem;
+	min-height: var(--control-h);
+	min-width: 0;
+	width: 100%;
+}
+
+.inst-expiry {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.inst-aviso-form .inst-expiry input {
+	width: auto;
+	max-width: 100%;
+}
+
+.inst-presets {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.inst-preview {
+	padding: 0.625rem 0.75rem;
+	border: 1px dashed var(--hairline-strong);
+	border-radius: var(--radius-row);
+	background: var(--work);
+	color: var(--fg);
+	min-height: 3rem;
+}
+
+.wa-preview {
+	overflow-wrap: anywhere;
+	line-height: 1.5;
+}
+
+.wa-preview pre {
+	margin: 0.25rem 0;
+	padding: 0.375rem 0.5rem;
+	background: var(--raised);
+	border-radius: var(--radius-control);
+	white-space: pre-wrap;
+	font-family: var(--font-mono);
+	font-size: var(--text-sm);
+}
+
+.wa-preview code {
+	font-family: var(--font-mono);
+	font-size: 0.92em;
+}
+
+.wa-preview blockquote {
+	margin: 0.25rem 0;
+	padding-left: 0.625rem;
+	border-left: 3px solid var(--hairline-strong);
+	color: var(--muted);
+}
+
+.wa-preview a {
+	color: var(--fg);
+}
+
+.inst-avisos {
+	display: grid;
+	gap: 0.75rem;
+}
+
+.inst-aviso {
+	display: grid;
+	gap: 0.5rem;
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	background: var(--work);
+}
+
+.inst-aviso.is-editing {
+	border-color: var(--attention);
+}
+
+.inst-aviso-meta {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.375rem 0.625rem;
+	font-size: var(--text-sm);
+}
+
+@media (pointer: coarse) {
+	.inst-select,
+	.inst-prop input,
+	.inst-prop select,
+	.inst-add input,
+	.inst-aviso-form textarea,
+	.inst-expiry input {
+		min-height: var(--touch-min);
+		font-size: max(16px, 1em);
+	}
+}
