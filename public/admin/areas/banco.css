@@ -1,0 +1,234 @@
+/* Área Banco (#/banco). Só tokens de tokens.css; carregado por areas/banco/parts.js. */
+
+.bk-toolbar {
+	gap: 0.5rem 0.75rem;
+}
+
+.bk-toolbar .search {
+	flex: 1 1 16rem;
+	min-width: 0;
+}
+
+.bk-toolbar .search-box {
+	width: 100%;
+}
+
+/* Filtros das transações: busca larga + três seletores. */
+.bk-filters {
+	display: grid;
+	gap: 0.625rem;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+	align-items: end;
+}
+
+.bk-filters .bk-search {
+	grid-column: span 2;
+}
+
+@media (max-width: 47.5rem) {
+	.bk-filters .bk-search {
+		grid-column: 1 / -1;
+	}
+}
+
+.bk-filters .search {
+	display: grid;
+	gap: 0.25rem;
+}
+
+.bk-who {
+	display: grid;
+	gap: 0.0625rem;
+	min-width: 0;
+}
+
+.bk-who a,
+.bk-who b {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.bk-sub {
+	display: block;
+	color: var(--muted);
+	font-size: var(--text-xs);
+	font-weight: 400;
+}
+
+.dt td.bk-id {
+	color: var(--muted);
+	white-space: nowrap;
+}
+
+.dt td.bk-act {
+	text-align: right;
+}
+
+.bk-status {
+	display: inline-grid;
+	gap: 0.125rem;
+	justify-items: start;
+}
+
+/* Paginação por links. */
+.bk-pager {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+	color: var(--muted);
+	font-size: var(--text-sm);
+}
+
+.bk-pager-btns {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem;
+}
+
+.bk-pager-btns .btn {
+	min-width: var(--control-h);
+	justify-content: center;
+	font-variant-numeric: tabular-nums;
+}
+
+.bk-pager-btns [aria-current="page"] {
+	background: var(--selected);
+	color: var(--on-fg);
+	border-color: var(--selected);
+}
+
+.bk-pager-btns .is-disabled {
+	opacity: 0.45;
+	pointer-events: none;
+}
+
+@media (pointer: coarse) {
+	.bk-pager-btns .btn {
+		min-width: var(--touch-min);
+	}
+}
+
+/* Ficha do jogador. */
+.bk-grid2 {
+	display: grid;
+	gap: 1rem;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+	align-items: start;
+}
+
+.bk-grid2 > .card > .bd {
+	display: grid;
+	gap: 0.875rem;
+}
+
+.bk-coin-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+}
+
+.bk-coin-label .coin {
+	flex: none;
+}
+
+.bk-coin-gap {
+	display: inline-block;
+	width: 15px;
+}
+
+/* Celular: Runas na linha toda, Zinthos e Petalitas lado a lado embaixo. */
+@media (max-width: 47.5rem) {
+	.bk-coins {
+		grid-template-columns: 1fr 1fr;
+	}
+
+	.bk-coins .tile:first-child {
+		grid-column: 1 / -1;
+	}
+}
+
+@media (pointer: coarse) {
+	.bk-who a {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--touch-min);
+	}
+}
+
+.tile .bk-missing {
+	font: 500 var(--text-sm) / 1.3 var(--font-sans);
+	color: var(--muted);
+}
+
+.bk-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.bk-adjust {
+	padding: 0.75rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	background: var(--raised);
+}
+
+.bk-preview {
+	grid-column: 1 / -1;
+	margin: 0;
+	font: var(--text-sm) var(--font-mono);
+	color: var(--muted);
+}
+
+.bk-preview.bad {
+	color: var(--destructive);
+}
+
+/* Desfazer na linha: pergunta, valor final e botões. */
+.bk-undo {
+	display: grid;
+	gap: 0.5rem;
+	width: min(24rem, 100%);
+	text-align: left;
+	text-decoration: none;
+}
+
+.bk-undo .fld {
+	color: var(--fg);
+}
+
+.bk-undo-btns {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	justify-content: flex-end;
+}
+
+/* No modo cartão (tabela estreita), o desfazer ocupa a linha toda. */
+@container (max-width: 34rem) {
+	.dt td.bk-act {
+		display: block;
+		text-align: left;
+		padding-top: 0.375rem;
+	}
+
+	.dt td.bk-act::before {
+		display: none;
+	}
+
+	.bk-undo {
+		width: 100%;
+	}
+
+	/* Cartão da transação: o jogador vem primeiro, como título. */
+	.bk-tx .dt tr {
+		display: flex;
+		flex-direction: column;
+	}
+
+	.bk-tx .dt td.primary {
+		order: -1;
+	}
+}
