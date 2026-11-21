@@ -49,6 +49,7 @@ async function main() {
 	let botAPI;
 	let statusScheduler;
 	let llmDailyReportService;
+	let telegramNotificationService;
 	let chatCleanerScheduler;
 	let groupMediaRetentionService;
 	let groupMonitoringService;
@@ -319,6 +320,16 @@ async function main() {
 			llmDailyReportService.start();
 		}
 
+		// Inicializa serviço centralizado de notificações e moderação via Telegram
+		const TelegramNotificationService = require("./src/services/TelegramNotificationService");
+		telegramNotificationService = TelegramNotificationService.getInstance({
+			bots: botInstances,
+			database
+		});
+		if (!disableActivity) {
+			telegramNotificationService.startPolling();
+		}
+
 		// Inicializa serviço de resumo semanal dos jogos (Domingo 22:00 BRT)
 		const WeeklyGameDigestService = require("./src/services/WeeklyGameDigestService");
 		const weeklyDigestService = WeeklyGameDigestService.getInstance();
@@ -408,6 +419,14 @@ async function main() {
 		} catch (_e) {}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões
+		if (telegramNotificationService) {
+			try {
+				telegramNotificationService.stopPolling();
+			} catch (e) {
+				logger.error("Erro ao parar polling do TelegramNotificationService:", e);
+			}
+		}
+
 		if (botAPI) {
 			try {
 				await botAPI.stop();

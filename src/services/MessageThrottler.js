@@ -328,16 +328,6 @@ class MessageThrottler {
 		}
 		this._lastDiscardAlertAt = now;
 
-		const token = process.env.HEALTH_CHECK_TELEGRAM_BOT_TOKEN;
-		const chatId = process.env.HEALTH_CHECK_TELEGRAM_CHAT_ID;
-
-		if (!token || !chatId) {
-			this.logger.warn(
-				"[throttler] HEALTH_CHECK_TELEGRAM_* não configurados. Alerta de descarte cancelado."
-			);
-			return;
-		}
-
 		const queueLen = this._queue.length;
 		const cost = typeof currentCost === "number" ? currentCost : this._getWindowCost();
 		const loadPercent = this.rateLimit > 0 ? Math.round((cost / this.rateLimit) * 100) : 0;
@@ -351,20 +341,16 @@ class MessageThrottler {
 			`🔧 Considere aumentar o <code>ratelimit</code> desta instância no painel /instances.`;
 
 		try {
-			const url = `https://api.telegram.org/bot${token}/sendMessage`;
-			await axios.post(
-				url,
-				{
-					chat_id: chatId,
-					text: message,
-					parse_mode: "HTML",
-					disable_web_page_preview: true
-				},
-				{ timeout: 15000 }
-			);
-			this.logger.info(
-				`[throttler] Alerta de descarte enviado ao Telegram para o bot ${this.botId}`
-			);
+			const TelegramNotificationService = require("./TelegramNotificationService");
+			const notifier = TelegramNotificationService.getInstance();
+			const result = await notifier.sendAlert(message, {
+				parse_mode: "HTML"
+			});
+			if (result && result.success) {
+				this.logger.info(
+					`[throttler] Alerta de descarte enviado ao Telegram para o bot ${this.botId}`
+				);
+			}
 		} catch (err) {
 			this.logger.error(`[throttler] Falha ao enviar alerta de descarte: ${err.message}`);
 		}

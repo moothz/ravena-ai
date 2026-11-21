@@ -120,41 +120,18 @@ class SenderDropMonitor {
 	 * @returns {Promise<boolean>}
 	 */
 	async sendTelegram(htmlMessage) {
-		const token = process.env.HEALTH_CHECK_TELEGRAM_BOT_TOKEN;
-		const chatId = process.env.HEALTH_CHECK_TELEGRAM_CHAT_ID;
+		const TelegramNotificationService = require("./TelegramNotificationService");
+		const notifier = TelegramNotificationService.getInstance();
+		const result = await notifier.sendAlert(htmlMessage, {
+			parse_mode: "HTML"
+		});
 
-		if (!token || !chatId) {
-			this.logger.warn(
-				"[sendTelegram] HEALTH_CHECK_TELEGRAM_BOT_TOKEN ou HEALTH_CHECK_TELEGRAM_CHAT_ID não configurados. Alerta cancelado."
-			);
-			return false;
+		if (result && result.success) {
+			this.logger.info(`[sendTelegram] Alerta de sender_drop enviado com sucesso para o Telegram.`);
+			return true;
 		}
 
-		try {
-			const url = `https://api.telegram.org/bot${token}/sendMessage`;
-			const response = await axios.post(
-				url,
-				{
-					chat_id: chatId,
-					text: htmlMessage,
-					parse_mode: "HTML",
-					disable_web_page_preview: true
-				},
-				{ timeout: 15000 }
-			);
-
-			if (response.data && response.data.ok) {
-				this.logger.info(
-					`[sendTelegram] Alerta de sender_drop enviado com sucesso para o Telegram (${chatId})`
-				);
-				return true;
-			}
-			this.logger.error("[sendTelegram] Resposta inesperada do Telegram:", response.data);
-			return false;
-		} catch (error) {
-			this.logger.error(`[sendTelegram] Falha ao enviar para o Telegram: ${error.message}`);
-			return false;
-		}
+		return false;
 	}
 
 	/**

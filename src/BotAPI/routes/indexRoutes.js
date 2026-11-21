@@ -303,9 +303,144 @@ function registerIndexRoutes(api) {
 				});
 			}
 
+			const cleanPhone = cleanContact.replace(/\D/g, "");
+			const formattedContact = cleanPhone ? `${cleanContact} (${cleanPhone})` : cleanContact;
+
+			// 1. Verificação prévia de bloqueio de número do usuário
+			if (cleanPhone && api.database && typeof api.database.isUserInviteBlocked === "function") {
+				const isUserBlocked = await api.database.isUserInviteBlocked(cleanPhone);
+				if (isUserBlocked) {
+					api.logger.info(`[BotAPI] Convite recusado pelo site: número ${cleanPhone} bloqueado.`);
+					return res.status(403).json({
+						status: "blocked",
+						blocked: true,
+						blockType: "user",
+						message:
+							"🛑 A RavenaBot não está mais recebendo convites de seu número, pois você foi bloqueado."
+					});
+				}
+			}
+
+			// 2. Verificação prévia de código de convite bloqueado
+			if (api.database && typeof api.database.isInviteBlocked === "function") {
+				const isCodeBlocked = await api.database.isInviteBlocked(inviteCode, null);
+				if (isCodeBlocked) {
+					api.logger.info(
+						`[BotAPI] Convite recusado pelo site: código de convite ${inviteCode} bloqueado.`
+					);
+					return res.status(403).json({
+						status: "blocked",
+						blocked: true,
+						blockType: "group",
+						message: "🛑 A RavenaBot não recebe mais convite deste grupo, pois ele foi bloqueado."
+					});
+				}
+			}
+
+			// 3. Verificação prévia de JID de grupo bloqueado (via getInviteInfo)
+			let inviteInfoData = null;
+			const onlineWaBot =
+				(api.bots || []).find(
+					(b) =>
+						!b.useTelegram &&
+						!b.useDiscord &&
+						b.isConnected &&
+						b.client &&
+						typeof b.client.getInviteInfo === "function"
+				) || (api.bots || []).find((b) => !b.useTelegram && !b.useDiscord && b.isConnected);
+			if (
+				onlineWaBot &&
+				onlineWaBot.client &&
+				typeof onlineWaBot.client.getInviteInfo === "function"
+			) {
+				try {
+					inviteInfoData = await onlineWaBot.client.getInviteInfo(inviteCode);
+				} catch (e) {
+					api.logger.debug(
+						`[BotAPI] Não foi possível consultar JID prévio do convite ${inviteCode}: ${e.message}`
+					);
+				}
+			}
+
+			if (
+				inviteInfoData?.JID &&
+				api.database &&
+				typeof api.database.isInviteBlocked === "function"
+			) {
+				const isJidBlocked = await api.database.isInviteBlocked(null, inviteInfoData.JID);
+				if (isJidBlocked) {
+					api.logger.info(
+						`[BotAPI] Convite recusado pelo site: JID de grupo ${inviteInfoData.JID} bloqueado.`
+					);
+					return res.status(403).json({
+						status: "blocked",
+						blocked: true,
+						blockType: "group",
+						message: "🛑 A RavenaBot não recebe mais convite deste grupo, pois ele foi bloqueado."
+					});
+				}
+			}
+
+			// 4. Roteamento: Enviar exclusivamente OU no Telegram OU no WhatsApp
+			const telegramInvitesGroup = process.env.GRUPO_INVITES_TELEGRAM;
+
+			if (telegramInvitesGroup) {
+				const TelegramNotificationService = require("../../services/TelegramNotificationService");
+				const telegramNotifier = TelegramNotificationService.getInstance({
+					bots: api.bots,
+					database: api.database
+				});
+
+				const tgResult = await telegramNotifier.sendInviteNotification({
+					inviteCode,
+					cleanPhone,
+					formattedContact,
+					cleanReason,
+					chatId: telegramInvitesGroup
+				});
+
+				if (!tgResult || !tgResult.success) {
+					api.logger.error(
+						`[BotAPI] Falha ao encaminhar convite para o Telegram (${telegramInvitesGroup}): ${tgResult?.error}`
+					);
+					return res.status(503).json({
+						status: "error",
+						message:
+							"Serviço temporariamente indisponível para entrega da solicitação no canal de moderação. Tente novamente mais tarde."
+					});
+				}
+
+				api.logger.info(
+					`[BotAPI] Convite recebido pelo site encaminhado com sucesso para o Telegram (${telegramInvitesGroup}) com botões interativos (código: ${inviteCode})`
+				);
+
+				return res.json({
+					status: "ok",
+					message:
+						"Sua solicitação foi enviada com sucesso! Ela foi encaminhada para a equipe de moderação."
+				});
+			}
+
+			// Fallback: Envio para WhatsApp priorizando: normais > vips > comunitárias
+			const isWhatsApp = (b) => !b.useTelegram && !b.useDiscord && b.isConnected;
+			const waBots = (api.bots || []).filter(isWhatsApp);
+
+			const isNormal = (b) => !b.comunitario && !b.vip && !b.privado;
+			const isVip = (b) => b.vip || b.id === "ravenavip";
+			const isComunitario = (b) => Boolean(b.comunitario);
+
+			const findBotInTier = (filterFn) => {
+				const tierBots = waBots.filter(filterFn);
+				return tierBots.find((b) => b.grupoInvites) || tierBots[0] || null;
+			};
+
 			const onlineBot =
+				findBotInTier(isNormal) ||
+				findBotInTier(isVip) ||
+				findBotInTier(isComunitario) ||
 				api.bots.find((b) => b.isConnected && b.grupoInvites) ||
 				api.bots.find((b) => b.isConnected);
+
 			const targetGroup =
 				onlineBot?.grupoInvites || api.bots.find((b) => b.grupoInvites)?.grupoInvites;
 
@@ -319,9 +454,6 @@ function registerIndexRoutes(api) {
 						"Serviço temporariamente indisponível. Nenhuma instância conectada para entregar o convite. Tente novamente mais tarde."
 				});
 			}
-
-			const cleanPhone = cleanContact.replace(/\D/g, "");
-			const formattedContact = cleanPhone ? `${cleanContact} (${cleanPhone})` : cleanContact;
 
 			const infoMsg =
 				`🌐 *[Recebido pelo Site - Quero Uma!]*\n\n` +

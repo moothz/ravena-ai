@@ -118,6 +118,54 @@ WindowManager.register('invite', {
             const submitBtn = body.querySelector('#invite-submit-btn');
             const statusDiv = body.querySelector('#invite-form-status');
 
+            const showBlockedModal = (message) => {
+                const oldModal = body.querySelector('.invite-blocked-modal-overlay');
+                if (oldModal) oldModal.remove();
+
+                const overlay = document.createElement('div');
+                overlay.className = 'invite-blocked-modal-overlay';
+                overlay.style.cssText =
+                    'position: fixed; inset: 0; background: rgba(0, 0, 0, 0.75); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(3px);';
+
+                const safeMsg =
+                    typeof Formatters !== 'undefined' && typeof Formatters.escapeHtml === 'function'
+                        ? Formatters.escapeHtml(message)
+                        : String(message).replace(
+                              /[&<>"']/g,
+                              (m) =>
+                                  ({
+                                      '&': '&amp;',
+                                      '<': '&lt;',
+                                      '>': '&gt;',
+                                      '"': '&quot;',
+                                      "'": '&#39;'
+                                  })[m]
+                          );
+
+                overlay.innerHTML = `
+                    <div style="background: #151124; border: 2px solid #ff4b4b; border-radius: 8px; padding: 24px 20px; max-width: 440px; width: 88%; box-shadow: 0 10px 35px rgba(255, 75, 75, 0.4); text-align: center; color: #fff; font-family: inherit;">
+                        <div style="font-size: 38px; margin-bottom: 12px;">🛑</div>
+                        <h3 style="margin: 0 0 12px; color: #ff6b6b; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                            <i class="fas fa-shield-alt"></i> Aviso do Sistema
+                        </h3>
+                        <p style="font-size: 13px; line-height: 1.5; color: #e4e4e7; margin: 0 0 20px; white-space: pre-wrap;">${safeMsg}</p>
+                        <button type="button" class="os-btn invite-modal-close-btn" style="background: #ff4b4b; color: #fff; border: none; padding: 10px 24px; border-radius: 6px; font-weight: 700; cursor: pointer; font-size: 13px; font-family: inherit; transition: opacity 0.2s;">
+                            Entendi
+                        </button>
+                    </div>
+                `;
+
+                overlay.querySelector('.invite-modal-close-btn')?.addEventListener('click', () => {
+                    overlay.remove();
+                });
+
+                overlay.addEventListener('click', (e) => {
+                    if (e.target === overlay) overlay.remove();
+                });
+
+                body.appendChild(overlay);
+            };
+
             if (form) {
                 form.addEventListener('submit', async (e) => {
                     e.preventDefault();
@@ -158,6 +206,12 @@ WindowManager.register('invite', {
                                 statusDiv.innerHTML = `<span style="color: var(--status-green); font-weight: 600;"><i class="fas fa-check-circle"></i> ${resData.message || 'Solicitação enviada com sucesso!'}</span>`;
                             }
                             form.reset();
+                        } else if (resData.blocked || resp.status === 403 || resData.status === 'blocked') {
+                            const blockMsg = resData.message || '🛑 Esta solicitação foi bloqueada pelo sistema.';
+                            if (statusDiv) {
+                                statusDiv.innerHTML = `<span style="color: #ff6b6b; font-weight: 600;"><i class="fas fa-ban"></i> ${blockMsg}</span>`;
+                            }
+                            showBlockedModal(blockMsg);
                         } else {
                             if (statusDiv) {
                                 statusDiv.innerHTML = `<span style="color: #ff6b6b;"><i class="fas fa-times-circle"></i> ${resData.message || 'Erro ao enviar solicitação. Verifique os dados e tente novamente.'}</span>`;

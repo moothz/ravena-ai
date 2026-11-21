@@ -10,7 +10,10 @@ class LLMDailyReportService {
 		this.llmService = LLMService.getInstance();
 
 		this.telegramToken =
-			options.telegramToken || process.env.HEALTH_CHECK_TELEGRAM_BOT_TOKEN || null;
+			options.telegramToken ||
+			process.env.NOTIFICATIONS_TELEGRAM_BOT_TOKEN ||
+			process.env.HEALTH_CHECK_TELEGRAM_BOT_TOKEN ||
+			null;
 		this.telegramChatId =
 			options.telegramChatId || process.env.HEALTH_CHECK_TELEGRAM_CHAT_ID || null;
 
@@ -193,38 +196,29 @@ class LLMDailyReportService {
 	 * @returns {Promise<boolean>}
 	 */
 	async sendTelegram(htmlMessage) {
-		const token = this.telegramToken || process.env.HEALTH_CHECK_TELEGRAM_BOT_TOKEN;
-		const chatId = this.telegramChatId || process.env.HEALTH_CHECK_TELEGRAM_CHAT_ID;
+		const TelegramNotificationService = require("./TelegramNotificationService");
+		const notifier = TelegramNotificationService.getInstance({
+			token: this.telegramToken,
+			chatId: this.telegramChatId
+		});
 
-		if (!token || !chatId) {
-			this.logger.warn(
-				"[sendTelegram] TELEGRAM_BOT_TOKEN ou TELEGRAM_CHAT_ID não configurados. Envio cancelado."
-			);
-			return false;
-		}
-
-		try {
-			const url = `https://api.telegram.org/bot${token}/sendMessage`;
-			const response = await axios.post(
-				url,
-				{
-					chat_id: chatId,
-					text: htmlMessage,
-					parse_mode: "HTML"
-				},
-				{ timeout: 15000 }
-			);
-
-			if (response.data && response.data.ok) {
-				this.logger.info(`[sendTelegram] Relatório enviado com sucesso para o chat ${chatId}`);
-				return true;
+		const result = await notifier.sendNotification(
+			this.telegramChatId || process.env.HEALTH_CHECK_TELEGRAM_CHAT_ID,
+			htmlMessage,
+			{
+				telegramToken: this.telegramToken,
+				parse_mode: "HTML"
 			}
-			this.logger.error("[sendTelegram] Resposta inesperada do Telegram:", response.data);
-			return false;
-		} catch (error) {
-			this.logger.error(`[sendTelegram] Falha ao enviar para o Telegram: ${error.message}`);
-			return false;
+		);
+
+		if (result && result.success) {
+			this.logger.info(
+				`[sendTelegram] Relatório enviado com sucesso para o chat ${this.telegramChatId || process.env.HEALTH_CHECK_TELEGRAM_CHAT_ID}`
+			);
+			return true;
 		}
+
+		return false;
 	}
 
 	/**
