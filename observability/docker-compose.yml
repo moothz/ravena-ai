@@ -107,10 +107,13 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ravena-red.json
-      # Painel da economia (OBSERVABILITY.md): plugin SQLite instalado em segundo plano na subida (versão
-      # fixa; fica no volume grafana-data). Não usar GF_PLUGINS_PREINSTALL_SYNC: no 13.2.6, se o download
+      # Painel da economia (OBSERVABILITY.md): plugins instalados em segundo plano na subida (versões
+      # fixas; ficam no volume grafana-data). Não usar GF_PLUGINS_PREINSTALL_SYNC: no 13.2.6, se o download
       # falhar (sem internet, grafana.com fora), o Grafana inteiro sai com erro na subida.
-      GF_PLUGINS_PREINSTALL: frser-sqlite-datasource@4.0.6
+      # - frser-sqlite-datasource: fonte Economia (SQLite);
+      # - volkovlabs-variable-panel (Business Variable, Grafana Labs; exige Grafana >= 12.3): botões de moeda no
+      #   topo das abas. Sem ele os botões mostram "plugin não encontrado" e a lista Moedas do topo segue valendo.
+      GF_PLUGINS_PREINSTALL: frser-sqlite-datasource@4.0.6,volkovlabs-variable-panel@5.2.0
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
