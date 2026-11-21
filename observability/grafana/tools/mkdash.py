@@ -16,11 +16,16 @@ OUT = sys.argv[2] if len(sys.argv) > 2 else REPO
 # Mudanças automáticas (rota /internal/economy/params, detecção de possíveis mudanças, --listar/--confirmar/--descartar):
 # o texto e a anotação que dependem delas só entram quando o repo tem o serviço.
 AUTO = os.path.exists(os.path.join(REPO, "src/services/EconomyAnalyticsChanges.js"))
-# Admin da carga no /banco/admin da ravena (agendar, pausar, rodar agora, registrar e decidir mudanças): só com a rota.
+# Admin da carga na ravena (agendar, pausar, rodar agora, registrar e decidir mudanças): só com a rota.
+# Com o painel unificado fica em /admin → Carga da economia; antes dele, no cartão do /banco/admin.
 # O endereço da ravena não é o do Grafana, por isso vai como texto (descrição), não como link relativo.
 ADMIN = os.path.exists(os.path.join(REPO, "src/BotAPI/routes/economyRoutes.js"))
-ADMIN_NOTE = (" Para pausar, mudar o intervalo ou rodar a carga agora: admin do RavenaBank na ravena (/banco/admin → Configurações "
-              "& Economia → Painel da economia)." if ADMIN else "")
+ADMIN_PANEL = os.path.exists(os.path.join(REPO, "public/admin/areas/carga.js"))
+ADMIN_WHERE = ("no admin da ravena (/admin → Carga da economia)" if ADMIN_PANEL else
+               "no admin do RavenaBank (/banco/admin → Configurações & Economia → Painel da economia)")
+ADMIN_WHERE_MD = ("a área Carga da economia no admin da ravena (`/admin` → Carga da economia)" if ADMIN_PANEL else
+                  "o cartão Painel da economia no admin do RavenaBank (`/banco/admin` da ravena → Configurações & Economia)")
+ADMIN_NOTE = (f" Para pausar, mudar o intervalo ou rodar a carga agora: {ADMIN_WHERE}." if ADMIN else "")
 
 DS = {"type": "frser-sqlite-datasource", "uid": "economia-sqlite"}
 TO = "$__to"
@@ -778,7 +783,7 @@ ORDER BY ts DESC LIMIT 50
         desc="Detectadas nos dados (motivo novo, motivo que sumiu ou valor médio por transação diferente de um dia para o outro), ainda "
              "sem decisão: não entram nas fichas nem nas Últimas mudanças. Aparecem como marca cinza nos gráficos (Possíveis mudanças). "
              "Decidir: docker exec ravena-ai node scripts/economy-annotate.js --confirmar <Id> [\"texto novo\"] ou --descartar <Id>"
-             + (", ou no admin do RavenaBank (/banco/admin → Configurações & Economia → Painel da economia)." if ADMIN else "."),
+             + (f", ou {ADMIN_WHERE}." if ADMIN else "."),
         time_cols=["Quando"], defaults={"noValue": "nenhuma possível mudança a decidir"},
         overrides=when("Quando") + [by_name("Id", ("custom.width", 70)), by_name("Quando", ("custom.width", 95)),
                                     by_name("Moeda", ("custom.width", 90)), by_name("O que pode ter mudado", ("custom.width", 700))],
@@ -790,7 +795,7 @@ mud_p.append(panel("text", "Como registrar e ler", "", 0, 21 if AUTO else 19, 24
      "(entra nas fichas) ou `--descartar <id>` (some), com o Id da tabela (ou do `--listar --possiveis`). **Manuais**: " if AUTO else "**Registrar**: ")
     + "`docker exec ravena-ai node scripts/economy-annotate.js \"descrição\" "
     "[zinthos|petalitas|runas|todas] [data ISO]`"
-    + (" ou o cartão Painel da economia no admin do RavenaBank (`/banco/admin` da ravena → Configurações & Economia), que também "
+    + (f" ou {ADMIN_WHERE_MD}, que também "
        "decide as possíveis e agenda, pausa ou roda a carga" if ADMIN else "") + ".\n\n"
     "Leitura antes/depois, não causal. Até 1 dia depois a linha fica \"cedo demais\"; até 7 dias, \"acompanhando\" e os números ainda mudam.")}}))
 

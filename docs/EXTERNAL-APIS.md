@@ -174,9 +174,9 @@ Alguns jogos e funcionalidades avançadas rodam como serviços independentes e s
 
 A Ravena possui uma interface web nativa para gerenciar os provedores de serviços sem precisar editar arquivos manualmente:
 
-1. Acesse no navegador:
+1. Acesse no navegador o painel de admin, área **Provedores de IA** (o endereço antigo `/service-providers` redireciona para ela; `/service-providers?legado=1` abre a tela antiga):
    ```
-   http://localhost:5000/service-providers
+   http://localhost:5000/admin#/provedores
    ```
    *(Utilize as credenciais definidas em `managementUser` e `managementPW` no `bots.json`)*.
 2. Na interface visual, você pode:
