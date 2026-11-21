@@ -53,9 +53,6 @@
 	--selected: var(--fg);
 	--focus: var(--fg);
 
-	/* Fundo do iframe enquanto a tela antiga carrega (as telas antigas são escuras). */
-	--embed-bg: #0f0f0e;
-
 	/* Cantos: controles quase retos, linhas e abas levemente arredondadas. */
 	--radius-control: 0.125rem;
 	--radius-row: 0.25rem;

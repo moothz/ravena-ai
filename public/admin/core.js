@@ -17,8 +17,7 @@
  *                HttpError (status, message, serverMessage, body) · onSessionExpired(fn)
  *   Avisos       errorNotice(erro, "o quê") · loading(texto) · empty(texto, dica) · toast(msg, {kind})
  *   Layout       card({title, actions, body, pill}) · rows(itens) · rowItem({...}) · secLabel(t)
- *                kv(pares) · tiles(itens) · crumbs(itens) · note(texto) · legacyEmbed(src, título)
- *                loadAreaCss(área, href)
+ *                kv(pares) · tiles(itens) · crumbs(itens) · note(texto) · loadAreaCss(área, href)
  *   Navegação    subnav(itens, ativo, {label}) · externalLink(href, rótulo, {missing})
  *                focusAfterRender(chave)
  *   Formulários  field({...}) · form({...}) · searchBox({...}) · confirmInline(botão, {...})
@@ -147,7 +146,6 @@ const ICONS = {
 	alerta: [P("M8 2 14.5 13.5h-13zM8 6.5v3.5M8 12h.01")],
 	seta: [P("m6 3.5 4.5 4.5L6 12.5")],
 	voltar: [P("M10 3.5 5.5 8l4.5 4.5")],
-	legado: [P("M2.5 4.5h11v8h-11zM2.5 7h11M5 2.5v2")],
 	moeda: [
 		["circle", { cx: 8, cy: 8, r: 5.5 }],
 		P("M8 5v6M6.5 6.5h2.25a1.25 1.25 0 0 1 0 2.5h-1.5a1.25 1.25 0 0 0 0 2.5H9.5")
@@ -157,7 +155,7 @@ const ICONS = {
 /**
  * Ícone de traço. Nomes: geral, instancias, provedores, logs, banco, eventos, carga, pessoas,
  * mais, externo, recarregar, grafico, tema, sair, busca, novo, fechar, ok, alerta, seta,
- * voltar, legado, moeda. Desconhecido → geral.
+ * voltar, moeda. Desconhecido → geral.
  * @param {string} name
  * @returns {SVGSVGElement}
  */
@@ -675,54 +673,6 @@ export function loadAreaCss(area, href) {
 	});
 	document.head.append(link);
 	return link.ready;
-}
-
-/**
- * Tela antiga embutida (iframe ?embed=1, mesma origem e sessão) com a faixa
- * "tela antiga, migração em andamento". Só para as áreas provisórias.
- * @param {string} src - ex. "/instances"
- * @param {string} title - título acessível do iframe
- * @param {{ hint?: string }} [opts]
- */
-export function legacyEmbed(src, title, { hint } = {}) {
-	const sep = src.includes("?") ? "&" : "?";
-	const embedSrc = `${src}${sep}embed=1`;
-	const frame = h("iframe", { src: embedSrc, title, loading: "lazy" });
-	return h(
-		"div",
-		{ class: "embed", "data-embed": src },
-		h(
-			"div",
-			{ class: "embed-bar" },
-			icon("legado"),
-			h("span", {
-				class: "embed-note",
-				text: hint
-					? `Tela antiga, migração em andamento · ${hint}`
-					: "Tela antiga, migração em andamento"
-			}),
-			h("span", { class: "spacer" }),
-			h(
-				"button",
-				{
-					type: "button",
-					class: "btn btn-quiet",
-					onclick: () => {
-						frame.src = embedSrc;
-					}
-				},
-				icon("recarregar"),
-				h("span", { class: "btn-label", text: "Recarregar" })
-			),
-			h(
-				"a",
-				{ class: "btn btn-quiet", href: `${src}${sep}legado=1`, target: "_blank", rel: "noopener" },
-				icon("externo"),
-				h("span", { class: "btn-label", text: "Abrir em outra aba" })
-			)
-		),
-		frame
-	);
 }
 
 /* ── Navegação ─────────────────────────────────────────────────── */

@@ -82,8 +82,7 @@ const isAdminModule = (filePath) =>
  *   "/dossies": "pessoas",
  *   "/groups-dossier": "pessoas/grupos",
  * Os apelidos de cada tela (LEGACY_ADMIN_ALIASES) seguem a entrada do caminho canônico.
- * Saída de emergência: ?legado=1 continua servindo a tela antiga (e ?embed=1 também, para
- * nunca abrir o painel dentro dele mesmo num iframe).
+ * Saída de emergência: ?legado=1 continua servindo a tela antiga.
  * @type {Object<string, string>}
  */
 const LEGACY_ADMIN_REDIRECTS = {
@@ -122,7 +121,7 @@ function createLegacyAdminRedirect(map = LEGACY_ADMIN_REDIRECTS) {
 		const canonical = LEGACY_ADMIN_ALIASES[raw] || raw;
 		if (!Object.prototype.hasOwnProperty.call(map, canonical)) return next();
 		const q = req.query || {};
-		if (q.legado === "1" || q.embed === "1") return next();
+		if (q.legado === "1") return next();
 		const target = String(map[canonical]).replace(/^#?\/?/, "");
 		const auth = typeof q.auth === "string" && q.auth ? `?auth=${encodeURIComponent(q.auth)}` : "";
 		res.setHeader("Cache-Control", "no-store");

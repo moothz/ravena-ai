@@ -3,7 +3,7 @@
  * Escala: rótulo 11 mono caixa alta · texto 13 · detalhe 12 · título 18 · número 20 (em rem).
  *
  * Partes: base · topo · botões · casca (menu, conteúdo) · kit (card, rows, tiles, pill, kv,
- * crumbs, subnav, confirm, form, search, dataTable, toast, embed, log) · celular · toque ·
+ * crumbs, subnav, confirm, form, search, dataTable, toast, log) · celular · toque ·
  * movimento reduzido. A lista das classes do kit está em admin-kit.md.
  */
 
@@ -1386,34 +1386,6 @@ table.dt {
 	flex: none;
 }
 
-/* ── Tela antiga embutida ──────────────────────────────────────── */
-
-.embed {
-	display: grid;
-	gap: 0.5rem;
-}
-
-.embed-bar {
-	display: flex;
-	flex-wrap: wrap;
-	align-items: center;
-	gap: 0.375rem 0.5rem;
-	padding: 0.25rem 0.25rem 0.25rem 0.625rem;
-	border: 1px dashed var(--hairline-strong);
-	border-radius: var(--radius-row);
-	font-size: var(--text-sm);
-	color: var(--muted);
-}
-
-.embed iframe {
-	width: 100%;
-	/* cabe na altura da janela (inclusive tela baixa, como celular deitado) */
-	height: calc(100dvh - 12rem);
-	min-height: min(30rem, calc(100dvh - var(--topbar-h)));
-	border: 1px solid var(--hairline-strong);
-	background: var(--embed-bg);
-}
-
 /* ── Logs ─────────────────────────────────────────────────────── */
 
 .toolbar {
@@ -1657,23 +1629,17 @@ table.dt {
 		flex: 1 1 100%;
 	}
 
-	/*
-	 * Tela antiga embutida e Logs: a página não rola; o iframe (ou o log) ocupa o resto da
-	 * tela e só ele rola. Assim as barras fixas das telas antigas ("Salvar todas") ficam visíveis.
-	 */
-	body[data-layout="embed"],
+	/* Logs: a página não rola; o log ocupa o resto da tela e só ele rola. */
 	body[data-layout="fill"] {
 		height: 100dvh;
 		overflow: hidden;
 	}
 
-	body[data-layout="embed"] .shell,
 	body[data-layout="fill"] .shell {
 		height: calc(100dvh - var(--topbar-h) - var(--bottombar-h) - env(safe-area-inset-bottom, 0px));
 		min-height: 0;
 	}
 
-	body[data-layout="embed"] .main,
 	body[data-layout="fill"] .main {
 		display: flex;
 		flex-direction: column;
@@ -1682,28 +1648,7 @@ table.dt {
 		padding-bottom: 0;
 	}
 
-	body[data-layout="embed"] .main {
-		padding: 0.625rem 0 0;
-	}
-
-	body[data-layout="embed"] .view-head {
-		margin: 0 0 0.5rem;
-		padding: 0 1rem;
-	}
-
-	body[data-layout="embed"] .view-actions {
-		flex: 1 1 100%;
-	}
-
-	body[data-layout="embed"] .subnav {
-		flex-wrap: nowrap;
-		overflow-x: auto;
-		scrollbar-width: none;
-	}
-
-	body[data-layout="embed"] #view-body,
 	body[data-layout="fill"] #view-body,
-	body[data-layout="embed"] .view-root,
 	body[data-layout="fill"] .view-root {
 		flex: 1;
 		min-height: 0;
@@ -1713,23 +1658,6 @@ table.dt {
 
 	body[data-layout="fill"] .view-root {
 		gap: 0.625rem;
-	}
-
-	body[data-layout="embed"] .embed {
-		flex: 1;
-		min-height: 0;
-		grid-template-rows: auto 1fr;
-	}
-
-	body[data-layout="embed"] .embed-bar {
-		margin: 0 1rem;
-		padding: 0 0.25rem 0 0.625rem;
-	}
-
-	body[data-layout="embed"] .embed iframe {
-		height: 100%;
-		min-height: 0;
-		border-width: 1px 0 0;
 	}
 
 	body[data-layout="fill"] .log {

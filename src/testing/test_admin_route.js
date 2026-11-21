@@ -216,7 +216,9 @@ async function runTests() {
 				["/events/admin", "/admin#/eventos"],
 				["/service-providers", "/admin#/provedores"],
 				["/dossies", "/admin#/pessoas"],
-				["/dossie", "/admin#/pessoas"]
+				["/dossie", "/admin#/pessoas"],
+				// nada mais embute as telas antigas: ?embed=1 não é mais saída
+				["/instances?embed=1", "/admin#/instancias"]
 			];
 			for (const [from, to] of cases) {
 				const res = await fetch(`${baseUrl}${from}`, { redirect: "manual" });
@@ -226,7 +228,7 @@ async function runTests() {
 			for (const escape of [
 				"/groups-dossier?legado=1",
 				"/banco/admin?legado=1&auth=x",
-				"/instances?embed=1"
+				"/instances?legado=1&embed=1"
 			]) {
 				const res = await fetch(`${baseUrl}${escape}`, {
 					redirect: "manual",

@@ -178,7 +178,7 @@ const router = {
 
 function layoutOf(area, ctx) {
 	const l = typeof area.layout === "function" ? area.layout(ctx) : area.layout;
-	return l === "embed" || l === "fill" ? l : "page";
+	return l === "fill" ? l : "page";
 }
 
 function navigate(hash, { replace = false } = {}) {
