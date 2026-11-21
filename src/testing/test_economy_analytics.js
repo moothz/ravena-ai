@@ -227,20 +227,22 @@ function dashboardSql(
 	{
 		from,
 		to,
-		moeda = "zinthos",
-		moedas = ["zinthos", "petalitas", "runas"],
+		moeda,
+		// painel repetido por moeda (botões de moeda): dentro da cópia, ${moedas} vale uma moeda só
+		moedas = moeda ? [moeda] : ["zinthos", "petalitas", "runas"],
 		escala = "indice",
 		jogador = "",
 		file = DASHBOARD
 	}
 ) {
-	const panel = dashboardPanels(file).find((p) => p.title === title);
+	// título vazio: os cabeçalhos de texto não têm consulta, os botões de moeda têm
+	const panel = dashboardPanels(file).find((p) => p.title === title && p.targets.length);
 	assert.ok(panel, `painel "${title}" não encontrado`);
 	return panel.targets[0].queryText
 		.replace(/\$__from\b/g, String(from))
 		.replace(/\$__to\b/g, String(to))
-		.replace(/\$\{moeda:sqlstring\}/g, `'${moeda}'`)
-		.replace(/\$\{moeda\}/g, moeda)
+		.replace(/\$\{moeda:sqlstring\}/g, `'${moeda || "zinthos"}'`)
+		.replace(/\$\{moeda\}/g, moeda || "zinthos")
 		.replace(/\$\{moedas:sqlstring\}/g, moedas.map((m) => `'${m}'`).join(","))
 		.replace(/\$\{escala\}/g, escala)
 		.replace(/\$\{jogador:sqlstring\}/g, `'${jogador.replace(/'/g, "''")}'`)
@@ -1275,9 +1277,10 @@ async function main() {
 			st.writeBalance("zinthos", anchor, { total: 1000, holders: 3 });
 			const so = st.db
 				.prepare(
-					dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", {
+					dashboardSql("Conferência: estoque × fluxos — ${moedas:text} (período selecionado)", {
 						from: DAY0 - D,
-						to: anchor + D
+						to: anchor + D,
+						moeda: "zinthos"
 					})
 				)
 				.all();
@@ -1647,7 +1650,10 @@ async function main() {
 			const range = { from: DAY0 - D, to: DAY0 + 6 * D };
 			const z = readAll(
 				file,
-				dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", range)
+				dashboardSql("Conferência: estoque × fluxos — ${moedas:text} (período selecionado)", {
+					...range,
+					moeda: "zinthos"
+				})
 			);
 			assert.deepStrictEqual(
 				z.map((r) => [r.time, r["Sem origem"], r["% da massa"], r["Dias no intervalo"]]),
@@ -1659,7 +1665,7 @@ async function main() {
 			);
 			const r = readAll(
 				file,
-				dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", {
+				dashboardSql("Conferência: estoque × fluxos — ${moedas:text} (período selecionado)", {
 					...range,
 					moeda: "runas"
 				})
@@ -1670,7 +1676,7 @@ async function main() {
 			);
 			const p = readAll(
 				file,
-				dashboardSql("Conferência: estoque × fluxos — ${moeda} (período selecionado)", {
+				dashboardSql("Conferência: estoque × fluxos — ${moedas:text} (período selecionado)", {
 					...range,
 					moeda: "petalitas"
 				})
@@ -2385,7 +2391,7 @@ async function main() {
 			db.close();
 			const rows = readAll(
 				file,
-				dashboardSql("De onde vem e para onde vai — ${moeda} (últimos 7 dias)", {
+				dashboardSql("De onde vem e para onde vai: tabela por motivo (últimos 7 dias)", {
 					from: 0,
 					to: DAY0 + D,
 					moeda: "runas"
@@ -2434,10 +2440,11 @@ async function main() {
 			);
 			const byReason = readAll(
 				file,
-				dashboardSql("De onde vem e para onde vai — ${moeda} (últimos 7 dias)", { from: 0, to })
+				dashboardSql("De onde vem e para onde vai: tabela por motivo (últimos 7 dias)", { from: 0, to })
 			);
 			const get = (m) => byReason.find((x) => x.Motivo === m);
 			assert.deepStrictEqual(Object.keys(byReason[0]), [
+				"Moeda",
 				"Motivo",
 				"Tipo",
 				"Entrou",
@@ -2453,11 +2460,37 @@ async function main() {
 			const nm = get("Taxa de hospedagem: waifu confiscada");
 			assert.deepStrictEqual([nm.Tipo, nm.Entrou, nm["Transações"]], ["Fora do dinheiro", null, 4]);
 			assert.strictEqual(get("NOVO_MOTIVO").Tipo, "Sem mapeamento"); // sem nome: aparece cru
+			assert.strictEqual(get("Recompensa diária").Moeda, "Zinthos");
+			// Entradas e saídas (barras divergentes, uma por moeda): saiu negativo, entrou positivo; sem transferência
+			// nem fora do dinheiro; saldo da semana em texto, âmbar acima de 1% da massa
+			const bars = readAll(
+				file,
+				dashboardSql("De onde vem e para onde vai — ${moedas:text} (últimos 7 dias)", { from: 0, to, moeda: "zinthos" })
+			);
+			const bar = (m) => bars.find((x) => x.Motivo === m);
+			assert.deepStrictEqual(Object.keys(bars[0]), ["Motivo", "${moedas:text}: saiu", "${moedas:text}: entrou"]);
+			assert.deepStrictEqual(
+				[bar("Recompensa diária")["${moedas:text}: entrou"], bar("Taxa de hospedagem")["${moedas:text}: saiu"]],
+				[100, -30]
+			);
+			assert.ok(!bars.some((x) => /Mercado|waifu confiscada/.test(x.Motivo)), "transferência/fora do dinheiro nas barras");
+			const saldo = readAll(
+				file,
+				dashboardSql("Saldo da semana — ${moedas:text} (últimos 7 dias)", { from: 0, to, moeda: "zinthos" })
+			)[0];
+			assert.strictEqual(saldo["Saldo da semana"], "+122 Zinthos, criou bem mais do que destruiu");
+			assert.strictEqual(saldo["Entrou e saiu"], "entrou 197 · saiu 75");
+			const semExtrato = readAll(
+				file,
+				dashboardSql("Saldo da semana — ${moedas:text} (últimos 7 dias)", { from: 0, to, moeda: "petalitas" })
+			)[0];
+			assert.strictEqual(semExtrato["Saldo da semana"], null);
 			const daily = readAll(
 				file,
-				dashboardSql("Criado, destruído e líquido por dia — ${moeda} (período selecionado)", {
+				dashboardSql("Criado e destruído por dia — ${moedas:text} (período selecionado)", {
 					from: 0,
-					to
+					to,
+					moeda: "zinthos"
 				})
 			);
 			// destruído abaixo de zero, líquido em linha
@@ -2568,7 +2601,7 @@ async function main() {
 				const resumo = resumoCom(escala).flatMap((s) => s.elements.map((n) => byName.get(n)));
 				assert.deepStrictEqual(
 					resumo.filter((p) => p.type !== "text").map((p) => p.type),
-					["table", "alertlist", "timeseries", "table"],
+					["volkovlabs-variable-panel", "table", "alertlist", "timeseries", "table"],
 					"Resumo: situação por moeda, alertas, massa, mudanças"
 				);
 			}
@@ -2595,24 +2628,39 @@ async function main() {
 				(r) => r.spec.conditionalRendering?.spec.items[0].spec.value === "separado"
 			);
 			assert.strictEqual(sep.spec.layout.spec.items[0].spec.repeat.value, "moedas");
-			const alma = layout[1].sections.find((s) => s.title === "Ciclo da alma gêmea");
-			assert.deepStrictEqual(alma.conditional.spec.items[0].spec, {
-				variable: "moeda",
-				operator: "equals",
-				value: "zinthos"
-			});
-			// Estados vazios por renderização condicional (timeseries não mostra noValue): Petalitas sem fluxos, com aviso
 			const cond = (sec) => sec.conditional?.spec.items[0].spec;
-			const moedaTab = layout[1].sections;
-			assert.deepStrictEqual(cond(moedaTab.find((s) => s.title === "Fluxos — ${moeda}")), {
-				variable: "moeda",
-				operator: "notEquals",
-				value: "petalitas"
-			});
-			const aviso = moedaTab.find(
-				(s) => cond(s)?.value === "petalitas" && cond(s).operator === "equals"
-			);
-			assert.strictEqual(byName.get(aviso.elements[0]).title, "Petalitas: sem extrato (fase 2)");
+			const alma = layout[1].sections.find((s) => s.title === "Ciclo da alma gêmea (Zinthos)");
+			assert.deepStrictEqual(cond(alma), { variable: "moedas", operator: "equals", value: "zinthos" });
+			// Botões de moeda (Business Variable, variável moedas) no topo das abas com moeda, ao lado da pergunta
+			const repeatOf = (t) =>
+				dash.spec.layout.spec.tabs[t].spec.layout.spec.rows.flatMap((r) =>
+					r.spec.layout.spec.items.filter((i) => i.spec.repeat).map((i) => byName.get(i.spec.element.name).title)
+				);
+			for (const t of [0, 1, 2, 4]) {
+				const first = layout[t].sections[0].elements.map((n) => byName.get(n));
+				assert.deepStrictEqual(
+					first.slice(0, 2).map((p) => p.type),
+					["text", "volkovlabs-variable-panel"],
+					`${layout[t].title}: pergunta e botões de moeda no topo`
+				);
+				assert.strictEqual(first[1].options.variable, "moedas");
+				assert.strictEqual(first[1].options.displayMode, "button");
+			}
+			// Valor absoluto: um gráfico por moeda (repetido pela variável moedas); em %, moedas sobrepostas
+			assert.deepStrictEqual(repeatOf(1), [
+				"Saldo da semana — ${moedas:text} (últimos 7 dias)",
+				"De onde vem e para onde vai — ${moedas:text} (últimos 7 dias)",
+				"Criado e destruído por dia — ${moedas:text} (período selecionado)",
+				"Mediana e p90 do saldo — ${moedas:text}",
+				"Quem recebe — ${moedas:text} (últimos 7 dias)",
+				"Fatia recebida por Q5 e Q1 — ${moedas:text}",
+				"Fluxo por motivo e dia — ${moedas:text} (período selecionado)",
+				"Conferência: estoque × fluxos — ${moedas:text} (período selecionado)"
+			]);
+			const jogRows = dash.spec.layout.spec.tabs[2].spec.layout.spec.rows;
+			assert.strictEqual(jogRows[1].spec.repeat.value, "moedas");
+			for (const p of dashboardPanels().filter((x) => /\$\{moedas:text\}/.test(x.title)))
+				assert.ok(!/= '\$\{moeda/.test(p.targets[0]?.queryText || ""), `${p.title}: usa IN (\${moedas})`);
 			// Ficha do jogador só com jogador escolhido; sem ele, a instrução
 			const jogSecs = dashboardLayout(DASHBOARD_JOGADORES)[0].sections;
 			assert.deepStrictEqual(
@@ -2625,11 +2673,12 @@ async function main() {
 			// Todo elemento do layout existe e todo elemento está no layout (uma vez)
 			const used = layout.flatMap((t) => t.sections.flatMap((s) => s.elements));
 			assert.deepStrictEqual([...used].sort(), [...byName.keys()].sort());
-			// Variáveis: moeda (uma), moedas (várias, todas marcadas) e escala
+			// Variáveis: moedas (várias, com All = todas, o padrão) e escala; a ficha do jogador continua com moeda (uma)
 			const vars = Object.fromEntries(dash.spec.variables.map((v) => [v.spec.name, v.spec]));
-			assert.strictEqual(vars.moeda.multi, false);
+			assert.strictEqual(vars.moeda, undefined);
 			assert.strictEqual(vars.moedas.multi, true);
-			assert.deepStrictEqual(vars.moedas.current.value, ["zinthos", "petalitas", "runas"]);
+			assert.strictEqual(vars.moedas.includeAll, true);
+			assert.deepStrictEqual(vars.moedas.current.value, ["$__all"]);
 			assert.deepStrictEqual(
 				vars.escala.options.map((o) => o.value),
 				["indice", "valor", "separado"]
@@ -2734,11 +2783,13 @@ async function main() {
 						p.title
 					)
 				) {
-					assert.match(
-						p.title,
-						/últimos 7 dias|12 semanas|período selecionado|retrato mais recente|últimas 50|agora/,
-						p.title
-					);
+					// painel com janela própria (timeFrom) mostra o período no selo ao lado do título
+					if (!p.timeFrom && p.type !== "volkovlabs-variable-panel")
+						assert.match(
+							p.title,
+							/últimos 7 dias|12 semanas|período selecionado|retrato mais recente|últimas 50|agora/,
+							p.title
+						);
 				}
 			}
 		});
