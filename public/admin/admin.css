@@ -406,9 +406,9 @@ button {
 	text-align: center;
 }
 
+/* Sem ícone: o texto alinha com o rótulo "Outros painéis" (como no mock). */
 .nav-out {
 	grid-template-columns: minmax(0, 1fr) auto;
-	padding-left: 2rem;
 }
 
 .nav-out.is-disabled {
@@ -912,6 +912,8 @@ a.rw:focus-visible {
 .need-ext {
 	display: flex;
 	align-items: center;
+	/* em flex o espaço antes do "↗" some: o vão faz esse papel */
+	gap: 0.25em;
 	padding: 0 0.75rem;
 	border-left: 1px solid var(--hairline);
 	color: var(--muted);
@@ -1774,7 +1776,8 @@ table.dt {
 	}
 
 	.search-box input {
-		min-height: calc(var(--touch-min) - 2px);
+		min-height: var(--touch-min);
+		margin-block: -1px;
 	}
 
 	.field {

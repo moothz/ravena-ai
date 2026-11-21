@@ -776,7 +776,7 @@ export default {
 		return { text: active ? `${fmt(active)} em andamento` : "nenhum em andamento" };
 	},
 	async render(root, ctx) {
-		await loadAreaCss("eventos", "/admin/areas/eventos/eventos.css?v=2");
+		await loadAreaCss("eventos", "/admin/areas/eventos/eventos.css?v=3");
 		if (!ctx.segs.length) return renderList(root, ctx);
 		return renderForm(root, ctx);
 	}

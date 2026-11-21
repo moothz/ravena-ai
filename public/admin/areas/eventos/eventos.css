@@ -93,8 +93,10 @@
 	font-weight: 600;
 }
 
+/* Ponto separador com o mesmo vão dos dois lados (o vão da linha é 0,625rem). */
 .ev-dur::before {
-	content: "· ";
+	content: "·";
+	margin-right: 0.625rem;
 	color: var(--faint);
 }
 
