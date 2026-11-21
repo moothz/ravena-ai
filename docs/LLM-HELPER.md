@@ -1143,9 +1143,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 **Detalhes Técnicos:** Simula rolos de caça-níqueis com combinações premiadas, controle de moedas por usuário e inventário de prêmios
 
 #### Comandos:
-- **`!slots [quantidade]`**: Gira a máquina de caça-níqueis (opcional: quantidade de 1 a 30, ou 'tudo')
+- **`!slots [quantidade]`**: Gira a máquina de caça-níqueis (opcional: quantidade de 1 a 500, ou 'tudo')
   - *Categoria:* jogos
-  - *Uso/Exemplos:* `!slots`, `!slots 5`, `!slots 30`
+  - *Uso/Exemplos:* `!slots`, `!slots 5`, `!slots 500`
 - **`!slots-premios`**: Exibe a sua coleção de prêmios conquistados no caça-níqueis
   - *Categoria:* jogos
   - *Uso/Exemplos:* `!slots-premios`

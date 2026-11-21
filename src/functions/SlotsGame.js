@@ -5,6 +5,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const FishingGame = require("./FishingGame");
 const GameEventService = require("../services/GameEventService");
+const telemetry = require("../telemetry");
 
 const logger = new Logger("slots-game");
 const database = Database.getInstance();
@@ -54,6 +55,8 @@ database.getSQLiteDb(
 
 const MAX_COINS = 5;
 const MAX_STORED_COINS = 3000;
+const MAX_ROLLS_PER_COMMAND = 500;
+const MAX_DISPLAYED_ROLLS = 5;
 const COIN_REGEN_TIME = 2 * 60; // 2 minutes in seconds
 const SLOT_EMOJIS = ["🍎", "🍋", "🍒", "🍇", "🍉", "🍓", "🍑", "🍍", "🥭", "💎"];
 
@@ -522,6 +525,72 @@ async function recordGroupStats(groupId, userId, userName, wins = 0, plays = 1) 
 }
 
 /**
+ * Monta o bloco visual dos giros na ordem de interesse: jackpot de diamantes, jackpots,
+ * vitórias parciais e por último as derrotas. Até MAX_DISPLAYED_ROLLS linhas mostra tudo;
+ * acima disso mostra todos os giros que premiaram e sempre pelo menos uma derrota,
+ * resumindo o restante na linha "E mais N...".
+ * @param {Array<Object>} rollResults
+ * @returns {string}
+ */
+function buildRollsBlock(rollResults) {
+	const winningRolls = [
+		...rollResults.filter((roll) => roll.isDiamond),
+		...rollResults.filter((roll) => roll.isWin && !roll.isDiamond),
+		...rollResults.filter((roll) => roll.isPartial)
+	];
+	const losingRolls = rollResults.filter((roll) => !roll.isWin && !roll.isPartial);
+
+	let shownRolls;
+	if (rollResults.length <= MAX_DISPLAYED_ROLLS) {
+		shownRolls = [...winningRolls, ...losingRolls];
+	} else {
+		shownRolls = losingRolls.length > 0 ? [...winningRolls, losingRolls[0]] : winningRolls;
+	}
+	const hiddenRolls = rollResults.length - shownRolls.length;
+
+	let block = "🎰 *CAÇA-COISAS* 🎰\n```---------------\n";
+	for (const roll of shownRolls) {
+		const mark = roll.isDiamond ? "💎" : roll.isWin ? "✅" : roll.isPartial ? "🟡" : "❌";
+		block += `|  [ ${roll.emoji1} ] [ ${roll.emoji2} ] [ ${roll.emoji3} ]  | ${mark}\n`;
+	}
+	if (hiddenRolls > 0) {
+		block += `|  ❌ E mais ${hiddenRolls}... ❌  |\n`;
+	}
+	block += "---------------```\n\n";
+	return block;
+}
+
+/**
+ * Saldo de moedinhas para exibição: o teto passivo (5) só aparece enquanto o saldo
+ * estiver dentro dele, porque compras no banco podem deixar o usuário acima do teto.
+ * @param {number} coins
+ * @returns {string}
+ */
+function formatCoinsBalance(coins) {
+	return coins > MAX_COINS ? `${coins}` : `${coins}/${MAX_COINS}`;
+}
+
+/**
+ * Junta repetições de um mesmo item preservando a ordem de chegada.
+ * @param {Array} items
+ * @param {(item: any) => string} keyFn
+ * @returns {Array<{ item: any, count: number }>}
+ */
+function groupRepeated(items, keyFn) {
+	const groups = new Map();
+	for (const item of items) {
+		const key = keyFn(item);
+		const group = groups.get(key);
+		if (group) {
+			group.count += 1;
+		} else {
+			groups.set(key, { item, count: 1 });
+		}
+	}
+	return [...groups.values()];
+}
+
+/**
  * Comando principal do slots
  */
 async function slotsCommand(bot, message, args, group) {
@@ -562,23 +631,31 @@ async function slotsCommand(bot, message, args, group) {
 	if (numArg) {
 		const parsed = parseInt(numArg, 10);
 		if (isNaN(parsed) || parsed <= 0) {
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "invalid_quantity"
+			});
 			return new ReturnMessage({
 				chatId,
-				content: "❌ Quantidade inválida! Escolhe de 1 a 30 giros.",
+				content: `❌ Quantidade inválida! Escolhe de 1 a ${MAX_ROLLS_PER_COMMAND} giros.`,
 				options: {
 					quotedMessageId: message.origin?.id?._serialized,
 					goReply: message.origin
 				}
 			});
 		}
-		rollsCount = Math.min(parsed, 30);
+		rollsCount = Math.min(parsed, MAX_ROLLS_PER_COMMAND);
 	} else if (maxArg) {
-		rollsCount = Math.min(Math.max(1, userData.coins), 30);
+		rollsCount = Math.min(Math.max(1, userData.coins), MAX_ROLLS_PER_COMMAND);
 	}
 
 	if (userData.coins <= 0) {
 		const nextRegen = getNextCoinRegenTime(userData);
 		const waitTime = formatTimeString(nextRegen.secondsUntilNextCoin);
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "no_coins"
+		});
 		return new ReturnMessage({
 			chatId,
 			content: `❌ Você não tem moedinhas suficientes para jogar! \n\n🪙 Próxima moedinha em: *${waitTime}*`,
@@ -590,9 +667,15 @@ async function slotsCommand(bot, message, args, group) {
 	}
 
 	if (rollsCount > userData.coins) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "insufficient_coins",
+			"ravena.slots.rolls": rollsCount,
+			"ravena.slots.coins": userData.coins
+		});
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Você não tem moedinhas suficientes para girar *${rollsCount}x*!\n\n🪙 Suas moedinhas: *${userData.coins}/${MAX_COINS}*`,
+			content: `❌ Você não tem moedinhas suficientes para girar *${rollsCount}x*!\n\n🪙 Suas moedinhas: *${formatCoinsBalance(userData.coins)}*`,
 			options: {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin
@@ -648,30 +731,39 @@ async function slotsCommand(bot, message, args, group) {
 		});
 	}
 
+	telemetry.setAttrs({
+		"ravena.slots.rolls": rollsCount,
+		"ravena.slots.wins": totalWins,
+		"ravena.slots.partial_wins": totalPartialWins,
+		"ravena.slots.diamond_jackpot": hasDiamondJackpot
+	});
+
 	if (message.group) {
 		await recordGroupStats(message.group, userId, userName, totalWins, rollsCount);
 	}
 
 	try {
-		for (const roll of rollResults) {
-			await database.dbRun(
-				dbName,
-				`INSERT INTO slots_history (group_id, user_id, user_name, is_win, coins_spent, timestamp)
-				 VALUES (?, ?, ?, ?, 1, ?)`,
-				[message.group || null, userId, userName, roll.isWin ? 1 : 0, Date.now()]
-			);
-		}
+		await telemetry.withSpan(
+			"slots history.write",
+			{ attributes: { "ravena.slots.history_rows": rollResults.length } },
+			() =>
+				database.dbTransaction(dbName, async () => {
+					const timestamp = Date.now();
+					for (const roll of rollResults) {
+						await database.dbRun(
+							dbName,
+							`INSERT INTO slots_history (group_id, user_id, user_name, is_win, coins_spent, timestamp)
+    						 VALUES (?, ?, ?, ?, 1, ?)`,
+							[message.group || null, userId, userName, roll.isWin ? 1 : 0, timestamp]
+						);
+					}
+				})
+		);
 	} catch (errHist) {
 		logger.error("Erro ao gravar histórico do slots:", errHist);
 	}
 
-	let resultMessage = `🎰 *CAÇA-COISAS* 🎰\n`;
-	resultMessage += `\`\`\`---------------\n`;
-	for (const roll of rollResults) {
-		const mark = roll.isDiamond ? "💎" : roll.isWin ? "✅" : roll.isPartial ? "🟡" : "❌";
-		resultMessage += `|  [ ${roll.emoji1} ] [ ${roll.emoji2} ] [ ${roll.emoji3} ]  | ${mark}\n`;
-	}
-	resultMessage += `---------------\`\`\`\n\n`;
+	let resultMessage = buildRollsBlock(rollResults);
 
 	const authorNum = userId.split("@")[0].replace(/\D/g, "");
 	const authorMention = authorNum ? `@${authorNum}` : `@${userId}`;
@@ -863,9 +955,11 @@ async function slotsCommand(bot, message, args, group) {
 			}
 		}
 		if (totalBuffsWon.length > 0) {
+			const buffGroups = groupRepeated(totalBuffsWon, (b) => `${b.originalName}||${b.description}`);
 			resultMessage += `• 🛠️ *Buffs de Pesca (${totalBuffsWon.length}):*\n`;
-			for (const b of totalBuffsWon) {
-				resultMessage += `  - ${b.emoji} *${b.originalName}:* _${b.description || "Aprimoramento de Pesca"}_\n`;
+			for (const group of buffGroups) {
+				const buff = group.item;
+				resultMessage += `  - ${group.count}x ${buff.emoji} *${buff.originalName}:* _${buff.description || "Aprimoramento de Pesca"}_\n`;
 			}
 		}
 		if (totalJardimCoinsWon > 0 || totalJardimBagsWon > 0) {
@@ -889,7 +983,9 @@ async function slotsCommand(bot, message, args, group) {
 			resultMessage += `• 🎫 *+${totalTicketsWon} Ticket${totalTicketsWon > 1 ? "s" : ""} de Waifus*\n`;
 		}
 		if (junkItemsWon.length > 0) {
-			resultMessage += `• 🗑️ *Lixo de Colecionador:* ${junkItemsWon.join(", ")}\n`;
+			const junkGroups = groupRepeated(junkItemsWon, (junk) => junk);
+			const junkDesc = junkGroups.map((g) => (g.count > 1 ? `${g.count}x ${g.item}` : g.item));
+			resultMessage += `• 🗑️ *Lixo de Colecionador:* ${junkDesc.join(", ")}\n`;
 		}
 	} else {
 		const loseMsg =
@@ -899,7 +995,7 @@ async function slotsCommand(bot, message, args, group) {
 		resultMessage += `${actionPrefix}❌ ${loseMsg}`;
 	}
 
-	resultMessage += `\n\n> 🪙 Moedinhas: ${userData.coins}/${MAX_COINS}`;
+	resultMessage += `\n\n> 🪙 Moedinhas: ${formatCoinsBalance(userData.coins)}`;
 
 	const eventBanner = GameEventService.getEventBanner("slots");
 	if (eventBanner) {
@@ -953,6 +1049,7 @@ async function slotsHelpCommand(bot, message, args, group) {
 
 ⚙️ *Regras e Funcionamento:*
 • 🪙 *Custo:* 1 moedinha por giro.
+• 🎰 *Giros por comando:* até ${MAX_ROLLS_PER_COMMAND} (\`!slots <quantidade>\` ou \`!slots tudo\`). Só os giros que premiaram são listados; o restante vira "E mais N...".
 • ⏳ *Recarga passiva:* 1 moedinha a cada 2 minutos (acumula até 5 passivas).
 • 🥈 *Vitória Parcial (2 símbolos):* Concede de 5% a 10% (aleatório) de moedas, iscas, moedas do jardim ou Runas (arredondado para baixo, mín. 1). Se cair lixo, entrega 1. Itens, buffs e tickets não entram na vitória parcial.
 • 📜 Para consultar seu histórico de prêmios pessoais: \`!slots-historico\` ou \`!slots-premios historico\``;
@@ -1146,8 +1243,8 @@ const helper = {
 	cmds: [
 		{
 			cmd: "!slots [quantidade]",
-			desc: "Gira a máquina de caça-níqueis (opcional: quantidade de 1 a 30, ou 'tudo')",
-			usage: ["!slots", "!slots 5", "!slots 30", "!slots tudo"],
+			desc: "Gira a máquina de caça-níqueis (opcional: quantidade de 1 a 500, ou 'tudo')",
+			usage: ["!slots", "!slots 5", "!slots 500", "!slots tudo"],
 			category: "jogos"
 		},
 		{
@@ -1245,5 +1342,7 @@ module.exports = {
 	getUserCoins,
 	getWeeklySlotsStats,
 	openSacolasDoCoveiro,
-	MAX_STORED_COINS
+	buildRollsBlock,
+	MAX_STORED_COINS,
+	MAX_ROLLS_PER_COMMAND
 };

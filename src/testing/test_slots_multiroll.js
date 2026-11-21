@@ -7,6 +7,35 @@ const EventHandler = require("../EventHandler");
 const { createMessage } = require("./FakeMessage");
 const Database = require("../utils/Database");
 const SlotsGame = require("../functions/SlotsGame");
+const GameEventService = require("../services/GameEventService");
+
+// Em testMode as escritas passam pelo Database.dbRun(), que é bloqueado de propósito.
+// Por isso o seed usa Database.mappers.run() (as leituras continuam liberadas) e as
+// asserções ficam na resposta do comando, não no que o comando tentou gravar no banco.
+function seedUser(db, userId, coins) {
+	db.mappers.run(
+		"slots",
+		`INSERT OR REPLACE INTO slots_users (user_id, user_name, total_plays, total_wins, coins, last_coin_regen)
+         VALUES (?, ?, 0, 0, ?, ?)`,
+		[userId, "Testador", coins, Date.now()]
+	);
+}
+
+function cleanUser(db, userId, groupId) {
+	db.mappers.run("slots", "DELETE FROM slots_users WHERE user_id = ?", [userId]);
+	db.mappers.run("slots", "DELETE FROM slots_history WHERE user_id = ?", [userId]);
+	db.mappers.run("slots", "DELETE FROM slots_prizes WHERE user_id = ?", [userId]);
+	db.mappers.run("slots", "DELETE FROM slots_group_stats WHERE user_id = ?", [userId]);
+	db.mappers.run("slots", "DELETE FROM slots_group_stats WHERE group_id = ?", [groupId]);
+}
+
+function reelLines(content) {
+	return content.split("\n").filter((line) => line.startsWith("|  ["));
+}
+
+function reelMarks(content) {
+	return reelLines(content).map((line) => line.split("|").pop().trim());
+}
 
 async function runTests() {
 	console.log("=== Iniciando Suíte de Testes: Slots QOL (Multi-Rolls & Formatação) ===");
@@ -16,7 +45,13 @@ async function runTests() {
 	await eventHandler.commandHandler.fixedCommands.loadCommands();
 	eventHandler.commandHandler.checkCooldown = async () => ({ inCooldown: false, timeLeft: 0 });
 
+	// Sem isso um evento global ativo mudaria as chances do caça-coisas e consumiria
+	// chamadas extras de Math.random, quebrando os mocks determinísticos abaixo.
+	GameEventService.getMultiplier = () => 1.0;
+	GameEventService.getEventBanner = () => "";
+
 	const testUserId = "5511999990001@s.whatsapp.net";
+	const testUserIdDigits = "5511999990001";
 	const testGroupId = "12036302@g.us";
 	const db = Database.getInstance();
 
@@ -36,58 +71,55 @@ async function runTests() {
 		}
 	}
 
-	// Limpa dados prévios do usuário de teste
-	await db.dbRun("slots", "DELETE FROM slots_users WHERE user_id = ?", ["5511999990001"]);
-	await db.dbRun("slots", "DELETE FROM slots_history WHERE user_id = ?", [testUserId]);
-	await db.dbRun("slots", "DELETE FROM slots_group_stats WHERE user_id = ?", [testUserId]);
+	function send(content) {
+		return createMessage({
+			content,
+			group: testGroupId,
+			author: testUserId,
+			authorName: "Testador"
+		});
+	}
 
-	// Inicializa usuário com 5 moedas
-	await SlotsGame.addCoins("5511999990001", 0);
+	cleanUser(db, testUserIdDigits, testGroupId);
+
+	// Ciclo de 3 valores sempre diferentes: três chamadas consecutivas rendem sempre
+	// três símbolos distintos, ou seja, todas as rodadas viram derrota.
+	const lossCycle = [0.05, 0.15, 0.25];
+	const originalRandom = Math.random;
 
 	// ─── TESTE 1: Rolar 1 vez (Padrão) ──────────────────────────────────────────
 	console.log("\n[Teste 1] Testando giro individual (!slots)...");
+	seedUser(db, testUserIdDigits, 5);
 	prepareStep();
-	const msg1 = createMessage({
-		content: "!slots",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
-
-	await eventHandler.processMessage(bot, msg1);
+	await eventHandler.processMessage(bot, send("!slots"));
 	await waitForReply();
 	const response1 = bot.capturedMessages[0]?.content || "";
 	console.log("Resposta do Teste 1:\n", response1);
 
 	assert(response1.includes("🎰 *CAÇA-COISAS* 🎰"), "Deve conter o título do jogo");
 	assert(
-		response1.includes("| ❌") ||
-			response1.includes("| ✅") ||
-			response1.includes("| 🟡") ||
-			response1.includes("| 💎"),
+		["❌", "✅", "🟡", "💎"].some((mark) => response1.includes(`| ${mark}`)),
 		"Deve exibir o status ❌, ✅, 🟡 ou 💎 ao lado dos rolos"
 	);
 	assert(response1.includes("girou e..."), "Em 1 giro deve usar 'girou e...'");
-	assert(response1.includes("> 🪙 Moedinhas: 4/5"), "Deve ter consumido 1 moeda (4/5)");
+	assert.strictEqual(reelLines(response1).length, 1, "Deve exibir exatamente 1 linha de rolo");
 	console.log("✓ Teste 1 passou!");
 
 	// ─── TESTE 2: Rolar múltiplas vezes (!slots 4) ─────────────────────────────
 	console.log("\n[Teste 2] Testando giro múltiplo (!slots 4)...");
+	seedUser(db, testUserIdDigits, 5);
 	prepareStep();
-	const msg2 = createMessage({
-		content: "!slots 4",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
-
-	await eventHandler.processMessage(bot, msg2);
+	await eventHandler.processMessage(bot, send("!slots 4"));
 	await waitForReply();
 	const response2 = bot.capturedMessages[0]?.content || "";
 	console.log("Resposta do Teste 2:\n", response2);
 
-	const reelLines = response2.split("\n").filter((l) => l.startsWith("|  ["));
-	assert.strictEqual(reelLines.length, 4, "Deve renderizar exatamente 4 linhas de rolos");
+	assert.strictEqual(
+		reelLines(response2).length,
+		4,
+		"Deve renderizar exatamente 4 linhas de rolos (cabem na exibição)"
+	);
+	assert(!response2.includes("E mais"), "Com poucos giros não deve resumir as linhas");
 	assert(
 		response2.includes("girou, girou, girou  e..."),
 		"Em múltiplos giros deve usar 'girou, girou, girou  e...'"
@@ -95,19 +127,11 @@ async function runTests() {
 	assert(response2.includes("> 🪙 Moedinhas:"), "Deve exibir saldo de moedinhas");
 	console.log("✓ Teste 2 passou!");
 
-	// ─── TESTE 3: Moedas insuficientes (!slots 5 com saldo 0) ──────────────────
+	// ─── TESTE 3: Sem moedas (saldo zerado) ────────────────────────────────────
 	console.log("\n[Teste 3] Testando erro de moedas insuficientes...");
-	// Zera moedas
-	await db.dbRun("slots", "UPDATE slots_users SET coins = 0 WHERE user_id = ?", ["5511999990001"]);
+	seedUser(db, testUserIdDigits, 0);
 	prepareStep();
-	const msg3 = createMessage({
-		content: "!slots 5",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
-
-	await eventHandler.processMessage(bot, msg3);
+	await eventHandler.processMessage(bot, send("!slots 5"));
 	await waitForReply();
 	const response3 = bot.capturedMessages[0]?.content || "";
 	console.log("Resposta do Teste 3:\n", response3);
@@ -115,20 +139,14 @@ async function runTests() {
 		response3.includes("não tem moedinhas suficientes"),
 		"Deve avisar sobre moedinhas insuficientes"
 	);
+	assert(response3.includes("Próxima moedinha em"), "Deve informar quando volta a ter moedinha");
 	console.log("✓ Teste 3 passou!");
 
 	// ─── TESTE 4: Tentativa com saldo parcial (Tem 2 moedas, pede 5) ───────────
 	console.log("\n[Teste 4] Testando pedido de 5 rodadas com apenas 2 moedas...");
-	await db.dbRun("slots", "UPDATE slots_users SET coins = 2 WHERE user_id = ?", ["5511999990001"]);
+	seedUser(db, testUserIdDigits, 2);
 	prepareStep();
-	const msg4 = createMessage({
-		content: "!slots 5",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
-
-	await eventHandler.processMessage(bot, msg4);
+	await eventHandler.processMessage(bot, send("!slots 5"));
 	await waitForReply();
 	const response4 = bot.capturedMessages[0]?.content || "";
 	console.log("Resposta do Teste 4:\n", response4);
@@ -139,155 +157,207 @@ async function runTests() {
 	assert(response4.includes("Suas moedinhas: *2/5*"), "Deve informar saldo atual");
 	console.log("✓ Teste 4 passou!");
 
-	// ─── TESTE 5: Limite máximo de 30 rodadas (!slots 50) ──────────────────────
-	console.log("\n[Teste 5] Testando limite máximo de 30 rodadas (!slots 50)...");
-	await db.dbRun("slots", "UPDATE slots_users SET coins = 50 WHERE user_id = ?", ["5511999990001"]);
+	// ─── TESTE 5: Limite de 500 rodadas por comando (!slots 600) ───────────────
+	console.log("\n[Teste 5] Testando limite de 500 rodadas por comando (!slots 600)...");
+	seedUser(db, testUserIdDigits, 600);
 	prepareStep();
-	const msg5 = createMessage({
-		content: "!slots 50",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
+	let lossCounter = 0;
+	try {
+		Math.random = () => lossCycle[lossCounter++ % lossCycle.length];
 
-	await eventHandler.processMessage(bot, msg5);
-	await waitForReply();
-	const response5 = bot.capturedMessages[0]?.content || "";
-	const reelLines5 = response5.split("\n").filter((l) => l.startsWith("|  ["));
-	console.log(`Linhas de rolos geradas no Teste 5: ${reelLines5.length}`);
-	assert.strictEqual(reelLines5.length, 30, "Deve limitar a exatamente 30 rolos");
+		await eventHandler.processMessage(bot, send("!slots 600"));
+		await waitForReply(30000);
+		const response5 = bot.capturedMessages[0]?.content || "";
+		console.log(`Primeiras linhas do Teste 5:\n${response5.split("\n").slice(0, 5).join("\n")}`);
+
+		assert.strictEqual(
+			SlotsGame.MAX_ROLLS_PER_COMMAND,
+			500,
+			"O limite por comando deve ser 500 giros"
+		);
+		assert(
+			response5.includes("girou, girou, girou"),
+			"Deve processar os giros em vez de recusar por quantidade"
+		);
+		assert.strictEqual(
+			reelLines(response5).length,
+			1,
+			"Com todos os giros perdidos exibe apenas 1 linha de derrota"
+		);
+		assert(
+			response5.includes("|  ❌ E mais 499... ❌  |"),
+			"Deve resumir os 499 giros ocultos em 'E mais 499...'"
+		);
+		assert(
+			response5.includes("> 🪙 Moedinhas: 100"),
+			"Deve consumir 500 moedinhas (600 - 500), provando que girou 500 vezes"
+		);
+	} finally {
+		Math.random = originalRandom;
+	}
 	console.log("✓ Teste 5 passou!");
 
 	// ─── TESTE 6: Argumento 'tudo' / 'max' ──────────────────────────────────────
 	console.log("\n[Teste 6] Testando argumento '!slots tudo'...");
-	await db.dbRun("slots", "UPDATE slots_users SET coins = 7 WHERE user_id = ?", ["5511999990001"]);
+	seedUser(db, testUserIdDigits, 7);
 	prepareStep();
-	const msg6 = createMessage({
-		content: "!slots tudo",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
+	let allLossCounter = 0;
+	try {
+		Math.random = () => lossCycle[allLossCounter++ % lossCycle.length];
 
-	await eventHandler.processMessage(bot, msg6);
-	await waitForReply();
-	const response6 = bot.capturedMessages[0]?.content || "";
-	const reelLines6 = response6.split("\n").filter((l) => l.startsWith("|  ["));
-	console.log(`Linhas de rolos geradas no Teste 6: ${reelLines6.length}`);
-	assert.strictEqual(reelLines6.length, 7, "Deve girar todas as 7 moedas disponíveis");
+		await eventHandler.processMessage(bot, send("!slots tudo"));
+		await waitForReply(30000);
+		const response6 = bot.capturedMessages[0]?.content || "";
+		console.log(`Primeiras linhas do Teste 6:\n${response6.split("\n").slice(0, 4).join("\n")}`);
+
+		assert(
+			response6.includes("|  ❌ E mais 6... ❌  |"),
+			"Deve girar as 7 moedas disponíveis e resumir as outras 6 derrotas"
+		);
+		assert(
+			response6.includes("> 🪙 Moedinhas: 0"),
+			"Deve consumir as 7 moedinhas do '!slots tudo'"
+		);
+	} finally {
+		Math.random = originalRandom;
+	}
 	console.log("✓ Teste 6 passou!");
 
-	// ─── TESTE 7: Quantidade inválida (!slots 0 ou !slots -3) ──────────────────
+	// ─── TESTE 7: Quantidade inválida (!slots 0) ───────────────────────────────
 	console.log("\n[Teste 7] Testando argumento inválido (!slots 0)...");
+	seedUser(db, testUserIdDigits, 5);
 	prepareStep();
-	const msg7 = createMessage({
-		content: "!slots 0",
-		group: testGroupId,
-		author: testUserId,
-		authorName: "Testador"
-	});
-
-	await eventHandler.processMessage(bot, msg7);
+	await eventHandler.processMessage(bot, send("!slots 0"));
 	await waitForReply();
 	const response7 = bot.capturedMessages[0]?.content || "";
 	console.log("Resposta do Teste 7:\n", response7);
-	assert(
-		response7.includes("Quantidade inválida de rodadas"),
-		"Deve avisar sobre quantidade inválida"
-	);
+	assert(response7.includes("Quantidade inválida!"), "Deve avisar sobre quantidade inválida");
+	assert(response7.includes("1 a 500"), "Deve citar o novo limite de 500 giros");
 	console.log("✓ Teste 7 passou!");
 
-	// ─── TESTE 8: Validação de histórico e group_stats ─────────────────────────
-	console.log("\n[Teste 8] Validando consistência no banco de dados...");
-	const histCount = await db.dbGet(
-		"slots",
-		"SELECT COUNT(*) as c FROM slots_history WHERE user_id = ?",
-		[testUserId]
-	);
-	console.log(`Total de registros no histórico: ${histCount.c}`);
-	// 1 (teste 1) + 4 (teste 2) + 30 (teste 5) + 7 (teste 6) = 42
-	assert.strictEqual(histCount.c, 42, "Deve ter gravado 1 registro por giro no histórico");
+	// ─── TESTE 8: Prêmios repetidos agrupados no resumo ────────────────────────
+	console.log("\n[Teste 8] Testando agrupamento de prêmios repetidos no resumo...");
+	seedUser(db, testUserIdDigits, 5);
+	prepareStep();
+	try {
+		// 0.05 trava os três rolos em maçã (vitória) e cai sempre na faixa de lixo,
+		// sorteando sempre o mesmo item: o resumo precisa agrupar pela contagem.
+		Math.random = () => 0.05;
 
-	const groupStats = await db.dbGet(
-		"slots",
-		"SELECT total_plays, total_wins FROM slots_group_stats WHERE user_id = ? AND group_id = ?",
-		[testUserId, testGroupId]
-	);
-	console.log("Group stats:", groupStats);
-	assert.strictEqual(groupStats.total_plays, 42, "Total de jogadas no grupo deve ser 42");
+		await eventHandler.processMessage(bot, send("!slots 5"));
+		await waitForReply(30000);
+		const response8 = bot.capturedMessages[0]?.content || "";
+		console.log("Resposta do Teste 8:\n", response8);
+
+		assert.deepStrictEqual(
+			reelMarks(response8),
+			["✅", "✅", "✅", "✅", "✅"],
+			"Deve exibir as 5 rodadas vencedoras"
+		);
+		assert(!response8.includes("| ❌"), "Sem derrotas não deve aparecer linha de derrota");
+		assert(
+			response8.includes("5x Meia furada"),
+			"Deve agrupar os 5 itens de lixo repetidos em uma linha só com a contagem"
+		);
+	} finally {
+		Math.random = originalRandom;
+	}
 	console.log("✓ Teste 8 passou!");
 
 	// ─── TESTE 9: Vitória individual (Exibe '✅' e prêmio) ─────────────────────
 	console.log("\n[Teste 9] Testando vitória com '✅' e mensagem de vitória...");
-	await db.dbRun("slots", "UPDATE slots_users SET coins = 5 WHERE user_id = ?", ["5511999990001"]);
-	const originalRandom = Math.random;
+	seedUser(db, testUserIdDigits, 5);
+	prepareStep();
 	try {
 		// Mock para forçar vitória (0, 0, 0)
 		Math.random = () => 0.05;
-		prepareStep();
-		const msg9 = createMessage({
-			content: "!slots",
-			group: testGroupId,
-			author: testUserId,
-			authorName: "Testador"
-		});
 
-		await eventHandler.processMessage(bot, msg9);
+		await eventHandler.processMessage(bot, send("!slots"));
 		await waitForReply();
 		const response9 = bot.capturedMessages[0]?.content || "";
 		console.log("Resposta do Teste 9:\n", response9);
 
 		assert(response9.includes("| ✅"), "Linha vencedora deve exibir ✅");
-		assert(!response9.includes("| ❌"), "Linha vencedora não deve exibir ❌");
+		assert(!response9.includes("| ❌"), "Não deve haver linha de derrota em um único giro");
 		assert(response9.includes("🎊"), "Deve conter emoji de celebração da vitória");
 		assert(response9.includes("🎁"), "Deve exibir o prêmio recebido");
-		console.log("✓ Teste 9 passou!");
 	} finally {
 		Math.random = originalRandom;
 	}
+	console.log("✓ Teste 9 passou!");
 
-	// ─── TESTE 10: Multi-Roll com vitórias parciais ────────────────────────────
-	console.log("\n[Teste 10] Testando multi-roll com vitórias parciais (linhas com ✅ e ❌)...");
-	await db.dbRun("slots", "UPDATE slots_users SET coins = 5 WHERE user_id = ?", ["5511999990001"]);
-	try {
-		let callCount = 0;
-		Math.random = () => {
-			callCount++;
-			// Rodada 1: roll1=0, roll2=0, roll3=0 (Win)
-			if (callCount <= 3) return 0.05;
-			// Rodada 2: roll1=0, roll2=5, roll3=8 (Lose)
-			if (callCount === 4) return 0.05;
-			if (callCount === 5) return 0.55;
-			if (callCount === 6) return 0.85;
-			// Vitória/Prêmio
-			return 0.1;
-		};
+	// ─── TESTE 10: Ordem e truncamento do bloco de rolos (função de exibição) ───
+	console.log("\n[Teste 10] Testando ordem 💎 > ✅ > 🟡 > ❌ e a linha 'E mais N...'...");
+	const diamond = {
+		emoji1: "💎",
+		emoji2: "💎",
+		emoji3: "💎",
+		isWin: true,
+		isPartial: false,
+		isDiamond: true
+	};
+	const jackpot = {
+		emoji1: "🍇",
+		emoji2: "🍇",
+		emoji3: "🍇",
+		isWin: true,
+		isPartial: false,
+		isDiamond: false
+	};
+	const partial = {
+		emoji1: "🍎",
+		emoji2: "🥭",
+		emoji3: "🍎",
+		isWin: false,
+		isPartial: true,
+		isDiamond: false
+	};
+	const loss = {
+		emoji1: "🍉",
+		emoji2: "🍓",
+		emoji3: "🍑",
+		isWin: false,
+		isPartial: false,
+		isDiamond: false
+	};
 
-		prepareStep();
-		const msg10 = createMessage({
-			content: "!slots 2",
-			group: testGroupId,
-			author: testUserId,
-			authorName: "Testador"
-		});
+	const manyRolls = [
+		diamond,
+		jackpot,
+		partial,
+		partial,
+		partial,
+		...Array.from({ length: 7 }, () => loss)
+	];
+	const block = SlotsGame.buildRollsBlock(manyRolls);
+	console.log("Bloco gerado no Teste 10:\n", block);
 
-		await eventHandler.processMessage(bot, msg10);
-		await waitForReply();
-		const response10 = bot.capturedMessages[0]?.content || "";
-		console.log("Resposta do Teste 10:\n", response10);
+	assert(block.includes("🎰 *CAÇA-COISAS* 🎰"), "O bloco deve começar com o título do jogo");
+	assert.deepStrictEqual(
+		reelMarks(block),
+		["💎", "✅", "🟡", "🟡", "🟡", "❌"],
+		"Deve ordenar jackpot de diamantes, jackpot, parciais e por fim uma derrota"
+	);
+	assert(block.includes("|  ❌ E mais 6... ❌  |"), "Deve resumir as 6 derrotas restantes");
 
-		assert(response10.includes("| ✅"), "Deve conter linha com ✅");
-		assert(response10.includes("| ❌"), "Deve conter linha com ❌");
-		assert(response10.includes("🎊"), "Deve comemorar com mensagem de vitória");
-		console.log("✓ Teste 10 passou!");
-	} finally {
-		Math.random = originalRandom;
-	}
+	const onlyLossesBlock = SlotsGame.buildRollsBlock(Array.from({ length: 6 }, () => loss));
+	assert.deepStrictEqual(
+		reelMarks(onlyLossesBlock),
+		["❌"],
+		"Deve manter ao menos uma derrota visível"
+	);
+	assert(onlyLossesBlock.includes("|  ❌ E mais 5... ❌  |"), "Deve resumir as outras 5 derrotas");
 
-	// Limpeza do usuário de teste
-	await db.dbRun("slots", "DELETE FROM slots_users WHERE user_id = ?", ["5511999990001"]);
-	await db.dbRun("slots", "DELETE FROM slots_history WHERE user_id = ?", [testUserId]);
-	await db.dbRun("slots", "DELETE FROM slots_group_stats WHERE user_id = ?", [testUserId]);
+	const fewRollsBlock = SlotsGame.buildRollsBlock([jackpot, loss, loss]);
+	assert.deepStrictEqual(
+		reelMarks(fewRollsBlock),
+		["✅", "❌", "❌"],
+		"Com poucos giros deve mostrar todas as linhas, ainda assim ordenadas"
+	);
+	assert(!fewRollsBlock.includes("E mais"), "Com poucos giros não deve resumir nada");
+	console.log("✓ Teste 10 passou!");
+
+	cleanUser(db, testUserIdDigits, testGroupId);
 
 	console.log("\n=== Todos os 10 testes passaram com sucesso! ===");
 }

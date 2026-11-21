@@ -164,7 +164,7 @@ Na cotacao real indexada ao M2 do banco (0,1699 ᚱ/Z), a conversao das Runas ge
 * `!banco-extrato`: Exibe historico das ultimas transacoes no banco.
 
 ### Caca-Coisas (SlotsGame)
-* `!slots [quantidade|tudo]`: Gira a alavanca (1 a 30 giros por comando).
+* `!slots [quantidade|tudo]`: Gira a alavanca (1 a 500 giros por comando).
 * `!slots-premios`: Lista tabela de probabilidades e premiacoes.
 * `!slots-historico`: Historico de premios obtidos na maquina.
 * `!slots-ranking`: Ranking de maiores vencedores e perdedores no grupo.
