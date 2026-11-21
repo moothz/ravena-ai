@@ -171,6 +171,10 @@ function createAuthenticateBasic(api) {
 		let user = api.apiUser;
 		let pass = api.apiPassword;
 
+		// O admin geral (sessão do painel ou usuário da API) gerencia qualquer instância; a
+		// credencial própria da instância continua valendo para quem só tem ela.
+		if (isAdmin(api, req)) return next();
+
 		if (botId) {
 			const bot = api.bots.find((b) => b.id === botId);
 			if (bot && bot.managementUser && bot.managementPW) {
