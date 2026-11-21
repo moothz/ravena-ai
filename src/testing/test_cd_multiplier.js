@@ -13,32 +13,37 @@ const FakeBot = require("./FakeBot");
 async function runTests() {
 	console.log("=== INICIANDO TESTES DE cdMultiplier EM BOTS E COOLDOWNS ===");
 
-	// 1. Validar bots.json: todas as instâncias privadas devem ter extras.cdMultiplier === 0
-	console.log(
-		"\n[1] Verificando bots.json (todas as ravenas privadas devem ter extras.cdMultiplier: 0)..."
-	);
+	// 1. Validar bots.json: nenhum bot deve ter extras.cdMultiplier solto na raiz; quem tem deve usar extras.cmds.cdMultiplier
+	console.log("\n[1] Verificando bots.json (padronização de extras.cmds.cdMultiplier)...");
 	const botsJsonPath = path.join(__dirname, "../../bots.json");
 	if (fs.existsSync(botsJsonPath)) {
 		const bots = JSON.parse(fs.readFileSync(botsJsonPath, "utf-8"));
-		const privates = bots.filter((b) => b.privado === true);
-		assert(privates.length > 0, "Deve haver ao menos um bot privado em bots.json");
-		for (const bot of privates) {
-			assert(bot.extras, `Bot privado '${bot.nome}' deve possuir objeto extras`);
-			assert.strictEqual(
-				bot.extras.cdMultiplier,
-				0,
-				`Bot privado '${bot.nome}' deve ter extras.cdMultiplier === 0 (atual: ${bot.extras.cdMultiplier})`
-			);
+		let configuredCount = 0;
+		for (const bot of bots) {
+			if (bot.extras) {
+				assert.strictEqual(
+					bot.extras.cdMultiplier,
+					undefined,
+					`Bot '${bot.nome}' não deve ter 'extras.cdMultiplier' na raiz de extras. Use 'extras.cmds.cdMultiplier'.`
+				);
+				if (bot.extras.cmds && bot.extras.cmds.cdMultiplier !== undefined) {
+					assert(
+						typeof bot.extras.cmds.cdMultiplier === "number",
+						`Bot '${bot.nome}' deve ter extras.cmds.cdMultiplier como número`
+					);
+					configuredCount++;
+				}
+			}
 		}
 		console.log(
-			`✓ Todos os ${privates.length} bots privados em bots.json têm extras.cdMultiplier: 0`
+			`✓ bots.json validado: nenhum bot possui chave legada e ${configuredCount} instâncias usam extras.cmds.cdMultiplier`
 		);
 	} else {
 		console.log("⚠ bots.json não encontrado localmente (ignorado)");
 	}
 
-	// 2. Testar CommandHandler com cdMultiplier = 0 (cooldown zerado)
-	console.log("\n[2] Testando bot com cdMultiplier = 0 (cooldown desativado)...");
+	// 2. Testar CommandHandler com extras.cmds.cdMultiplier = 0 (cooldown zerado)
+	console.log("\n[2] Testando bot com extras.cmds.cdMultiplier = 0 (cooldown desativado)...");
 	const ch = new CommandHandler();
 	clearInterval(ch.decayInterval);
 	clearInterval(ch.cooldownMsgCleanupInterval);
@@ -46,7 +51,7 @@ async function runTests() {
 	const botZeroCd = new FakeBot({
 		id: "bot_cd_zero",
 		privado: false,
-		extras: { cdMultiplier: 0 }
+		extras: { cmds: { cdMultiplier: 0 } }
 	});
 
 	const cmd20s = new Command({
@@ -70,14 +75,14 @@ async function runTests() {
 		false,
 		"cdMultiplier = 0 não deve entrar em cooldown mesmo após update"
 	);
-	console.log("✓ Bot com cdMultiplier: 0 não entra em cooldown");
+	console.log("✓ Bot com extras.cmds.cdMultiplier: 0 não entra em cooldown");
 
-	// 3. Testar CommandHandler com cdMultiplier = 0.5 (cooldown pela metade: 20s -> 10s)
-	console.log("\n[3] Testando bot com cdMultiplier = 0.5 (cooldown pela metade)...");
+	// 3. Testar CommandHandler com extras.cmds.cdMultiplier = 0.5 (cooldown pela metade: 20s -> 10s)
+	console.log("\n[3] Testando bot com extras.cmds.cdMultiplier = 0.5 (cooldown pela metade)...");
 	const botHalfCd = new FakeBot({
 		id: "bot_cd_half",
 		privado: false,
-		extras: { cdMultiplier: 0.5 }
+		extras: { cmds: { cdMultiplier: 0.5 } }
 	});
 	const user2 = "5511999990002@s.whatsapp.net";
 
@@ -92,14 +97,16 @@ async function runTests() {
 		cdCheck.timeLeft > 0 && cdCheck.timeLeft <= 10,
 		`Tempo restante deve ser <= 10s (obtido: ${cdCheck.timeLeft}s)`
 	);
-	console.log(`✓ Bot com cdMultiplier: 0.5 aplica cooldown reduzido (${cdCheck.timeLeft}s <= 10s)`);
+	console.log(
+		`✓ Bot com extras.cmds.cdMultiplier: 0.5 aplica cooldown reduzido (${cdCheck.timeLeft}s <= 10s)`
+	);
 
-	// 4. Testar CommandHandler com cdMultiplier = 2.0 (cooldown em dobro: 20s -> 40s)
-	console.log("\n[4] Testando bot com cdMultiplier = 2.0 (cooldown em dobro)...");
+	// 4. Testar CommandHandler com extras.cmds.cdMultiplier = 2.0 (cooldown em dobro: 20s -> 40s)
+	console.log("\n[4] Testando bot com extras.cmds.cdMultiplier = 2.0 (cooldown em dobro)...");
 	const botDoubleCd = new FakeBot({
 		id: "bot_cd_double",
 		privado: false,
-		extras: { cdMultiplier: 2.0 }
+		extras: { cmds: { cdMultiplier: 2.0 } }
 	});
 	const user3 = "5511999990003@s.whatsapp.net";
 
@@ -114,10 +121,12 @@ async function runTests() {
 		cdCheck.timeLeft > 20 && cdCheck.timeLeft <= 40,
 		`Tempo restante deve estar entre 21s e 40s (obtido: ${cdCheck.timeLeft}s)`
 	);
-	console.log(`✓ Bot com cdMultiplier: 2.0 aplica cooldown dobrado (${cdCheck.timeLeft}s > 20s)`);
+	console.log(
+		`✓ Bot com extras.cmds.cdMultiplier: 2.0 aplica cooldown dobrado (${cdCheck.timeLeft}s > 20s)`
+	);
 
-	// 5. Testar Bot Privado sem extras.cdMultiplier explícito (fallback automático para 0)
-	console.log("\n[5] Testando bot privado sem extras.cdMultiplier (fallback para 0)...");
+	// 5. Testar Bot Privado sem extras.cmds.cdMultiplier explícito (fallback padrão 1.0x, NÃO zera automaticamente)
+	console.log("\n[5] Testando bot privado sem extras.cmds.cdMultiplier (fallback para 1.0x)...");
 	const botPrivateDefault = new FakeBot({
 		id: "bot_priv_default",
 		privado: true,
@@ -129,12 +138,16 @@ async function runTests() {
 	cdCheck = await ch.checkCooldown(cmd20s, groupChat, botPrivateDefault, user4, false);
 	assert.strictEqual(
 		cdCheck.inCooldown,
-		false,
-		"Bot privado por padrão sem extras deve zerar cooldown"
+		true,
+		"Bot privado sem extras.cmds.cdMultiplier não deve zerar cooldown automaticamente"
 	);
-	console.log("✓ Fallback de bot privado zera o cooldown corretamente");
+	assert(
+		cdCheck.timeLeft > 10 && cdCheck.timeLeft <= 20,
+		`Tempo restante deve ser de até 20s (obtido: ${cdCheck.timeLeft}s)`
+	);
+	console.log("✓ Bot privado sem configuração mantém cooldown padrão (fallback 1.0x)");
 
-	// 6. Testar Bot Comunitário sem extras.cdMultiplier (padrão 1.0 = 20s)
+	// 6. Testar Bot Comunitário sem extras (padrão 1.0x = 20s)
 	console.log("\n[6] Testando bot comunitário sem extras (padrão 1.0x)...");
 	const botNormal = new FakeBot({
 		id: "bot_normal",
@@ -151,6 +164,20 @@ async function runTests() {
 		`Tempo restante deve ser <= 20s (obtido: ${cdCheck.timeLeft}s)`
 	);
 	console.log(`✓ Bot normal mantém cooldown padrão de 20s (${cdCheck.timeLeft}s)`);
+
+	// 7. Testar valores inválidos (string ou número negativo -> fallback 1.0x)
+	console.log("\n[7] Testando valores inválidos (fallback seguro para 1.0x)...");
+	const botInvalid = new FakeBot({
+		id: "bot_invalid",
+		privado: false,
+		extras: { cmds: { cdMultiplier: "invalido" } }
+	});
+	const user6 = "5511999990006@s.whatsapp.net";
+
+	await ch.updateCooldown(cmd20s, groupChat, botInvalid, user6, false);
+	cdCheck = await ch.checkCooldown(cmd20s, groupChat, botInvalid, user6, false);
+	assert.strictEqual(cdCheck.inCooldown, true, "Valor inválido deve fazer fallback para 1.0x");
+	console.log("✓ Valor inválido faz fallback seguro para cooldown normal (1.0x)");
 
 	console.log("\n=== TODOS OS TESTES DE cdMultiplier PASSARAM COM SUCESSO! ===");
 }

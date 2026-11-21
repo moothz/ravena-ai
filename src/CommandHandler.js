@@ -198,9 +198,11 @@ class CommandHandler {
 		}
 
 		if (cooldownValue > 0) {
-			const rawMultiplier =
-				bot?.extras?.cdMultiplier !== undefined ? bot.extras.cdMultiplier : bot?.cdMultiplier;
-			const multiplier = typeof rawMultiplier === "number" ? rawMultiplier : bot?.privado ? 0 : 1.0;
+			const rawMultiplier = bot?.extras?.cmds?.cdMultiplier;
+			const multiplier =
+				typeof rawMultiplier === "number" && !isNaN(rawMultiplier) && rawMultiplier >= 0
+					? rawMultiplier
+					: 1;
 			cooldownValue = Math.round(cooldownValue * multiplier);
 		}
 
@@ -322,9 +324,11 @@ class CommandHandler {
 		}
 
 		if (cooldownValue > 0) {
-			const rawMultiplier =
-				bot?.extras?.cdMultiplier !== undefined ? bot.extras.cdMultiplier : bot?.cdMultiplier;
-			const multiplier = typeof rawMultiplier === "number" ? rawMultiplier : bot?.privado ? 0 : 1.0;
+			const rawMultiplier = bot?.extras?.cmds?.cdMultiplier;
+			const multiplier =
+				typeof rawMultiplier === "number" && !isNaN(rawMultiplier) && rawMultiplier >= 0
+					? rawMultiplier
+					: 1;
 			cooldownValue = Math.round(cooldownValue * multiplier);
 		}
 
