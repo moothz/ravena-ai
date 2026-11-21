@@ -169,7 +169,6 @@ function resumoCard(bot) {
 		.filter(([k]) => bot[k])
 		.map(([, l]) => pill(l));
 	if (bot.updateStatus !== false) flags.push(pill("atualiza recado"));
-	const chat = chatUrl(bot);
 	return card({
 		title: "Agora",
 		body: kv([
@@ -189,18 +188,7 @@ function resumoCard(bot) {
 					? `${relTime(bot.lastMessageReceived)} (${dateFmt(bot.lastMessageReceived)})`
 					: "sem dado"
 			],
-			[
-				"Número",
-				chat
-					? h(
-							"span",
-							null,
-							formatPhone(bot.numero),
-							" · ",
-							h("a", { href: chat, target: "_blank", rel: "noopener", text: "Abrir conversa ↗" })
-						)
-					: formatPhone(bot.numero)
-			],
+			["Número", formatPhone(bot.numero)],
 			["Prefixo", h("code", { text: bot.customPrefix || "!" })],
 			["Webhook", bot.webhookPort ? `porta ${bot.webhookPort}` : "—"],
 			["Marcas", flags.length ? h("span", { class: "inst-flags" }, flags) : "nenhuma"]
@@ -293,6 +281,17 @@ function renderResumo(root, ctx, bot, draft, isNew) {
 	acts.append(
 		h("a", { class: "btn btn-quiet", href: buildHash("logs", [bot.nome]), text: "Logs" })
 	);
+	const chat = chatUrl(bot);
+	if (chat)
+		acts.append(
+			h(
+				"a",
+				{ class: "btn btn-quiet", href: chat, target: "_blank", rel: "noopener" },
+				"Abrir conversa",
+				h("span", { class: "ext", "aria-hidden": "true", text: " ↗" }),
+				h("span", { class: "sr-only", text: " (abre em outra aba)" })
+			)
+		);
 
 	const logout = h("button", {
 		type: "button",

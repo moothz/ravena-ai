@@ -18,8 +18,13 @@
 }
 
 .inst-filters {
-	flex-wrap: wrap;
 	max-width: 100%;
+	overflow-x: auto;
+	scrollbar-width: none;
+}
+
+.inst-filters .seg-link {
+	white-space: nowrap;
 }
 
 .inst-select {
@@ -306,11 +311,16 @@
 
 @media (max-width: 30rem) {
 	.inst-prop {
-		grid-template-columns: 1fr auto;
+		grid-template-columns: minmax(0, 1fr) auto;
 	}
 
 	.inst-prop-val {
-		grid-column: 1 / -1;
+		grid-column: 1;
+		grid-row: 2;
+	}
+
+	.inst-prop > .btn {
+		grid-column: 2;
 		grid-row: 2;
 	}
 }
@@ -497,6 +507,13 @@
 }
 
 @media (pointer: coarse) {
+	/* Trilha: o kit dá altura de toque a .crumbs a, mas o link é inline e não a recebe. */
+	.view-root .crumbs a {
+		display: inline-flex;
+		align-items: center;
+		min-height: var(--touch-min);
+	}
+
 	.inst-select,
 	.inst-prop input,
 	.inst-prop select,

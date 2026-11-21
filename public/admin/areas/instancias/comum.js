@@ -31,8 +31,7 @@ export function ensureCss() {
 
 /* ── Rotas da área ─────────────────────────────────────────────── */
 
-/** Segmentos reservados: não são nomes de instância. */
-export const RESERVED = ["nova", "avisos"];
+// "nova" e "avisos" são reservados: uma instância com esses nomes não teria ficha própria.
 export const listHref = (params) => buildHash("instancias", [], params);
 export const botHref = (nome, tab) => buildHash("instancias", tab ? [nome, tab] : [nome]);
 

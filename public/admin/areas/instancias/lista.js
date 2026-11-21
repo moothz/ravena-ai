@@ -231,13 +231,6 @@ export async function renderLista(root, ctx) {
 			},
 			icon("recarregar"),
 			h("span", { class: "btn-label", text: "Atualizar" })
-		),
-		h(
-			"a",
-			{ class: "btn btn-quiet", href: "/cmd", target: "_blank", rel: "noopener" },
-			h("span", { class: "btn-label", text: "Comandos" }),
-			h("span", { class: "ext", "aria-hidden": "true", text: " ↗" }),
-			h("span", { class: "sr-only", text: "Comandos (abre em outra aba)" })
 		)
 	);
 
@@ -372,7 +365,9 @@ export async function renderLista(root, ctx) {
 		listBox,
 		note(
 			"Desativar e Reativar gravam o campo enabled no bots.json, valendo na hora. ",
-			"Não há desativação por tempo: o servidor não tem esse recurso."
+			"Não há desativação por tempo: o servidor não tem esse recurso. Catálogo de comandos: ",
+			h("a", { href: "/cmd", target: "_blank", rel: "noopener", text: "/cmd ↗" }),
+			"."
 		)
 	);
 	draw(bots);
