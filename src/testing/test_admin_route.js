@@ -192,19 +192,14 @@ async function runTests() {
 		}
 		console.log("✓ /api/admin/links: autenticação, sem .env (desabilitado) e com .env.");
 
-		// Redirecionamento das telas antigas: o mapa começa vazio (nada muda)...
-		assert.deepStrictEqual(LEGACY_ADMIN_REDIRECTS, {}, "o mapa começa vazio nesta etapa");
-		const before = await fetch(`${baseUrl}/groups-dossier`, {
-			redirect: "manual",
-			headers: { "X-Test-Admin": "1" }
-		});
-		assert.strictEqual(before.status, 200, "sem entrada no mapa, a tela antiga continua");
-
-		// ...e, com entradas, manda para /admin#/<área>
-		Object.assign(LEGACY_ADMIN_REDIRECTS, {
-			"/groups-dossier": "pessoas/grupos",
+		// Redirecionamento das telas antigas: todas as áreas já são nativas no /admin
+		assert.deepStrictEqual(LEGACY_ADMIN_REDIRECTS, {
+			"/instances": "instancias",
 			"/banco/admin": "banco",
-			"/instances": "instancias"
+			"/eventos/admin": "eventos",
+			"/service-providers": "provedores",
+			"/dossies": "pessoas",
+			"/groups-dossier": "pessoas/grupos"
 		});
 		try {
 			const cases = [
@@ -216,7 +211,12 @@ async function runTests() {
 				["/banco-admin.html", "/admin#/banco"],
 				["/instances", "/admin#/instancias"],
 				["/instances.html?x=1", "/admin#/instancias"],
-				["/banco/admin?auth=YWRtaW46c2VuaGE%3D", "/admin?auth=YWRtaW46c2VuaGE%3D#/banco"]
+				["/banco/admin?auth=YWRtaW46c2VuaGE%3D", "/admin?auth=YWRtaW46c2VuaGE%3D#/banco"],
+				["/eventos/admin", "/admin#/eventos"],
+				["/events/admin", "/admin#/eventos"],
+				["/service-providers", "/admin#/provedores"],
+				["/dossies", "/admin#/pessoas"],
+				["/dossie", "/admin#/pessoas"]
 			];
 			for (const [from, to] of cases) {
 				const res = await fetch(`${baseUrl}${from}`, { redirect: "manual" });
@@ -236,13 +236,10 @@ async function runTests() {
 			}
 			const post = await fetch(`${baseUrl}/instances`, { method: "POST", redirect: "manual" });
 			assert.notStrictEqual(post.status, 302, "só GET/HEAD são redirecionados");
-			const untouched = await fetch(`${baseUrl}/eventos/admin`, {
-				redirect: "manual",
-				headers: { "X-Test-Admin": "1" }
-			});
-			assert.strictEqual(untouched.status, 200, "telas fora do mapa não mudam");
+			const untouched = await fetch(`${baseUrl}/classic`, { redirect: "manual" });
+			assert.notStrictEqual(untouched.status, 302, "telas fora do mapa não mudam");
 		} finally {
-			for (const k of Object.keys(LEGACY_ADMIN_REDIRECTS)) delete LEGACY_ADMIN_REDIRECTS[k];
+			/* o mapa é o de produção: nada a desfazer */
 		}
 		console.log("✓ Telas antigas do mapa vão para /admin#/<área> (com ?auth=); ?legado=1 mantém.");
 

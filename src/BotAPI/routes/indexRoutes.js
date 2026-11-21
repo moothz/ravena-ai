@@ -86,7 +86,14 @@ const isAdminModule = (filePath) =>
  * nunca abrir o painel dentro dele mesmo num iframe).
  * @type {Object<string, string>}
  */
-const LEGACY_ADMIN_REDIRECTS = {};
+const LEGACY_ADMIN_REDIRECTS = {
+	"/instances": "instancias",
+	"/banco/admin": "banco",
+	"/eventos/admin": "eventos",
+	"/service-providers": "provedores",
+	"/dossies": "pessoas",
+	"/groups-dossier": "pessoas/grupos"
+};
 
 /** Outros endereços da mesma tela antiga → caminho canônico usado em LEGACY_ADMIN_REDIRECTS. */
 const LEGACY_ADMIN_ALIASES = {
