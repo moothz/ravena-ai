@@ -528,10 +528,15 @@ async function runTests() {
 		assert.strictEqual(pubHtml.status, 200);
 		assert(pubHtml.body.includes("Calendário de Eventos Programados"));
 
-		const admUnauth = await httpRequest(port, "GET", "/eventos/admin");
+		// A tela antiga virou a área Eventos do /admin; ?legado=1 ainda serve a antiga (com senha).
+		const admRedirect = await httpRequest(port, "GET", "/eventos/admin");
+		assert.strictEqual(admRedirect.status, 302);
+		assert.strictEqual(admRedirect.headers.location, "/admin#/eventos");
+
+		const admUnauth = await httpRequest(port, "GET", "/eventos/admin?legado=1");
 		assert.strictEqual(admUnauth.status, 401);
 
-		const admAuth = await httpRequest(port, "GET", "/eventos/admin", {
+		const admAuth = await httpRequest(port, "GET", "/eventos/admin?legado=1", {
 			headers: { Authorization: authHeader }
 		});
 		assert.strictEqual(admAuth.status, 200);
