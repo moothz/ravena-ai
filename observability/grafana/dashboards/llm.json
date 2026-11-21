@@ -1,0 +1,1077 @@
+{
+ "uid": "ravena-llm",
+ "title": "Ravena — Uso de LLM",
+ "tags": [
+  "ravena",
+  "otel",
+  "llm"
+ ],
+ "timezone": "browser",
+ "schemaVersion": 39,
+ "version": 1,
+ "refresh": "5m",
+ "time": {
+  "from": "now-7d",
+  "to": "now"
+ },
+ "description": "Uso de LLM da ravena-ai (LLMService): requisições, falhas, latência e uso por modelo/provedor, a partir das métricas derivadas dos spans pelo OpenTelemetry Collector (span_metrics → Prometheus). Ver OBSERVABILITY.md.",
+ "links": [
+  {
+   "title": "RED e gargalos",
+   "url": "/d/ravena-red",
+   "type": "link",
+   "icon": "dashboard",
+   "keepTime": true
+  },
+  {
+   "title": "Traces de LLM no Jaeger",
+   "url": "http://localhost:16686/search?service=ravena-ai&operation=llm.request",
+   "type": "link",
+   "targetBlank": true,
+   "icon": "external link"
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "name": "modelo",
+    "label": "Modelo",
+    "type": "query",
+    "datasource": {
+     "type": "prometheus",
+     "uid": "prometheus"
+    },
+    "query": {
+     "query": "label_values(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=~\"chat .*\"}, gen_ai_request_model)",
+     "refId": "A"
+    },
+    "definition": "label_values(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=~\"chat .*\"}, gen_ai_request_model)",
+    "includeAll": true,
+    "multi": true,
+    "allValue": ".*",
+    "current": {
+     "text": "All",
+     "value": "$__all"
+    },
+    "refresh": 2,
+    "sort": 1
+   }
+  ]
+ },
+ "panels": [
+  {
+   "id": 1,
+   "type": "text",
+   "title": "",
+   "description": "",
+   "datasource": null,
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 2
+   },
+   "targets": [],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "**Quanto a ravena usa de LLM e como está respondendo?** Requisições, falhas, latência e uso por modelo e provedor, das métricas que o OpenTelemetry Collector deriva dos spans (`llm.request` e `chat <modelo>`). Tokens e tempo de fila ficam só nos traces (Jaeger), não viram métrica."
+   },
+   "transparent": true
+  },
+  {
+   "id": 2,
+   "type": "stat",
+   "title": "Requisições de LLM (período)",
+   "description": "Pedidos à LLMService.getCompletion (span llm.request: fila, tentativas e fallback juntos) no período do seletor.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 2,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "round(sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=\"llm.request\"}[$__range])))",
+     "legendFormat": "requisições",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "decimals": 0,
+     "noValue": "0",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "wideLayout": true,
+    "showPercentChange": false
+   }
+  },
+  {
+   "id": 3,
+   "type": "stat",
+   "title": "Falhas (período)",
+   "description": "Requisições que terminaram com erro (status ERROR no span llm.request), depois de tentativas e fallback. Âmbar a partir de 1.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 5,
+    "y": 2,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "round(sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=\"llm.request\",status_code=\"STATUS_CODE_ERROR\"}[$__range])) or vector(0))",
+     "legendFormat": "falhas",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "decimals": 0,
+     "noValue": "0",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "#e5a650",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "wideLayout": true,
+    "showPercentChange": false
+   }
+  },
+  {
+   "id": 4,
+   "type": "stat",
+   "title": "Falhas (% das requisições)",
+   "description": "Falhas ÷ requisições no período. Âmbar a partir de 5% (limite provisório).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 10,
+    "y": 2,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "100 * (sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=\"llm.request\",status_code=\"STATUS_CODE_ERROR\"}[$__range])) or vector(0)) / sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=\"llm.request\"}[$__range]))",
+     "legendFormat": "%",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "percent",
+     "decimals": 1,
+     "noValue": "—",
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "text",
+        "value": null
+       },
+       {
+        "color": "#e5a650",
+        "value": 5
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "wideLayout": true,
+    "showPercentChange": false
+   }
+  },
+  {
+   "id": 5,
+   "type": "stat",
+   "title": "p95 da requisição (período)",
+   "description": "95% das requisições terminaram em até este tempo, contando fila, tentativas e fallback (llm.request). Buckets do collector: o valor é interpolado entre 1 s, 2,5 s, 5 s, 10 s, 30 s e 60 s.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 15,
+    "y": 2,
+    "w": 5,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le) (increase(traces_span_metrics_duration_milliseconds_bucket{service_name=\"ravena-ai\",span_name=\"llm.request\"}[$__range])))",
+     "legendFormat": "p95",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "noValue": "—",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "wideLayout": true,
+    "showPercentChange": false
+   }
+  },
+  {
+   "id": 6,
+   "type": "stat",
+   "title": "Chamadas ao provedor",
+   "description": "Chamadas HTTP a provedores (spans chat <modelo>): uma requisição pode gerar várias (rodadas de tool, fallback para outro modelo).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 20,
+    "y": 2,
+    "w": 4,
+    "h": 4
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "round(sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[$__range])))",
+     "legendFormat": "chamadas",
+     "range": false,
+     "instant": true
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "decimals": 0,
+     "noValue": "0",
+     "color": {
+      "mode": "fixed",
+      "fixedColor": "text"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "none",
+    "graphMode": "none",
+    "textMode": "value",
+    "justifyMode": "center",
+    "wideLayout": true,
+    "showPercentChange": false
+   }
+  },
+  {
+   "id": 7,
+   "type": "row",
+   "title": "Ao longo do tempo",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 6,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "id": 8,
+   "type": "timeseries",
+   "title": "Requisições e falhas por hora",
+   "description": "Requisições de LLM (llm.request) e as que falharam, por hora. Clique numa série na legenda para isolá-la.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 7,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=\"llm.request\"}[1h]))",
+     "legendFormat": "requisições",
+     "range": true,
+     "instant": false
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum(increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=\"llm.request\",status_code=\"STATUS_CODE_ERROR\"}[1h])) or vector(0)",
+     "legendFormat": "falhas",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "decimals": 0,
+     "min": 0,
+     "noValue": "sem chamadas no período (ou telemetria desligada: OTEL_ENABLED na ravena)",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "lineWidth": 1,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      },
+      "showPoints": "never"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "requisições"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#7D9DE3"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "falhas"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#e5a650"
+        }
+       },
+       {
+        "id": "custom.stacking",
+        "value": {
+         "mode": "none",
+         "group": "A"
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "interval": "1h"
+  },
+  {
+   "id": 9,
+   "type": "timeseries",
+   "title": "Latência p95 por hora: requisição inteira × chamada ao provedor",
+   "description": "p95 por hora. A diferença entre a requisição inteira (llm.request) e a chamada ao provedor (chat <modelo>) é fila, tentativa ou fallback. Um eixo só (ms).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 7,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le) (increase(traces_span_metrics_duration_milliseconds_bucket{service_name=\"ravena-ai\",span_name=\"llm.request\"}[1h])))",
+     "legendFormat": "requisição (fila + tentativas)",
+     "range": true,
+     "instant": false
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le) (increase(traces_span_metrics_duration_milliseconds_bucket{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[1h])))",
+     "legendFormat": "chamada ao provedor",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "noValue": "sem chamadas no período (ou telemetria desligada: OTEL_ENABLED na ravena)",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "always",
+      "pointSize": 6,
+      "spanNulls": false
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "requisição (fila + tentativas)"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#c4cad3"
+        }
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "chamada ao provedor"
+      },
+      "properties": [
+       {
+        "id": "color",
+        "value": {
+         "mode": "fixed",
+         "fixedColor": "#7D9DE3"
+        }
+       },
+       {
+        "id": "custom.lineStyle",
+        "value": {
+         "fill": "dash",
+         "dash": [
+          8,
+          6
+         ]
+        }
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "interval": "1h"
+  },
+  {
+   "id": 10,
+   "type": "row",
+   "title": "Por modelo e provedor",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 15,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "id": 11,
+   "type": "timeseries",
+   "title": "Chamadas por modelo, por hora",
+   "description": "Chamadas a provedores por modelo pedido (gen_ai.request.model). Filtro Modelo no topo. Clique num modelo na legenda para isolá-lo.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sum by (gen_ai_request_model) (increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[1h]))",
+     "legendFormat": "{{gen_ai_request_model}}",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "decimals": 0,
+     "min": 0,
+     "noValue": "sem chamadas no período (ou telemetria desligada: OTEL_ENABLED na ravena)",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "lineWidth": 1,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      },
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "showLegend": true,
+     "calcs": [
+      "sum"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "interval": "1h"
+  },
+  {
+   "id": 12,
+   "type": "timeseries",
+   "title": "Chamadas por provedor, por hora",
+   "description": "Chamadas por provedor (openai, openrouter, ollama: atributo gen_ai.provider.name). Depende da dimensão gen_ai.provider.name no span_metrics do collector (observability/otel-collector.yaml); sem ela (collector antigo), aparece uma série sem nome.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 16,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "label_replace(sum by (gen_ai_provider_name) (increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[1h])), \"gen_ai_provider_name\", \"sem provedor (collector sem a dimensão)\", \"gen_ai_provider_name\", \"\")",
+     "legendFormat": "{{gen_ai_provider_name}}",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "locale",
+     "decimals": 0,
+     "min": 0,
+     "noValue": "sem chamadas no período (ou telemetria desligada: OTEL_ENABLED na ravena)",
+     "custom": {
+      "drawStyle": "bars",
+      "fillOpacity": 70,
+      "lineWidth": 1,
+      "stacking": {
+       "mode": "normal",
+       "group": "A"
+      },
+      "showPoints": "never"
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "table",
+     "placement": "right",
+     "showLegend": true,
+     "calcs": [
+      "sum"
+     ]
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "interval": "1h"
+  },
+  {
+   "id": 13,
+   "type": "table",
+   "title": "Por modelo no período",
+   "description": "Chamadas, falhas (status ERROR no span do provedor) e latência p95 da chamada, por modelo, no período do seletor.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 24,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "round(sum by (gen_ai_request_model) (increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[$__range])))",
+     "legendFormat": "",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "B",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "round(sum by (gen_ai_request_model) (increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\",status_code=\"STATUS_CODE_ERROR\"}[$__range])))",
+     "legendFormat": "",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    },
+    {
+     "refId": "C",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (increase(traces_span_metrics_duration_milliseconds_bucket{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[$__range])))",
+     "legendFormat": "",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "sem chamadas no período (ou telemetria desligada: OTEL_ENABLED na ravena)"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Value #A"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Chamadas"
+       },
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Value #B"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Falhas"
+       },
+       {
+        "id": "unit",
+        "value": "locale"
+       },
+       {
+        "id": "noValue",
+        "value": "0"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Value #C"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "p95"
+       },
+       {
+        "id": "unit",
+        "value": "ms"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "gen_ai_request_model"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Modelo"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true,
+    "sortBy": [
+     {
+      "displayName": "Chamadas",
+      "desc": true
+     }
+    ]
+   },
+   "transformations": [
+    {
+     "id": "merge",
+     "options": {}
+    },
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "Latência p95 por modelo, por hora",
+   "description": "p95 da chamada ao provedor por modelo. Modelos locais (ollama) e remotos têm tempos bem diferentes; filtre pelo Modelo no topo.",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 12,
+    "y": 24,
+    "w": 12,
+    "h": 8
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "histogram_quantile(0.95, sum by (le, gen_ai_request_model) (increase(traces_span_metrics_duration_milliseconds_bucket{service_name=\"ravena-ai\",span_kind=\"SPAN_KIND_CLIENT\",span_name=~\"chat .*\",gen_ai_request_model=~\"$modelo\"}[1h])))",
+     "legendFormat": "{{gen_ai_request_model}}",
+     "range": true,
+     "instant": false
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "unit": "ms",
+     "noValue": "sem chamadas no período (ou telemetria desligada: OTEL_ENABLED na ravena)",
+     "custom": {
+      "drawStyle": "line",
+      "lineWidth": 2,
+      "fillOpacity": 0,
+      "showPoints": "always",
+      "pointSize": 6,
+      "spanNulls": false
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi",
+     "sort": "desc"
+    }
+   },
+   "interval": "1h"
+  },
+  {
+   "id": 15,
+   "type": "row",
+   "title": "Ferramentas e o que fica fora das métricas",
+   "collapsed": false,
+   "gridPos": {
+    "x": 0,
+    "y": 32,
+    "w": 24,
+    "h": 1
+   },
+   "panels": []
+  },
+  {
+   "id": 16,
+   "type": "table",
+   "title": "Ferramentas chamadas pelo LLM (período)",
+   "description": "Chamadas de ferramenta (tool calling) feitas a partir das respostas do LLM, por ferramenta (spans execute_tool <nome>).",
+   "datasource": {
+    "type": "prometheus",
+    "uid": "prometheus"
+   },
+   "gridPos": {
+    "x": 0,
+    "y": 33,
+    "w": 12,
+    "h": 9
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "prometheus",
+      "uid": "prometheus"
+     },
+     "expr": "sort_desc(round(sum by (span_name) (increase(traces_span_metrics_calls_total{service_name=\"ravena-ai\",span_name=~\"execute_tool .*\"}[$__range]))))",
+     "legendFormat": "",
+     "range": false,
+     "instant": true,
+     "format": "table"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "noValue": "nenhuma ferramenta chamada no período"
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "span_name"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Ferramenta"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "Value"
+      },
+      "properties": [
+       {
+        "id": "displayName",
+        "value": "Chamadas"
+       },
+       {
+        "id": "unit",
+        "value": "locale"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "cellHeight": "sm",
+    "showHeader": true
+   },
+   "transformations": [
+    {
+     "id": "organize",
+     "options": {
+      "excludeByName": {
+       "Time": true
+      }
+     }
+    }
+   ]
+  },
+  {
+   "id": 17,
+   "type": "text",
+   "title": "Indisponível sem mudar a telemetria",
+   "description": "",
+   "datasource": null,
+   "gridPos": {
+    "x": 12,
+    "y": 33,
+    "w": 12,
+    "h": 9
+   },
+   "targets": [],
+   "fieldConfig": {
+    "defaults": {},
+    "overrides": []
+   },
+   "options": {
+    "mode": "markdown",
+    "content": "- **Tokens de entrada e saída**: ficam nos spans `chat <modelo>` (`gen_ai.usage.input_tokens`/`output_tokens`), visíveis no Jaeger. O span_metrics do collector conta chamadas e duração, não soma atributos; para um gráfico de tokens a ravena teria de exportar uma métrica própria (ex.: histograma `gen_ai.client.token.usage` da semconv GenAI).\n- **Tempo na fila**: atributo `ravena.llm.queue_wait_ms` do `llm.request`, só no trace; a diferença entre as duas latências acima é a aproximação.\n- **Tipo do pedido** (texto, imagem, tool calling): atributos `ravena.llm.has_image`/`tool_calling`, não são dimensão do span_metrics.\n- **Provedor**: só com a dimensão `gen_ai.provider.name` no collector (incluída neste repositório; vale depois de recriar o obs-otel-collector)."
+   }
+  }
+ ]
+}

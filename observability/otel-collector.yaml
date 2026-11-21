@@ -106,6 +106,8 @@ connectors:
       - name: app.command.category
       - name: app.outcome
       - name: gen_ai.request.model
+      # provedor do LLM (openai, openrouter, ollama): só nos spans chat <modelo>; alimenta o dashboard Uso de LLM
+      - name: gen_ai.provider.name
     exclude_dimensions: []
     aggregation_cardinality_limit: 5000
     aggregation_temporality: AGGREGATION_TEMPORALITY_CUMULATIVE
