@@ -355,6 +355,55 @@ async function runTests() {
 		"Com poucos giros deve mostrar todas as linhas, ainda assim ordenadas"
 	);
 	assert(!fewRollsBlock.includes("E mais"), "Com poucos giros não deve resumir nada");
+
+	// Testando unificação de parciais a partir de 4 (🟡 x N)
+	console.log("\n[Teste 10.1] Testando unificação de 4 parciais (🟡 x 4)...");
+	const fourPartialsRolls = [
+		diamond,
+		jackpot,
+		partial,
+		partial,
+		partial,
+		partial,
+		...Array.from({ length: 7 }, () => loss)
+	];
+	const fourPartialsBlock = SlotsGame.buildRollsBlock(fourPartialsRolls);
+	console.log("Bloco gerado com 4 parciais:\n", fourPartialsBlock);
+	assert.deepStrictEqual(
+		reelMarks(fourPartialsBlock),
+		["💎", "✅", "🟡 x 4", "❌"],
+		"A partir de 4 parciais deve unificar em uma linha '🟡 x 4'"
+	);
+	assert(
+		fourPartialsBlock.includes("|  ❌ E mais 6... ❌  |"),
+		"Deve resumir as 6 derrotas restantes"
+	);
+
+	console.log("\n[Teste 10.2] Testando unificação de 15 parciais (🟡 x 15)...");
+	const mangoPartial = {
+		emoji1: "🥭",
+		emoji2: "🍍",
+		emoji3: "🥭",
+		isWin: false,
+		isPartial: true,
+		isDiamond: false
+	};
+	const fifteenPartials = Array.from({ length: 15 }, () => mangoPartial);
+	const fifteenBlock = SlotsGame.buildRollsBlock([
+		...fifteenPartials,
+		...Array.from({ length: 5 }, () => loss)
+	]);
+	console.log("Bloco gerado com 15 parciais:\n", fifteenBlock);
+	assert.deepStrictEqual(
+		reelMarks(fifteenBlock),
+		["🟡 x 15", "❌"],
+		"15 parciais devem unificar em uma única linha '🟡 x 15'"
+	);
+	assert(
+		fifteenBlock.includes("|  [ 🥭 ] [ 🍍 ] [ 🥭 ]  | 🟡 x 15"),
+		"Linha unificada deve conter a estrutura exata '|  [ 🥭 ] [ 🍍 ] [ 🥭 ]  | 🟡 x 15'"
+	);
+	assert(fifteenBlock.includes("|  ❌ E mais 4... ❌  |"), "Deve resumir as outras 4 derrotas");
 	console.log("✓ Teste 10 passou!");
 
 	cleanUser(db, testUserIdDigits, testGroupId);

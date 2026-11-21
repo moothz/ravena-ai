@@ -57,6 +57,7 @@ const MAX_COINS = 5;
 const MAX_STORED_COINS = 3000;
 const MAX_ROLLS_PER_COMMAND = 500;
 const MAX_DISPLAYED_ROLLS = 5;
+const MAX_PARTIAL_DISPLAYED_ROLLS = 3;
 const COIN_REGEN_TIME = 2 * 60; // 2 minutes in seconds
 const SLOT_EMOJIS = ["🍎", "🍋", "🍒", "🍇", "🍉", "🍓", "🍑", "🍍", "🥭", "💎"];
 
@@ -526,35 +527,78 @@ async function recordGroupStats(groupId, userId, userName, wins = 0, plays = 1) 
 
 /**
  * Monta o bloco visual dos giros na ordem de interesse: jackpot de diamantes, jackpots,
- * vitórias parciais e por último as derrotas. Até MAX_DISPLAYED_ROLLS linhas mostra tudo;
- * acima disso mostra todos os giros que premiaram e sempre pelo menos uma derrota,
- * resumindo o restante na linha "E mais N...".
+ * vitórias parciais e por último as derrotas.
+ * Vitórias parciais são mostradas individualmente até MAX_PARTIAL_DISPLAYED_ROLLS (3 linhas);
+ * a partir de 4 são unificadas em uma única linha (ex: |  [ 🥭 ] [ 🍍 ] [ 🥭 ]  | 🟡 x 15).
+ * Até MAX_DISPLAYED_ROLLS linhas totais mostra todas as derrotas;
+ * acima disso mostra pelo menos uma derrota e resume o restante na linha "❌ E mais N... ❌".
  * @param {Array<Object>} rollResults
  * @returns {string}
  */
 function buildRollsBlock(rollResults) {
-	const winningRolls = [
-		...rollResults.filter((roll) => roll.isDiamond),
-		...rollResults.filter((roll) => roll.isWin && !roll.isDiamond),
-		...rollResults.filter((roll) => roll.isPartial)
-	];
+	const diamondRolls = rollResults.filter((roll) => roll.isDiamond);
+	const jackpotRolls = rollResults.filter((roll) => roll.isWin && !roll.isDiamond);
+	const partialRolls = rollResults.filter((roll) => roll.isPartial);
 	const losingRolls = rollResults.filter((roll) => !roll.isWin && !roll.isPartial);
 
-	let shownRolls;
-	if (rollResults.length <= MAX_DISPLAYED_ROLLS) {
-		shownRolls = [...winningRolls, ...losingRolls];
+	const renderedRows = [
+		...diamondRolls.map((roll) => ({
+			emoji1: roll.emoji1,
+			emoji2: roll.emoji2,
+			emoji3: roll.emoji3,
+			mark: "💎"
+		})),
+		...jackpotRolls.map((roll) => ({
+			emoji1: roll.emoji1,
+			emoji2: roll.emoji2,
+			emoji3: roll.emoji3,
+			mark: "✅"
+		}))
+	];
+
+	if (partialRolls.length > MAX_PARTIAL_DISPLAYED_ROLLS) {
+		const first = partialRolls[0];
+		renderedRows.push({
+			emoji1: first.emoji1,
+			emoji2: first.emoji2,
+			emoji3: first.emoji3,
+			mark: `🟡 x ${partialRolls.length}`
+		});
 	} else {
-		shownRolls = losingRolls.length > 0 ? [...winningRolls, losingRolls[0]] : winningRolls;
+		for (const roll of partialRolls) {
+			renderedRows.push({
+				emoji1: roll.emoji1,
+				emoji2: roll.emoji2,
+				emoji3: roll.emoji3,
+				mark: "🟡"
+			});
+		}
 	}
-	const hiddenRolls = rollResults.length - shownRolls.length;
+
+	const shownLosingRolls =
+		rollResults.length <= MAX_DISPLAYED_ROLLS
+			? losingRolls
+			: losingRolls.length > 0
+				? [losingRolls[0]]
+				: [];
+
+	const hiddenLosses = losingRolls.length - shownLosingRolls.length;
+
+	for (const roll of shownLosingRolls) {
+		renderedRows.push({
+			emoji1: roll.emoji1,
+			emoji2: roll.emoji2,
+			emoji3: roll.emoji3,
+			mark: "❌"
+		});
+	}
 
 	let block = "🎰 *CAÇA-COISAS* 🎰\n```---------------\n";
-	for (const roll of shownRolls) {
-		const mark = roll.isDiamond ? "💎" : roll.isWin ? "✅" : roll.isPartial ? "🟡" : "❌";
-		block += `|  [ ${roll.emoji1} ] [ ${roll.emoji2} ] [ ${roll.emoji3} ]  | ${mark}\n`;
+	for (const row of renderedRows) {
+		block += `|  [ ${row.emoji1} ] [ ${row.emoji2} ] [ ${row.emoji3} ]  | ${row.mark}\n`;
 	}
-	if (hiddenRolls > 0) {
-		block += `|  ❌ E mais ${hiddenRolls}... ❌  |\n`;
+	if (hiddenLosses > 0) {
+		block += `|  ❌ E mais ${hiddenLosses}... ❌  |\n`;
 	}
 	block += "---------------```\n\n";
 	return block;
