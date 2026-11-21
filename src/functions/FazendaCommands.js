@@ -13,6 +13,7 @@ const Logger = require("../utils/Logger");
 const { resolveMentionName } = require("../utils/ProfilePictureHelper");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+const { dailyCheckinCache, GAMES } = require("../services/DailyCheckinCache");
 const Database = require("../utils/Database");
 const GameEventService = require("../services/GameEventService");
 const PvSafetyService = require("../services/PvSafetyService");
@@ -514,36 +515,52 @@ async function consumeFarmWaifuRoll(userId) {
 // ─── HANDLERS DE COMANDOS DA FAZENDA ─────────────────────────────────────────
 
 /**
- * Tenta coletar o bônus diário da Fazenda (Sacola do Coveiro) para o usuário
+ * Tenta coletar o bônus diário da Fazenda (Sacola do Coveiro) para o usuário.
+ * Todo comando do jogo passa por aqui, então o cache local evita uma chamada ao Jardim por
+ * comando depois que o ciclo do jogador já foi resolvido neste processo.
  * @param {string} userId
  * @returns {Promise<Object|null>} Resultado se coletado nesta chamada, ou null
  */
 async function tryClaimFarmDaily(userId) {
 	if (!userId) return null;
+
+	if (dailyCheckinCache.get(GAMES.FAZENDA, userId)) {
+		telemetry.setAttrs({ "ravena.fazenda.daily.source": "cache" });
+		return null;
+	}
+
 	try {
 		const claimRes = await jardimClient.claimDaily(userId);
 		if (claimRes && claimRes.claimed) {
+			dailyCheckinCache.markClaimed(GAMES.FAZENDA, userId, claimRes);
+			telemetry.setAttrs({
+				"ravena.fazenda.daily.source": "api_claimed",
+				"ravena.fazenda.daily.coins": Number(claimRes.coinsWon) || 0,
+				"ravena.fazenda.daily.items": claimRes.itemsWon?.length || 0
+			});
 			return claimRes;
 		}
+		dailyCheckinCache.markUnavailable(GAMES.FAZENDA, userId);
+		telemetry.setAttrs({ "ravena.fazenda.daily.source": "api_cooldown" });
 	} catch (claimErr) {
 		logger.debug(`[tryClaimFarmDaily] Tentativa de claim daily: ${claimErr.message}`);
+		telemetry.setAttrs({ "ravena.fazenda.daily.source": "api_error" });
 	}
 	return null;
 }
 
 /**
- * Monta a ReturnMessage da recompensa diária coletada (incluindo bônus de evento Fortuna)
+ * Frase-resumo do resgate da Sacola do Coveiro (inclui o bônus do evento Fortuna, creditado aqui)
  * @param {string} userId
- * @param {string} chatId
- * @param {Object} message
  * @param {Object} dailyClaimResult
- * @returns {Promise<ReturnMessage>}
+ * @returns {Promise<string>}
  */
-async function buildDailyRewardReturnMessage(userId, chatId, message, dailyClaimResult) {
+async function buildFarmDailySummaryLine(userId, dailyClaimResult) {
 	const eventFortuneMult = GameEventService.getMultiplier("fazenda", "fortuna");
+	const coinsWon = dailyClaimResult.coinsWon || 0;
 	let extraFortuneCoins = 0;
-	if (eventFortuneMult > 1.0 && (dailyClaimResult.coinsWon || 0) > 0) {
-		extraFortuneCoins = Math.round(dailyClaimResult.coinsWon * (eventFortuneMult - 1));
+	if (eventFortuneMult > 1.0 && coinsWon > 0) {
+		extraFortuneCoins = Math.round(coinsWon * (eventFortuneMult - 1));
 		if (extraFortuneCoins > 0) {
 			try {
 				await jardimClient.adminGive(userId, {
@@ -552,28 +569,21 @@ async function buildDailyRewardReturnMessage(userId, chatId, message, dailyClaim
 				});
 			} catch (e) {
 				logger.warn(
-					`[buildDailyRewardReturnMessage] Falha ao creditar bônus fortuna no diário: ${e.message}`
+					`[buildFarmDailySummaryLine] Falha ao creditar bônus fortuna no diário: ${e.message}`
 				);
 			}
 		}
 	}
 
-	let dailyText = `🎁 *SACOLA DO COVEIRO RESGATADA!* 🎁\n\n`;
-	dailyText += `Você abriu sua sacola diária e encontrou:\n`;
-	dailyText += `• *+${(dailyClaimResult.coinsWon || 0).toLocaleString("pt-BR")} Petalitas*`;
+	let coinsPart = `+${coinsWon.toLocaleString("pt-BR")} Petalitas`;
 	if (extraFortuneCoins > 0) {
-		dailyText += ` _(+${extraFortuneCoins} bônus do evento Fortuna! 💰)_\n`;
-	} else {
-		dailyText += `\n`;
+		coinsPart += ` (+${extraFortuneCoins.toLocaleString("pt-BR")} Fortuna 💰)`;
 	}
-	if (dailyClaimResult.itemsWon?.length > 0) {
-		dailyClaimResult.itemsWon.forEach((it) => {
-			dailyText += `• *${it.name || it.itemId}* (x${it.count || 1})\n`;
-		});
-	}
-	dailyText += `\nVolte amanhã para resgatar novamente!`;
+	const itemsPart = (dailyClaimResult.itemsWon || [])
+		.map((it) => `${it.count || 1}x ${it.name || it.itemId}`)
+		.join(", ");
 
-	return replyReturnMessage(chatId, dailyText, message);
+	return `🎁 SACOLA DO COVEIRO RESGATADA! 🎁 (${itemsPart ? `${coinsPart}, ${itemsPart}` : coinsPart})`;
 }
 
 /**
@@ -592,14 +602,21 @@ function withAutoDailyClaim(handler) {
 			return result;
 		}
 
-		const dailyMsg = await buildDailyRewardReturnMessage(userId, chatId, message, dailyClaimResult);
+		// O resgate entra na primeira linha da resposta do próprio comando, não numa mensagem à parte
+		const summaryLine = await buildFarmDailySummaryLine(userId, dailyClaimResult);
+		const firstReturn = Array.isArray(result) ? result[0] : result;
+		if (firstReturn?.prependText?.(summaryLine)) {
+			return result;
+		}
+
+		const summaryMsg = replyReturnMessage(chatId, summaryLine, message);
 		if (Array.isArray(result)) {
-			return [...result, dailyMsg];
+			return [summaryMsg, ...result];
 		}
 		if (result) {
-			return [result, dailyMsg];
+			return [summaryMsg, result];
 		}
-		return dailyMsg;
+		return summaryMsg;
 	};
 }
 
@@ -3763,6 +3780,8 @@ module.exports = {
 	handleFazNome,
 	getWeeklyFazendaStats,
 	getFarmWaifuRollBonus,
+	tryClaimFarmDaily,
+	buildFarmDailySummaryLine,
 	consumeFarmWaifuRoll,
 	getUserDisplayName,
 	resolvePlayerRankingName,

@@ -67,6 +67,26 @@ class ReturnMessage {
 	}
 
 	/**
+	 * Insere uma linha no início do texto da mensagem (conteúdo ou legenda, quando é mídia).
+	 * Usado para apresentar junto o que um fluxo paralelo já resolveu, sem enviar outra mensagem.
+	 * @param {string} line
+	 * @returns {boolean} false se não havia texto onde inserir
+	 */
+	prependText(line) {
+		if (!line) return false;
+
+		if (typeof this.content === "string" && this.content.trim() !== "") {
+			this.content = `${line}\n\n${this.content}`;
+			return true;
+		}
+		if (typeof this.options?.caption === "string" && this.options.caption.trim() !== "") {
+			this.options.caption = `${line}\n\n${this.options.caption}`;
+			return true;
+		}
+		return false;
+	}
+
+	/**
 	 * Converte ReturnMessage para um objeto simples para serialização
 	 * @returns {Object} - Representação em objeto simples
 	 */

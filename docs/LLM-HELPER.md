@@ -1433,7 +1433,7 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!mu-foto`**: Exibe a foto oficial do casamento do casal gerada por IA ou gera uma nova com o modificador 'nova'
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-foto Rem`, `!mu-foto nova Rem`, `!mu-foto rem-re-zero`
-- **`!mu-diario`**: Resgata a recompensa diária de Zinthos (💜)
+- **`!mu-diario`**: Resgata a recompensa diária de Zinthos (💜). O resgate também dispara sozinho no primeiro comando do jogo do dia (ex.: `!mu-roll`) e aparece como primeira linha da resposta. Se a recompensa do dia já foi coletada, o comando avisa o cooldown e mostra o que já foi ganho (valor, sequência, bônus de wishlist, saldo).
   - *Categoria:* mudae
   - *Uso/Exemplos:* `!mu-diario`, `!mu-dz`, `!mu-dk`
 - **`!mu-harem`**: Lista os personagens que você ou outro usuário possui em seu harém

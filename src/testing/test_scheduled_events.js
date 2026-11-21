@@ -660,16 +660,17 @@ async function runTests() {
 
 		assert(cmdAjuda && cmdLoja && cmdInv, "Comandos da fazenda devem existir");
 
-		// Primeiro comando (!faz-ajuda) deve coletar diário + bônus Fortuna (+100) + retornar [ajuda, sacola diária]
-		const ajudaRes = await cmdAjuda.method({}, fakeMsg, [], null);
+		// Primeiro comando (!faz-ajuda) coleta diário + bônus Fortuna (+100) na própria resposta
+		const ajudaResRaw = await cmdAjuda.method({}, fakeMsg, [], null);
+		const ajudaRes = Array.isArray(ajudaResRaw) ? ajudaResRaw : [ajudaResRaw];
 		assert(
-			Array.isArray(ajudaRes) && ajudaRes.length === 2,
-			"!faz-ajuda deve anexar sacola diária"
+			ajudaRes.length === 1,
+			"!faz-ajuda deve unificar o resgate diário na resposta do comando, não anexar outra mensagem"
 		);
-		assert(ajudaRes[0].content.includes("GUIA"), "1ª mensagem deve ser o comando normal");
+		assert(ajudaRes[0].content.includes("GUIA"), "A resposta deve trazer o conteúdo do comando");
 		assert(
-			ajudaRes[1].content.includes("SACOLA DO COVEIRO RESGATADA"),
-			"2ª mensagem deve ser a sacola diária"
+			ajudaRes[0].content.startsWith("🎁 SACOLA DO COVEIRO RESGATADA! 🎁"),
+			"A primeira linha deve ser o resumo do resgate diário"
 		);
 		assert.strictEqual(
 			fortunaBonusCredited,
@@ -680,15 +681,21 @@ async function runTests() {
 		await fakeDatabase.deleteScheduledEvent(fortunaEv.id);
 		await scheduledService.refreshActiveCache();
 
-		// Segundo comando (!faz-loja) deve chamar claimDaily também (e como já foi resgatado, retorna apenas resposta normal)
-		await cmdLoja.method({}, { ...fakeMsg, content: "!faz-loja" }, [], null);
-		// Terceiro comando (!faz-inventario) idem
+		// Comandos seguintes do mesmo ciclo: o cache local resolve o ciclo sem chamar o Jardim
+		const lojaResRaw = await cmdLoja.method({}, { ...fakeMsg, content: "!faz-loja" }, [], null);
 		await cmdInv.method({}, { ...fakeMsg, content: "!faz-inventario" }, [], null);
 
 		assert.strictEqual(
 			claimCallCount,
-			3,
-			"TODOS os comandos da Fazenda testados devem tentar coletar o diário"
+			1,
+			"Só o primeiro comando do ciclo deve chamar claimDaily na API do Jardim"
+		);
+		const lojaText = (Array.isArray(lojaResRaw) ? lojaResRaw : [lojaResRaw])
+			.map((m) => (typeof m?.content === "string" ? m.content : ""))
+			.join("\n");
+		assert(
+			!lojaText.includes("SACOLA DO COVEIRO"),
+			"O resgate não pode se repetir em outro comando do mesmo ciclo"
 		);
 		assert.strictEqual(
 			FazendaCommands.commands.every((c) => c.method.name === "wrappedFazendaCommand"),

@@ -9,6 +9,7 @@ const Database = require("../utils/Database");
 const DonorBonusService = require("../services/DonorBonusService");
 const GameEventService = require("../services/GameEventService");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
+const { dailyCheckinCache, GAMES, nextResetMs } = require("../services/DailyCheckinCache");
 const FishingGame = require("./FishingGame");
 const ShadowGardenClient = require("../services/ShadowGardenClient");
 const {
@@ -1788,13 +1789,12 @@ function handleApiError(err, chatId, defaultMsg, options = {}) {
 // ─── Handlers de Comandos ───────────────────────────────────────────────────
 
 /**
- * Formata o retorno da recompensa diária de Zinthos
- * @param {string} chatId
+ * Detalha o que o resgate diário de Zinthos entregou (sequência, bônus de wishlist, saldo)
  * @param {Object} dailyData
- * @returns {ReturnMessage}
+ * @returns {string[]}
  */
-function formatDailyRewardMessage(chatId, dailyData) {
-	const { amount, currencyEmoji, newBalance, nextDailyAt, streak } = dailyData;
+function buildDailyRewardDetailLines(dailyData) {
+	const { amount, newBalance, nextDailyAt, streak } = dailyData;
 
 	let formattedDate = "";
 	if (nextDailyAt) {
@@ -1807,22 +1807,131 @@ function formatDailyRewardMessage(chatId, dailyData) {
 		});
 	}
 
-	let text = `${currencyEmoji || "💜"} *Recompensa Diária Coletada!*\n\n`;
-	text += `🎁 Você recebeu: *+${amount} Zinthos*\n`;
+	const lines = [`🎁 Você recebeu: *+${amount} Zinthos*`];
 	if (streak && streak.current > 1) {
-		text += `🔥 Sequência Diária: *Dia ${streak.current}/7* (+${streak.bonusPercent}% de bônus!)\n`;
+		lines.push(
+			`🔥 Sequência Diária: *Dia ${streak.current}/7* (+${streak.bonusPercent}% de bônus!)`
+		);
 	} else {
-		text += `🌱 Sequência Diária: *Dia 1/7* (Resgate amanhã para +10% de bônus!)\n`;
+		lines.push(`🌱 Sequência Diária: *Dia 1/7* (Resgate amanhã para +10% de bônus!)`);
 	}
 	if (dailyData?.wishlist?.bonusAmount > 0) {
-		text += `🌟 Bônus de Wishlist: *+${dailyData.wishlist.bonusAmount} Zinthos* (${dailyData.wishlist.count}/1000 desejos)\n`;
+		lines.push(
+			`🌟 Bônus de Wishlist: *+${dailyData.wishlist.bonusAmount} Zinthos* (${dailyData.wishlist.count}/1000 desejos)`
+		);
 	}
-	text += `💰 Saldo total: *${newBalance} Zinthos*\n`;
+	lines.push(`💰 Saldo total: *${newBalance} Zinthos*`);
 	if (formattedDate) {
-		text += `⏰ Próximo resgate: *${formattedDate}*`;
+		lines.push(`⏰ Próximo resgate: *${formattedDate}*`);
+	}
+	return lines;
+}
+
+/**
+ * Formata o retorno da recompensa diária de Zinthos
+ * @param {string} chatId
+ * @param {Object} dailyData
+ * @returns {ReturnMessage}
+ */
+function formatDailyRewardMessage(chatId, dailyData) {
+	const text = `${dailyData.currencyEmoji || "💜"} *Recompensa Diária Coletada!*\n\n${buildDailyRewardDetailLines(dailyData).join("\n")}`;
+	return new ReturnMessage({ chatId, content: text });
+}
+
+/**
+ * Frase curta usada no início da resposta do comando que disparou o check-in automático
+ * @param {Object} dailyData
+ * @returns {string}
+ */
+function buildDailyClaimSummaryLine(dailyData) {
+	const emoji = dailyData?.currencyEmoji || "💜";
+	const currency = dailyData?.currency || "Zinthos";
+	return `${emoji} Recompensa diária estava disponível e foi coletada! (+${dailyData?.amount ?? 0} ${currency})`;
+}
+
+/**
+ * Mensagem de diário já resgatado no ciclo, reaproveitando o resultado guardado no cache local
+ * @param {string} chatId
+ * @param {{ claimed: boolean, result: Object|null, availableAt: number }} entry
+ * @returns {ReturnMessage}
+ */
+function buildDailyCooldownReturnMessage(chatId, entry) {
+	const availableAt = entry?.availableAt || nextResetMs(GAMES.WAIFU);
+	const remainingSeconds = Math.max(0, Math.ceil((availableAt - Date.now()) / 1000));
+
+	let text = `💜 *Cooldown Diário ativo!*\n• Você já resgatou sua recompensa diária! Volte em *${formatRemainingSeconds(remainingSeconds)}* (às ${formatTimeBR(new Date(availableAt))}).`;
+	if (entry?.claimed && entry.result) {
+		text += `\n\n📋 *O que você já ganhou hoje:*\n${buildDailyRewardDetailLines(entry.result).join("\n")}`;
 	}
 
 	return new ReturnMessage({ chatId, content: text });
+}
+
+/**
+ * Tenta resgatar a recompensa diária de Zinthos, pulando a chamada quando o ciclo já foi
+ * resolvido neste processo (ver DailyCheckinCache)
+ * @param {string} userId
+ * @param {string} groupId
+ * @param {string} name
+ * @returns {Promise<{ status: "claimed"|"cooldown"|"error", source: "cache"|"api", result?: Object, entry?: Object, error?: Error }>}
+ */
+async function claimWaifuDaily(userId, groupId, name) {
+	const cached = dailyCheckinCache.get(GAMES.WAIFU, userId);
+	if (cached) {
+		telemetry.setAttrs({
+			"ravena.waifu.daily.source": cached.claimed ? "cache_claimed" : "cache_cooldown"
+		});
+		return { status: "cooldown", source: "cache", entry: cached };
+	}
+
+	try {
+		const { data: dailyData } = await api.post("/kakera/daily", { userId, groupId, name });
+		if (dailyData?.success && dailyData?.data) {
+			const nextDailyAt = new Date(dailyData.data.nextDailyAt).getTime();
+			const entry = dailyCheckinCache.markClaimed(
+				GAMES.WAIFU,
+				userId,
+				dailyData.data,
+				Number.isFinite(nextDailyAt) ? nextDailyAt : undefined
+			);
+			telemetry.setAttrs({
+				"ravena.waifu.daily.source": "api_claimed",
+				"ravena.waifu.daily.amount": Number(dailyData.data.amount) || 0
+			});
+			return { status: "claimed", source: "api", result: dailyData.data, entry };
+		}
+
+		// Não cacheia: sem payload de resgate não sabemos se o ciclo foi resolvido, então o
+		// próximo comando tenta de novo e o !mu-diario mostra o erro em vez de cooldown.
+		logger.debug(
+			`[claimWaifuDaily] Resposta inesperada no claim diário: ${dailyData?.error?.code || "sem data"}`
+		);
+		telemetry.setAttrs({ "ravena.waifu.daily.source": "api_unexpected" });
+		return {
+			status: "error",
+			source: "api",
+			error: new Error(dailyData?.error?.message || "Resposta inesperada no resgate diário.")
+		};
+	} catch (dailyErr) {
+		const apiErr = dailyErr?.response?.data?.error;
+		if (apiErr?.code === "DAILY_COOLDOWN_ACTIVE") {
+			const retryAt = apiErr.retryAfter ? new Date(apiErr.retryAfter).getTime() : NaN;
+			telemetry.setAttrs({ "ravena.waifu.daily.source": "api_cooldown" });
+			return {
+				status: "cooldown",
+				source: "api",
+				entry: dailyCheckinCache.markUnavailable(
+					GAMES.WAIFU,
+					userId,
+					Number.isFinite(retryAt) ? retryAt : undefined
+				)
+			};
+		}
+
+		logger.debug(`[claimWaifuDaily] Falha no claim diário: ${apiErr?.code || dailyErr?.message}`);
+		telemetry.setAttrs({ "ravena.waifu.daily.source": "api_error" });
+		return { status: "error", source: "api", error: dailyErr };
+	}
 }
 
 /**
@@ -2099,25 +2208,11 @@ function makeRollHandler(genderFilter) {
 
 		try {
 			// Tenta resgatar automaticamente a recompensa diária em paralelo com a busca de bônus
-			const claimDailyPromise = (async () => {
-				try {
-					const { data: dailyData } = await api.post("/kakera/daily", { userId, groupId, name });
-					if (dailyData?.success && dailyData?.data) {
-						return dailyData.data;
-					}
-				} catch (dailyErr) {
-					logger.debug(
-						`[rollWaifu] Tentativa de claim diário: ${dailyErr?.response?.data?.error?.code || dailyErr.message}`
-					);
-				}
-				return null;
-			})();
-
 			// getWaifuBonus aqui só sincroniza colheitas pendentes; o uso do bônus é por reserva atômica
-			const [rollBonusesRaw, , dailyClaimResult] = await Promise.all([
+			const [rollBonusesRaw, , dailyClaim] = await Promise.all([
 				DonorBonusService.getWaifuRollBonuses(userId),
 				ShadowGardenBonusService.getWaifuBonus(userId),
-				claimDailyPromise
+				claimWaifuDaily(userId, groupId, name)
 			]);
 
 			// Reserva o bônus da fazenda ANTES do /roll (UPDATE condicional): dois !mu-r
@@ -2126,11 +2221,19 @@ function makeRollHandler(genderFilter) {
 			const hasFarmBonus = firstReservation.reserved;
 			let consumedFarmBonus = null;
 
+			const dailySummaryLine =
+				dailyClaim.status === "claimed" ? buildDailyClaimSummaryLine(dailyClaim.result) : null;
+
 			const wrapReturn = (mainReturn) => {
-				if (dailyClaimResult) {
-					return [mainReturn, formatDailyRewardMessage(chatId, dailyClaimResult)];
+				if (!dailySummaryLine) {
+					return mainReturn;
 				}
-				return mainReturn;
+				if (mainReturn?.prependText?.(dailySummaryLine)) {
+					return mainReturn;
+				}
+				return [new ReturnMessage({ chatId, content: dailySummaryLine }), mainReturn].filter(
+					Boolean
+				);
 			};
 
 			const eventRarosMult = GameEventService.getMultiplier("waifu", "raros");
@@ -4316,12 +4419,20 @@ async function diariosKakera(bot, message) {
 	const groupId = getGroupId(message);
 	const name = await getUserName(message);
 
-	try {
-		const { data } = await api.post("/kakera/daily", { userId, groupId, name });
-		return formatDailyRewardMessage(chatId, data.data);
-	} catch (err) {
-		return handleApiError(err, chatId, "Erro ao resgatar recompensa diária.");
+	const dailyClaim = await claimWaifuDaily(userId, groupId, name);
+
+	if (dailyClaim.status === "claimed") {
+		return formatDailyRewardMessage(chatId, dailyClaim.result);
 	}
+	if (dailyClaim.status === "cooldown") {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "daily_already_claimed"
+		});
+		return buildDailyCooldownReturnMessage(chatId, dailyClaim.entry);
+	}
+
+	return handleApiError(dailyClaim.error, chatId, "Erro ao resgatar recompensa diária.");
 }
 
 /**
@@ -11161,6 +11272,10 @@ module.exports = {
 	divorciarWaifu,
 	likeWaifu,
 	diariosKakera,
+	claimWaifuDaily,
+	buildDailyClaimSummaryLine,
+	buildDailyCooldownReturnMessage,
+	buildDailyRewardDetailLines,
 	saldoKakera,
 	grantZinthos,
 	grantZinthosAll,
