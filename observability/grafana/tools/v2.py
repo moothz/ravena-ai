@@ -7,8 +7,10 @@ A posição de cada painel vem do gridPos (x, y relativos à seção; w, h)."""
 
 
 class Section:
-    def __init__(self, title, panels, collapse=False, only=None):
-        self.title, self.panels, self.collapse, self.only = title, panels, collapse, only
+    """repeat = nome de uma variável de vários valores: a seção se repete, uma por valor escolhido (no Grafana, a
+    variável vale só aquele valor dentro da cópia)."""
+    def __init__(self, title, panels, collapse=False, only=None, repeat=None):
+        self.title, self.panels, self.collapse, self.only, self.repeat = title, panels, collapse, only, repeat
 
 
 class Tab:
@@ -17,7 +19,8 @@ class Tab:
 
 
 def _cond(only):
-    """only = (variável, valor) ou (variável, valor, "notEquals")."""
+    """only = (variável, valor) ou (variável, valor, "notEquals"). Com variável de vários valores, "equals" vale quando
+    o valor está entre os escolhidos."""
     if not only:
         return None
     var, value, op = (*only, "equals")[:3]
@@ -47,7 +50,8 @@ def _element(p):
     queries = [_query(t) for t in p.get("targets", [])]
     return {"kind": "Panel", "spec": {
         "id": p["id"], "title": p.get("title", ""), "description": p.get("description", ""), "links": p.get("links", []),
-        "data": {"kind": "QueryGroup", "spec": {"queries": queries, "transformations": p.get("transformations", []),
+        "data": {"kind": "QueryGroup", "spec": {"queries": queries, "transformations": [
+            {"kind": t["id"], "spec": t} for t in p.get("transformations", [])],
                                                 "queryOptions": qopts}},
         "vizConfig": {"kind": "VizConfig", "group": p["type"], "version": "",
                       "spec": {"options": p.get("options", {}),
@@ -81,6 +85,8 @@ def _section_layout(sections, elements):
         c = _cond(s.only)
         if c:
             spec["conditionalRendering"] = c
+        if s.repeat:
+            spec["repeat"] = {"mode": "variable", "value": s.repeat}
         rows.append({"kind": "RowsLayoutRow", "spec": spec})
     return {"kind": "RowsLayout", "spec": {"rows": rows}}
 
@@ -113,14 +119,20 @@ def dashboard(uid, title, *, tabs, description, tags, variables, annotations, li
     }
 
 
-def custom_var(name, label, options, current, multi=False, include_all=False):
-    """options: [(texto, valor)]; current: valor ou lista de valores."""
-    cur = current if isinstance(current, list) else [current]
-    text = [t for t, v in options if v in cur]
+def custom_var(name, label, options, current, multi=False, include_all=False, description=""):
+    """options: [(texto, valor)]; current: valor, lista de valores ou "$__all" (com include_all: todas)."""
+    if current == "$__all":
+        cur, text = ["$__all"], ["All"]
+        opts = [{"selected": True, "text": "All", "value": "$__all"}] + [{"selected": False, "text": t, "value": v} for t, v in options]
+    else:
+        cur = current if isinstance(current, list) else [current]
+        text = [t for t, v in options if v in cur]
+        opts = [{"selected": v in cur, "text": t, "value": v} for t, v in options]
+    extra = {"description": description} if description else {}
     return {"kind": "CustomVariable", "spec": {
-        "name": name, "label": label, "query": ",".join(f"{t} : {v}" for t, v in options),
+        "name": name, "label": label, "query": ",".join(f"{t} : {v}" for t, v in options), **extra,
         "current": {"text": text if multi else text[0], "value": cur if multi else cur[0]},
-        "options": [{"selected": v in cur, "text": t, "value": v} for t, v in options],
+        "options": opts,
         "multi": multi, "includeAll": include_all, "hide": "dontHide", "skipUrlSync": False, "allowCustomValue": False}}
 
 
