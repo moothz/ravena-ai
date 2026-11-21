@@ -6,11 +6,37 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
 const express = require("express");
 
 const DonorBonusService = require("../services/DonorBonusService");
 const ShadowGardenBonusService = require("../services/ShadowGardenBonusService");
 const GameEventService = require("../services/GameEventService");
+const WaifuMarriagePhotoHelper = require("../utils/WaifuMarriagePhotoHelper");
+
+const tempMarriagesDir = fs.mkdtempSync(path.join(os.tmpdir(), "test-marriages-"));
+const origGetMarriagesDir = WaifuMarriagePhotoHelper.getMarriagesDir;
+const origGenMarriage = WaifuMarriagePhotoHelper.generateAndSaveMarriageImage;
+const origRevertMarriage = WaifuMarriagePhotoHelper.revertMarriagePhoto;
+
+WaifuMarriagePhotoHelper.getMarriagesDir = () => tempMarriagesDir;
+WaifuMarriagePhotoHelper.generateAndSaveMarriageImage = async (_bot, _msg, character) => {
+	const cur = path.join(tempMarriagesDir, `${character.id}.jpg`);
+	const prev = path.join(tempMarriagesDir, `${character.id}_prev.jpg`);
+	if (fs.existsSync(cur)) fs.copyFileSync(cur, prev);
+	fs.writeFileSync(cur, "new-jpg");
+	return { success: true, photoPath: cur };
+};
+WaifuMarriagePhotoHelper.revertMarriagePhoto = async (characterId) => {
+	const prev = path.join(tempMarriagesDir, `${characterId}_prev.jpg`);
+	if (!fs.existsSync(prev)) {
+		return { success: false, message: "Nenhuma foto anterior." };
+	}
+	return { success: true, message: "Revertida com sucesso!" };
+};
+
 const { registerFeaturesRoutes } = require("../BotAPI/routes/featuresRoutes");
 
 const VALID_SECRET = "segredo-de-teste-waifu-internal-0123456789";
@@ -131,6 +157,58 @@ async function runTests() {
 		});
 		assert.strictEqual(badRef.status, 400);
 
+		// 6. Rotas internas de Foto do Casamento: auth, path traversal, generate & revert
+		const photoNoAuth = await fetch(`${srv.baseUrl}/api/waifu/marriage-photo/generate`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ userId: "5511999999999", character: { id: "rem", name: "Rem" } })
+		});
+		assert.strictEqual(photoNoAuth.status, 401);
+
+		const badTraversal = await fetch(`${srv.baseUrl}/api/waifu/marriage-photo/generate`, {
+			method: "POST",
+			headers: { "X-Market-Secret": VALID_SECRET, "Content-Type": "application/json" },
+			body: JSON.stringify({ userId: "5511999999999", character: { id: "../etc", name: "Rem" } })
+		});
+		assert.strictEqual(badTraversal.status, 400);
+
+		// Primeira geração: não havia foto antes (existedBefore = false, hasPrevious = false)
+		const gen1 = await fetch(`${srv.baseUrl}/api/waifu/marriage-photo/generate`, {
+			method: "POST",
+			headers: { "X-Market-Secret": VALID_SECRET, "Content-Type": "application/json" },
+			body: JSON.stringify({
+				userId: "5511999999999",
+				userName: "Tester",
+				character: { id: "rem-test", name: "Rem", imageUrl: "/media/characters/rem/1.jpg" }
+			})
+		}).then((r) => r.json());
+		assert.strictEqual(gen1.success, true);
+		assert.strictEqual(gen1.data.existedBefore, false);
+		assert.strictEqual(gen1.data.hasPrevious, false);
+
+		// Segunda geração: substitui foto existente e cria backup -> hasPrevious = true
+		const gen2 = await fetch(`${srv.baseUrl}/api/waifu/marriage-photo/generate`, {
+			method: "POST",
+			headers: { "X-Market-Secret": VALID_SECRET, "Content-Type": "application/json" },
+			body: JSON.stringify({
+				userId: "5511999999999",
+				userName: "Tester",
+				character: { id: "rem-test", name: "Rem", imageUrl: "/media/characters/rem/1.jpg" }
+			})
+		}).then((r) => r.json());
+		assert.strictEqual(gen2.success, true);
+		assert.strictEqual(gen2.data.existedBefore, true);
+		assert.strictEqual(gen2.data.hasPrevious, true);
+
+		// Reverte para foto anterior
+		const rev = await fetch(`${srv.baseUrl}/api/waifu/marriage-photo/revert`, {
+			method: "POST",
+			headers: { "X-Market-Secret": VALID_SECRET, "Content-Type": "application/json" },
+			body: JSON.stringify({ characterId: "rem-test" })
+		}).then((r) => r.json());
+		assert.strictEqual(rev.success, true);
+		assert.strictEqual(rev.data.characterId, "rem-test");
+
 		console.log("✅ test_waifu_internal_routes.js: todos os cenários passaram!");
 	} finally {
 		DonorBonusService.getWaifuRollBonuses = origDonor;
@@ -138,6 +216,10 @@ async function runTests() {
 		ShadowGardenBonusService.reserveWaifuBonus = origReserve;
 		ShadowGardenBonusService.refundWaifuBonus = origRefund;
 		GameEventService.getMultiplier = origEvent;
+		WaifuMarriagePhotoHelper.getMarriagesDir = origGetMarriagesDir;
+		WaifuMarriagePhotoHelper.generateAndSaveMarriageImage = origGenMarriage;
+		WaifuMarriagePhotoHelper.revertMarriagePhoto = origRevertMarriage;
+		fs.rmSync(tempMarriagesDir, { recursive: true, force: true });
 		await srv.close();
 	}
 }

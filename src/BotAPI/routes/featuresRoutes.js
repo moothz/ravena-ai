@@ -1,6 +1,7 @@
 const path = require("path");
 const telemetry = require("../../telemetry");
 const fs = require("fs").promises;
+const fsSync = require("fs");
 const axios = require("axios");
 const FishingGame = require("../../functions/FishingGame");
 const ShadowGardenClient = require("../../services/ShadowGardenClient");
@@ -9,7 +10,14 @@ const WaifuCommands = require("../../functions/WaifuCommands");
 const DonorBonusService = require("../../services/DonorBonusService");
 const ShadowGardenBonusService = require("../../services/ShadowGardenBonusService");
 const GameEventService = require("../../services/GameEventService");
-const { getMarriagePhoto } = require("../../utils/WaifuMarriagePhotoHelper");
+const {
+	getMarriagePhoto,
+	generateAndSaveMarriageImage,
+	revertMarriagePhoto,
+	getMarriagesDir
+} = require("../../utils/WaifuMarriagePhotoHelper");
+
+const marriagePhotoInFlight = new Set();
 const { createAuthenticateMarket } = require("../middleware/auth");
 const {
 	createMarketRateLimiters,
@@ -1120,6 +1128,172 @@ function registerFeaturesRoutes(api) {
 				return res.json({ success: true, refunded: Boolean(refunded) });
 			} catch (err) {
 				api.logger.error("Erro ao estornar bônus da fazenda:", err);
+				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
+			}
+		}
+	);
+
+	// Gera (ou regera) a foto oficial de casamento do casal para o painel Web / Waifinder
+	app.post(
+		"/api/waifu/marriage-photo/generate",
+		telemetry.outcomeMiddleware,
+		...waifuInternalGuards,
+		async (req, res) => {
+			const body = req.body && typeof req.body === "object" ? req.body : {};
+			const { userId, userName, character, photoIndex } = body;
+
+			if (!isValidMarketUserId(userId)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
+				return res.status(400).json({ success: false, error: "userId inválido" });
+			}
+
+			const characterId =
+				typeof character?.id === "string" ? character.id.trim() : "";
+			if (
+				!characterId ||
+				characterId.length > 128 ||
+				characterId.includes("..") ||
+				characterId.includes("/") ||
+				characterId.includes("\\") ||
+				typeof character?.name !== "string" ||
+				!character.name.trim()
+			) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_character" });
+				return res.status(400).json({ success: false, error: "Dados do personagem inválidos" });
+			}
+
+			if (marriagePhotoInFlight.has(characterId)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "in_flight" });
+				return res.status(429).json({
+					success: false,
+					error: "Já existe uma geração de foto em andamento para este personagem."
+				});
+			}
+
+			telemetry.setAttrs({
+				"ravena.user.id": telemetry.userIdAttr(userId),
+				"waifu.character.id": characterId
+			});
+
+			marriagePhotoInFlight.add(characterId);
+			try {
+				const marriagesDir = getMarriagesDir();
+				const currentPath = path.join(marriagesDir, `${characterId}.jpg`);
+				const prevPath = path.join(marriagesDir, `${characterId}_prev.jpg`);
+				const existedBefore = fsSync.existsSync(currentPath);
+
+				const availablePhotos = Array.isArray(character.imageUrls)
+					? character.imageUrls.filter((u) => typeof u === "string" && u.trim())
+					: [];
+				const requestedIdx = Number.isSafeInteger(photoIndex) ? Number(photoIndex) : null;
+				const targetPhotoUrl =
+					requestedIdx && requestedIdx >= 1 && requestedIdx <= availablePhotos.length
+						? availablePhotos[requestedIdx - 1]
+						: character.imageUrl || availablePhotos[0] || null;
+
+				const targetBot =
+					api.bots?.find((b) => b.isConnected && !b.useTelegram && !b.useDiscord) ||
+					api.bots?.find((b) => b.isConnected) ||
+					api.bots?.[0] ||
+					null;
+
+				const charForHelper = {
+					...character,
+					id: characterId,
+					imageUrl: targetPhotoUrl
+				};
+
+				const photoResult = await telemetry.withSpan("waifu marriage_photo.generate", () =>
+					generateAndSaveMarriageImage(
+						targetBot,
+						null,
+						charForHelper,
+						userId,
+						typeof userName === "string" && userName.trim() ? userName.trim() : "Jogador",
+						targetPhotoUrl
+					)
+				);
+
+				if (!photoResult || !photoResult.success) {
+					telemetry.setAttrs({ "app.outcome": "error", "app.reject.reason": "generation_failed" });
+					return res.status(502).json({
+						success: false,
+						error: "Não foi possível gerar a foto de casamento agora. Tente novamente em instantes."
+					});
+				}
+
+				const hasPrevious = existedBefore && fsSync.existsSync(prevPath);
+				telemetry.setAttrs({
+					"waifu.photo.existed_before": existedBefore,
+					"waifu.photo.has_previous": hasPrevious
+				});
+
+				return res.json({
+					success: true,
+					data: {
+						characterId,
+						existedBefore,
+						hasPrevious,
+						updatedAt: Date.now()
+					}
+				});
+			} catch (err) {
+				api.logger.error("Erro ao gerar foto de casamento via rota interna:", err);
+				telemetry.recordError(telemetry.activeSpan(), err, "marriage_photo_generate_error");
+				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
+			} finally {
+				marriagePhotoInFlight.delete(characterId);
+			}
+		}
+	);
+
+	// Reverte a foto oficial de casamento para a versão anterior (_prev.jpg)
+	app.post(
+		"/api/waifu/marriage-photo/revert",
+		telemetry.outcomeMiddleware,
+		...waifuInternalGuards,
+		async (req, res) => {
+			const body = req.body && typeof req.body === "object" ? req.body : {};
+			const { characterId } = body;
+
+			if (
+				!characterId ||
+				typeof characterId !== "string" ||
+				characterId.length > 128 ||
+				characterId.includes("..") ||
+				characterId.includes("/") ||
+				characterId.includes("\\")
+			) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_character" });
+				return res.status(400).json({ success: false, error: "characterId inválido" });
+			}
+
+			telemetry.setAttrs({ "waifu.character.id": characterId });
+
+			try {
+				const revertRes = await telemetry.withSpan("waifu marriage_photo.revert", () =>
+					revertMarriagePhoto(characterId)
+				);
+
+				if (!revertRes?.success) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "no_previous_photo" });
+					return res.status(400).json({
+						success: false,
+						error: revertRes?.message || "Nenhuma foto anterior disponível para desfazer."
+					});
+				}
+
+				return res.json({
+					success: true,
+					data: {
+						characterId,
+						message: revertRes.message,
+						updatedAt: Date.now()
+					}
+				});
+			} catch (err) {
+				api.logger.error("Erro ao reverter foto de casamento via rota interna:", err);
+				telemetry.recordError(telemetry.activeSpan(), err, "marriage_photo_revert_error");
 				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
 			}
 		}
