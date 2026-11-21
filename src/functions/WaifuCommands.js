@@ -10809,12 +10809,16 @@ async function notifySpecialMarriage(
 		caption += `💍 ══════════════════════════ 💍\n`;
 		if (acquisitionType === "cotas") {
 			caption += `   📈 *CONQUISTA VIA MERCADO DE INVESTIMENTOS!* 💖\n`;
+		} else if (acquisitionType === "waifinder") {
+			caption += `   🔥 *CONQUISTA VIA WAIFINDER!* 💖\n`;
 		} else {
 			caption += `   💖 *UNIDOS PELO DESTINO PARA SEMPRE!* 💖\n`;
 		}
 		caption += `💍 ══════════════════════════ 💍\n\n`;
 		if (acquisitionType === "cotas") {
 			caption += `Após garantir todas as 4 cotas no mercado de ações, o jogador *${userName}* selou seu matrimônio com a suprema lenda:\n\n`;
+		} else if (acquisitionType === "waifinder") {
+			caption += `🔥 O jogador *${userName}* encontrou o match perfeito no *Waifinder* e selou seu matrimônio com a suprema lenda:\n\n`;
 		} else {
 			caption += `🌌 O jogador *${userName}* alcançou o ápice do amor e selou seu matrimônio sagrado com a suprema lenda:\n\n`;
 		}
@@ -10826,6 +10830,8 @@ async function notifySpecialMarriage(
 		caption += `📅 *Data da Cerimônia:* ${dateStr}\n`;
 		if (acquisitionType === "cotas") {
 			caption += `💼 *Aquisição:* 100% das cotas completadas\n`;
+		} else if (acquisitionType === "waifinder") {
+			caption += `📱 *Aquisição:* Rolagem via Waifinder\n`;
 		}
 		caption += `\n✨ ══════════════════════════ ✨\n`;
 		if (acquisitionType === "cotas") {

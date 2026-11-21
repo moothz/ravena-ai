@@ -59,4 +59,36 @@ function createMarketRateLimiters() {
 	return { limiter, authFailureLimiter };
 }
 
-module.exports = { createRateLimiters, createMarketRateLimiters };
+/**
+ * Cria limitadores dedicados às rotas internas de rolls/fazenda do Waifinder (/api/waifu/*),
+ * separados dos limitadores do mercado para que picos de rolls na web não afetem trocas/inventário.
+ * @returns {{ limiter: import("express").RequestHandler, authFailureLimiter: import("express").RequestHandler }}
+ */
+function createWaifuInternalRateLimiters() {
+	const authFailureLimiter = rateLimit({
+		windowMs: 15 * 60 * 1000,
+		max: 20,
+		skipSuccessfulRequests: true,
+		requestWasSuccessful: (req, res) => res.statusCode !== 401,
+		message: {
+			success: false,
+			reason: "Muitas tentativas não autorizadas. Tente novamente mais tarde."
+		},
+		standardHeaders: true,
+		legacyHeaders: false,
+		validate: { trustProxy: false }
+	});
+
+	const limiter = rateLimit({
+		windowMs: 1 * 60 * 1000,
+		max: 600,
+		message: { success: false, reason: "Limite de requisições internas de waifu excedido." },
+		standardHeaders: true,
+		legacyHeaders: false,
+		validate: { trustProxy: false }
+	});
+
+	return { limiter, authFailureLimiter };
+}
+
+module.exports = { createRateLimiters, createMarketRateLimiters, createWaifuInternalRateLimiters };

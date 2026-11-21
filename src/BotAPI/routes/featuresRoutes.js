@@ -6,9 +6,15 @@ const FishingGame = require("../../functions/FishingGame");
 const ShadowGardenClient = require("../../services/ShadowGardenClient");
 const bankService = require("../../services/BankService");
 const WaifuCommands = require("../../functions/WaifuCommands");
+const DonorBonusService = require("../../services/DonorBonusService");
+const ShadowGardenBonusService = require("../../services/ShadowGardenBonusService");
+const GameEventService = require("../../services/GameEventService");
 const { getMarriagePhoto } = require("../../utils/WaifuMarriagePhotoHelper");
 const { createAuthenticateMarket } = require("../middleware/auth");
-const { createMarketRateLimiters } = require("../middleware/rateLimiters");
+const {
+	createMarketRateLimiters,
+	createWaifuInternalRateLimiters
+} = require("../middleware/rateLimiters");
 const jardimClient = new ShadowGardenClient();
 
 // Caches locais para Waifuletes (detalhes de personagens e nomes de grupos)
@@ -982,6 +988,138 @@ function registerFeaturesRoutes(api) {
 				return res.json({ success: true, notified: sent });
 			} catch (err) {
 				api.logger.error("Erro ao processar notificação de casamento por cotas:", err);
+				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
+			}
+		}
+	);
+
+	// Guardas dedicados das rotas internas de rolls/fazenda do Waifinder (/api/waifu/*)
+	const waifuInternalLimiters = createWaifuInternalRateLimiters();
+	const waifuInternalGuards = [
+		waifuInternalLimiters.authFailureLimiter,
+		waifuInternalLimiters.limiter,
+		createAuthenticateMarket(api)
+	];
+
+	// Consulta contexto de bônus de roll do usuário (Doador + Fazenda + Eventos)
+	app.get(
+		"/api/waifu/user-roll-context/:userId",
+		telemetry.outcomeMiddleware,
+		...waifuInternalGuards,
+		async (req, res) => {
+			try {
+				const { userId } = req.params;
+				if (!isValidMarketUserId(userId)) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
+					return res.status(400).json({ success: false, error: "userId inválido" });
+				}
+				telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(userId) });
+
+				const [donorBonuses, farmBonus] = await Promise.all([
+					DonorBonusService.getWaifuRollBonuses(userId),
+					ShadowGardenBonusService.getWaifuBonus(userId, true)
+				]);
+
+				const eventRarosMult = GameEventService.getMultiplier("waifu", "raros");
+				const eventWishMult = GameEventService.getMultiplier("waifu", "wish");
+
+				const farmRolls = Math.max(0, Number(farmBonus?.rolls) || 0);
+				const farmTickets = Math.max(0, Number(farmBonus?.tickets) || 0);
+				const extraMaxRolls = Math.max(0, Number(donorBonuses?.extraMaxRolls) || 0);
+
+				return res.json({
+					success: true,
+					data: {
+						donorBonuses: donorBonuses || null,
+						extraMaxRolls,
+						farmRolls,
+						farmTickets,
+						eventRarosMult,
+						eventWishMult
+					}
+				});
+			} catch (err) {
+				api.logger.error("Erro ao consultar contexto de roll do usuário:", err);
+				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
+			}
+		}
+	);
+
+	// Reserva atomicamente 1 bônus da fazenda (ticket ou roll) + retorna contexto de bônus/eventos
+	app.post(
+		"/api/waifu/farm-bonus/reserve",
+		telemetry.outcomeMiddleware,
+		...waifuInternalGuards,
+		async (req, res) => {
+			try {
+				const { userId } = req.body && typeof req.body === "object" ? req.body : {};
+				if (!isValidMarketUserId(userId)) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
+					return res.status(400).json({ success: false, error: "userId inválido" });
+				}
+				telemetry.setAttrs({ "ravena.user.id": telemetry.userIdAttr(userId) });
+
+				// Sincroniza colheitas pendentes antes de tentar a reserva atômica
+				await ShadowGardenBonusService.getWaifuBonus(userId, true);
+				const [reservation, donorBonuses] = await Promise.all([
+					ShadowGardenBonusService.reserveWaifuBonus(userId),
+					DonorBonusService.getWaifuRollBonuses(userId)
+				]);
+				const remaining = await ShadowGardenBonusService.getWaifuBonus(userId, false);
+
+				const eventRarosMult = GameEventService.getMultiplier("waifu", "raros");
+				const eventWishMult = GameEventService.getMultiplier("waifu", "wish");
+
+				telemetry.setAttrs({
+					"waifu.farm_bonus.reserved": Boolean(reservation?.reserved),
+					"waifu.farm_bonus.type": reservation?.type || "none"
+				});
+
+				return res.json({
+					success: true,
+					data: {
+						reserved: Boolean(reservation?.reserved),
+						type: reservation?.type || null,
+						remainingRolls: Math.max(0, Number(remaining?.rolls) || 0),
+						remainingTickets: Math.max(0, Number(remaining?.tickets) || 0),
+						donorBonuses: donorBonuses || null,
+						extraMaxRolls: Math.max(0, Number(donorBonuses?.extraMaxRolls) || 0),
+						eventRarosMult,
+						eventWishMult
+					}
+				});
+			} catch (err) {
+				api.logger.error("Erro ao reservar bônus da fazenda:", err);
+				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
+			}
+		}
+	);
+
+	// Estorna atomicamente 1 bônus da fazenda reservado (falha no /roll ou personagem Mítico)
+	app.post(
+		"/api/waifu/farm-bonus/refund",
+		telemetry.outcomeMiddleware,
+		...waifuInternalGuards,
+		async (req, res) => {
+			try {
+				const { userId, type } = req.body && typeof req.body === "object" ? req.body : {};
+				if (!isValidMarketUserId(userId)) {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_user" });
+					return res.status(400).json({ success: false, error: "userId inválido" });
+				}
+				if (type !== "ticket" && type !== "roll") {
+					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_type" });
+					return res.status(400).json({ success: false, error: "type deve ser 'ticket' ou 'roll'" });
+				}
+				telemetry.setAttrs({
+					"ravena.user.id": telemetry.userIdAttr(userId),
+					"waifu.farm_bonus.type": type
+				});
+
+				const refunded = await ShadowGardenBonusService.refundWaifuBonus(userId, type);
+				return res.json({ success: true, refunded: Boolean(refunded) });
+			} catch (err) {
+				api.logger.error("Erro ao estornar bônus da fazenda:", err);
 				return res.status(500).json({ success: false, error: err.message || "Erro interno" });
 			}
 		}
