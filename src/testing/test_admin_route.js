@@ -1,14 +1,18 @@
 // src/testing/test_admin_route.js
 // /admin (painel unificado, experimental): exige admin, renova a sessão, não é servido
 // pelo express.static (nem como /admin/ nem como /admin.html) e troca o ?v= dos assets.
-// Também: GET /api/admin/links (com e sem .env).
+// Também: GET /api/admin/links (com e sem .env) e o redirecionamento das telas antigas
+// (LEGACY_ADMIN_REDIRECTS, ?legado=1, ?auth=).
 
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
 const express = require("express");
-const { registerIndexRoutes } = require("../BotAPI/routes/indexRoutes");
+const {
+	registerIndexRoutes,
+	LEGACY_ADMIN_REDIRECTS
+} = require("../BotAPI/routes/indexRoutes");
 const { registerAdminRoutes, buildAdminLinks } = require("../BotAPI/routes/adminRoutes");
 
 const LINK_ENV = [
@@ -156,6 +160,60 @@ async function runTests() {
 			}
 		}
 		console.log("✓ /api/admin/links: autenticação, sem .env (desabilitado) e com .env.");
+
+		// Redirecionamento das telas antigas: o mapa começa vazio (nada muda)...
+		assert.deepStrictEqual(LEGACY_ADMIN_REDIRECTS, {}, "o mapa começa vazio nesta etapa");
+		const before = await fetch(`${baseUrl}/groups-dossier`, {
+			redirect: "manual",
+			headers: { "X-Test-Admin": "1" }
+		});
+		assert.strictEqual(before.status, 200, "sem entrada no mapa, a tela antiga continua");
+
+		// ...e, com entradas, manda para /admin#/<área>
+		Object.assign(LEGACY_ADMIN_REDIRECTS, {
+			"/groups-dossier": "pessoas/grupos",
+			"/banco/admin": "banco",
+			"/instances": "instancias"
+		});
+		try {
+			const cases = [
+				["/groups-dossier", "/admin#/pessoas/grupos"],
+				["/groups-dossier.html", "/admin#/pessoas/grupos"],
+				["/groups-dossier/", "/admin#/pessoas/grupos"],
+				["/banco/admin", "/admin#/banco"],
+				["/ravenabank/admin", "/admin#/banco"],
+				["/banco-admin.html", "/admin#/banco"],
+				["/instances", "/admin#/instancias"],
+				["/instances.html?x=1", "/admin#/instancias"],
+				["/banco/admin?auth=YWRtaW46c2VuaGE%3D", "/admin?auth=YWRtaW46c2VuaGE%3D#/banco"]
+			];
+			for (const [from, to] of cases) {
+				const res = await fetch(`${baseUrl}${from}`, { redirect: "manual" });
+				assert.strictEqual(res.status, 302, `${from} → 302`);
+				assert.strictEqual(res.headers.get("location"), to, `${from} → ${to}`);
+			}
+			for (const escape of [
+				"/groups-dossier?legado=1",
+				"/banco/admin?legado=1&auth=x",
+				"/instances?embed=1"
+			]) {
+				const res = await fetch(`${baseUrl}${escape}`, {
+					redirect: "manual",
+					headers: { "X-Test-Admin": "1" }
+				});
+				assert.strictEqual(res.status, 200, `${escape} continua servindo a tela antiga`);
+			}
+			const post = await fetch(`${baseUrl}/instances`, { method: "POST", redirect: "manual" });
+			assert.notStrictEqual(post.status, 302, "só GET/HEAD são redirecionados");
+			const untouched = await fetch(`${baseUrl}/eventos/admin`, {
+				redirect: "manual",
+				headers: { "X-Test-Admin": "1" }
+			});
+			assert.strictEqual(untouched.status, 200, "telas fora do mapa não mudam");
+		} finally {
+			for (const k of Object.keys(LEGACY_ADMIN_REDIRECTS)) delete LEGACY_ADMIN_REDIRECTS[k];
+		}
+		console.log("✓ Telas antigas do mapa vão para /admin#/<área> (com ?auth=); ?legado=1 mantém.");
 
 		for (const legacy of ["/classic", "/status"]) {
 			const res = await fetch(`${baseUrl}${legacy}`);

@@ -26,6 +26,8 @@ const storageService = require("../../services/StorageService");
  * - GET  /pesca, /fishing             - Interface web do jogo de pesca
  * - GET  /status                      - Página pública de status das instâncias e canais de aviso
  * - GET  /admin, /admin.html          - Painel de admin unificado (experimental, Basic Auth)
+ * - (middleware) telas antigas de admin  - 302 para /admin#/<área> quando estão em
+ *                                          LEGACY_ADMIN_REDIRECTS (?legado=1 mantém a antiga)
  * - GET  /waifuletes, /waifus         - Atalho para o app de Waifuletes na OS
  * - GET  /groups-dossier              - Visualizador HTML de dossiês de grupos
  * - GET  /service-providers           - Interface de gerenciamento de provedores de IA
@@ -61,6 +63,55 @@ function setStaticCacheHeaders(res, filePath) {
 }
 
 const STATIC_OPTIONS = { maxAge: "1d", etag: true, setHeaders: setStaticCacheHeaders };
+
+/**
+ * Telas antigas de admin que já têm área nativa no /admin: caminho canônico → rota interna
+ * do painel (o que vem depois de "#/"). COMEÇA VAZIO; cada área nativa acrescenta a sua
+ * entrada quando ficar pronta, por exemplo:
+ *   "/banco/admin": "banco",
+ *   "/dossies": "pessoas",
+ *   "/groups-dossier": "pessoas/grupos",
+ * Os apelidos de cada tela (LEGACY_ADMIN_ALIASES) seguem a entrada do caminho canônico.
+ * Saída de emergência: ?legado=1 continua servindo a tela antiga (e ?embed=1 também, para
+ * nunca abrir o painel dentro dele mesmo num iframe).
+ * @type {Object<string, string>}
+ */
+const LEGACY_ADMIN_REDIRECTS = {};
+
+/** Outros endereços da mesma tela antiga → caminho canônico usado em LEGACY_ADMIN_REDIRECTS. */
+const LEGACY_ADMIN_ALIASES = {
+	"/instances.html": "/instances",
+	"/banco-admin.html": "/banco/admin",
+	"/ravenabank/admin": "/banco/admin",
+	"/eventos-admin.html": "/eventos/admin",
+	"/events/admin": "/eventos/admin",
+	"/service-providers.html": "/service-providers",
+	"/dossies.html": "/dossies",
+	"/dossier": "/dossies",
+	"/dossie": "/dossies",
+	"/groups-dossier.html": "/groups-dossier"
+};
+
+/**
+ * Middleware: GET/HEAD numa tela antiga do mapa → 302 para /admin#/<área>, preservando ?auth=
+ * (o /admin cria a sessão e tira a credencial da barra de endereço).
+ * @param {Object<string, string>} [map] - padrão: LEGACY_ADMIN_REDIRECTS (lido a cada pedido)
+ * @returns {import("express").RequestHandler}
+ */
+function createLegacyAdminRedirect(map = LEGACY_ADMIN_REDIRECTS) {
+	return (req, res, next) => {
+		if (req.method !== "GET" && req.method !== "HEAD") return next();
+		const raw = req.path.length > 1 ? req.path.replace(/\/+$/, "") : req.path;
+		const canonical = LEGACY_ADMIN_ALIASES[raw] || raw;
+		if (!Object.prototype.hasOwnProperty.call(map, canonical)) return next();
+		const q = req.query || {};
+		if (q.legado === "1" || q.embed === "1") return next();
+		const target = String(map[canonical]).replace(/^#?\/?/, "");
+		const auth = typeof q.auth === "string" && q.auth ? `?auth=${encodeURIComponent(q.auth)}` : "";
+		res.setHeader("Cache-Control", "no-store");
+		return res.redirect(302, `/admin${auth}#/${target}`);
+	};
+}
 
 /**
  * Versão de cache-busting baseada no mtime do arquivo em public/.
@@ -135,6 +186,10 @@ function registerIndexRoutes(api) {
 		cachedCemiterio = null;
 		lastCemiterioCheck = 0;
 	};
+
+	// Telas antigas que já viraram área nativa do /admin (ver LEGACY_ADMIN_REDIRECTS). Antes de
+	// tudo: as rotas explícitas abaixo e o express.static de public/ também servem essas telas.
+	app.use(createLegacyAdminRedirect());
 
 	// Rota para o dashboard clássico legado
 	app.get(["/classic", "/legado"], (req, res) => {
@@ -868,4 +923,9 @@ function registerIndexRoutes(api) {
 	});
 }
 
-module.exports = { registerIndexRoutes };
+module.exports = {
+	registerIndexRoutes,
+	createLegacyAdminRedirect,
+	LEGACY_ADMIN_REDIRECTS,
+	LEGACY_ADMIN_ALIASES
+};
