@@ -3,7 +3,17 @@
  * mensagens de falha por escrito, prévia do markup do WhatsApp, CSS da área).
  */
 
-import { h, api, send, toast, buildHash, HttpError, httpReason, invalidate } from "../../core.js";
+import {
+	h,
+	api,
+	send,
+	toast,
+	buildHash,
+	HttpError,
+	httpReason,
+	invalidate,
+	notifySessionExpired
+} from "../../core.js";
 import {
 	formValues,
 	applyConfig,
@@ -12,7 +22,6 @@ import {
 	buildSaveList,
 	validateBots,
 	actionOutcome,
-	botCredentials,
 	parseWaMarkup
 } from "./modelo.js";
 
@@ -38,8 +47,8 @@ export const loadBots = (fresh = false) =>
  */
 export function explain(err, what) {
 	const base =
-		err && err.status === 401 && err.botAuth
-			? "o servidor recusou sem usuário e senha válidos (HTTP 401)"
+		err && err.status === 401 && err.sessionExpired
+			? "a sessão do painel expirou (HTTP 401)"
 			: err && err.message
 				? err.message
 				: "erro desconhecido";
@@ -47,11 +56,7 @@ export function explain(err, what) {
 	const server = err && err.serverMessage;
 	const extra = server && err.status >= 500 && !base.includes(server) ? `: ${server}` : "";
 	let hint = "";
-	if (err && err.status === 401 && err.botAuth)
-		hint =
-			err.botAuth === "bot"
-				? " (o usuário e a senha do painel desta instância, managementUser/managementPW, foram recusados)"
-				: " (esta rota pede usuário e senha da API, autenticação Basic, e não aceita a sessão do painel: entre com eles quando o navegador pedir, ou defina managementUser/managementPW nesta instância)";
+	if (err && err.status === 401 && err.sessionExpired) hint = ": entre de novo no painel";
 	else if (err && err.status === 404 && what)
 		hint = " (a instância está no bots.json, mas não foi carregada por este processo)";
 	if (err && err.status === 0) hint = " (sem resposta: a conexão caiu ou o servidor está fora)";
@@ -77,32 +82,14 @@ export function outcomeBox() {
 }
 
 /**
- * Rotas com :botId (/restart, /logout, /qrcode-*, /reconnect, /recreate) só aceitam Basic: com o
- * managementUser/managementPW da instância quando ela os tem, senão o usuário da API. A sessão
- * do painel (cookie) não vale ali. Com credenciais da instância, mandamos o cabeçalho (como a
- * página /qrcode fazia); sem elas, o navegador pede usuário e senha (como a tela antiga).
- * @returns {string|null} valor do ?auth= / Authorization (base64 de "usuário:senha")
- */
-export function botAuth(bot) {
-	// O servidor só usa as credenciais da instância quando o bot está carregado (api.bots);
-	// senão vale o usuário da API.
-	if (!bot || !bot.isLive) return null;
-	const cred = botCredentials(bot);
-	if (!cred) return null;
-	const bytes = new TextEncoder().encode(cred);
-	let bin = "";
-	for (const b of bytes) bin += String.fromCharCode(b);
-	return btoa(bin);
-}
-
-/**
- * GET JSON numa rota de instância, com a credencial dela. Lança HttpError (com .botAuth =
- * "bot" | "api" para explicar um 401).
+ * GET JSON numa rota de instância (/restart, /logout, /qrcode-*, /reconnect, /recreate). Desde
+ * que as rotas :botId aceitam a sessão do admin (authenticateBasic com isAdmin), o cookie do
+ * painel basta: a credencial da instância (managementUser/managementPW) não vai mais em
+ * cabeçalho nem em ?auth=. Lança HttpError; um 401 é sessão expirada (mostra a faixa).
+ * @param {Object} bot - a instância (mantido na assinatura; a credencial dela não é usada)
  */
 export async function botFetch(bot, path) {
-	const auth = botAuth(bot);
 	const headers = { Accept: "application/json" };
-	if (auth) headers.Authorization = `Basic ${auth}`;
 	let res;
 	try {
 		res = await fetch(path, { credentials: "same-origin", headers, cache: "no-store" });
@@ -123,7 +110,10 @@ export async function botFetch(bot, path) {
 			serverMsg && res.status !== 401 && res.status < 500 ? `${reason}: ${serverMsg}` : reason,
 			body
 		);
-		if (res.status === 401) err.botAuth = auth ? "bot" : "api";
+		if (res.status === 401) {
+			err.sessionExpired = true;
+			notifySessionExpired();
+		}
 		throw err;
 	}
 	return body;

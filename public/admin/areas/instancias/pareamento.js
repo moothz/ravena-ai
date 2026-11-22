@@ -7,7 +7,7 @@
  */
 
 import { h, lamp, card, note, confirmInline, toast } from "../../core.js";
-import { botAction, botFetch, botAuth, explain, outcomeBox } from "./comum.js";
+import { botAction, botFetch, explain, outcomeBox } from "./comum.js";
 
 /** src seguro para o QR (data:image/… ou base64 puro). */
 export function qrSrc(code) {
@@ -245,11 +245,8 @@ export async function renderPareamento(root, ctx, bot) {
 	if (!connected && exists) {
 		const start = () => {
 			if (closed) return;
-			const auth = botAuth(bot);
-			// EventSource não manda cabeçalho: a credencial vai no ?auth= (como a página /qrcode).
-			es = new EventSource(
-				`/qrcode-stream/${id}${auth ? `?auth=${encodeURIComponent(auth)}` : ""}`
-			);
+			// O cookie do painel basta (as rotas :botId aceitam a sessão do admin).
+			es = new EventSource(`/qrcode-stream/${id}`);
 			es.onmessage = (e) => {
 				let d;
 				try {

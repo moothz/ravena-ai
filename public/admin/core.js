@@ -307,6 +307,11 @@ export function onSessionExpired(fn) {
 	return () => sessionListeners.delete(fn);
 }
 
+/** Avisa a casca que a sessão expirou (para leituras feitas fora de api()/send()). */
+export function notifySessionExpired() {
+	sessionListeners.forEach((fn) => fn());
+}
+
 async function failure(res) {
 	let body = null;
 	try {

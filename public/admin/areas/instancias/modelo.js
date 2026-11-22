@@ -417,12 +417,6 @@ export function newBot(bots, rand = defaultRand) {
 	};
 }
 
-/** "usuário:senha" do painel da instância (o authenticateBasic das rotas :botId usa estes). */
-export function botCredentials(bot) {
-	if (!bot || !bot.managementUser || !bot.managementPW) return null;
-	return `${bot.managementUser}:${bot.managementPW}`;
-}
-
 /* ── Respostas das ações (/restart, /logout, /reconnect, /recreate) ── */
 
 function msgText(m) {
