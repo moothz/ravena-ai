@@ -71,6 +71,24 @@ async function runTests() {
 		}
 		console.log("✓ /admin, /admin/ e /admin.html exigem admin e passam pela rota dedicada.");
 
+		// Entrada por ?auth= válido: cria a sessão e responde 302 para /admin sem o parâmetro
+		for (const [from, to] of [
+			["/admin?auth=YWRtaW46c2VuaGE%3D", "/admin"],
+			["/admin.html?auth=x&tema=escuro", "/admin?tema=escuro"],
+			["/admin/?x=1&auth=x", "/admin?x=1"]
+		]) {
+			const res = await fetch(`${baseUrl}${from}`, {
+				headers: { "X-Test-Admin": "1" },
+				redirect: "manual"
+			});
+			assert.strictEqual(res.status, 302, `${from} → 302`);
+			assert.strictEqual(res.headers.get("location"), to, `${from} → ${to}`);
+			assert.strictEqual(res.headers.get("x-admin-session-renewed"), "1", `${from} cria a sessão`);
+		}
+		const badAuth = await fetch(`${baseUrl}/admin?auth=errado`, { redirect: "manual" });
+		assert.strictEqual(badAuth.status, 401, "?auth= inválido continua 401, sem redirect");
+		console.log("✓ /admin?auth= válido cria a sessão e tira a credencial da URL com 302.");
+
 		// Caminhos codificados ou com barra dupla não podem entregar o HTML do painel sem login
 		for (const sneaky of [
 			"/%61dmin.html",

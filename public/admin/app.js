@@ -32,7 +32,7 @@ import { loadPulse } from "./pulse.js";
 const main = document.getElementById("main");
 const byId = new Map(AREAS.map((a) => [a.id, a]));
 
-/* ── Entrada por ?auth=…: o cookie já foi criado; a credencial sai da barra de endereço ── */
+/* ── Entrada por ?auth=…: o servidor já responde 302 sem ele; isto fica de reserva ── */
 
 (() => {
 	const params = new URLSearchParams(location.search);

@@ -277,6 +277,15 @@ function registerIndexRoutes(api) {
 	app.get(["/admin", "/admin/", "/admin.html"], api.authenticateBasic, async (req, res) => {
 		if (api.isAdmin(req)) {
 			api.setAdminSessionCookie(res);
+			// Entrada por ?auth=: a sessão já está no cookie; a credencial sai da URL (barra de
+			// endereço, histórico, Referer) antes de qualquer script. O #/área segue o redirect.
+			if (req.query && "auth" in req.query) {
+				const rest = new URLSearchParams(req.originalUrl.split("?")[1] || "");
+				rest.delete("auth");
+				const qs = rest.toString();
+				res.setHeader("Cache-Control", "no-store");
+				return res.redirect(302, `/admin${qs ? `?${qs}` : ""}`);
+			}
 		}
 		res.setHeader("Cache-Control", "no-cache");
 		try {
