@@ -4,10 +4,12 @@
  * filtro pela barra de endereço não reconecta o stream (update()).
  */
 
-import { h, lamp, plural, buildHash } from "../core.js";
+import { h, api, lamp, plural, buildHash } from "../core.js";
 
 const MAX_LINES = 2000; // na tela
 const MAX_PENDING = 2000; // guardadas durante a pausa
+const RETRY_MIN_MS = 2000; // reconexão depois que o EventSource desiste (CLOSED)
+const RETRY_MAX_MS = 60000;
 
 let live = null; // estado da tela aberta (para o update)
 
@@ -40,6 +42,9 @@ export default {
 		filter.value = ctx.segs[0] || "";
 		let paused = false;
 		let source = null;
+		let retryTimer = null;
+		let retryMs = RETRY_MIN_MS;
+		let stopped = false;
 		let droppedCount = 0;
 		const pending = [];
 
@@ -77,20 +82,54 @@ export default {
 			if (stick) out.scrollTop = out.scrollHeight;
 		}
 
+		/**
+		 * O EventSource foi a CLOSED (resposta não-200, ex. 502 do proxy no reinício ou 401) e não
+		 * tenta mais sozinho. Confere a sessão (um 401 mostra a faixa "entre de novo" e para) e,
+		 * fora isso, reconecta com espera crescente (2 s, 4 s… até 1 min).
+		 */
+		async function onClosed(es) {
+			if (stopped || es !== source) return;
+			source = null;
+			let expired = false;
+			try {
+				await api("/api/admin/links", { fresh: true });
+			} catch (err) {
+				expired = !!err && err.status === 401;
+			}
+			if (stopped) return;
+			if (expired) {
+				setState("down", "sessão expirada: entre de novo");
+				return;
+			}
+			const secs = Math.round(retryMs / 1000);
+			setState("down", `desconectado (tenta de novo em ${secs} s)`);
+			clearTimeout(retryTimer);
+			retryTimer = setTimeout(connect, retryMs);
+			retryMs = Math.min(RETRY_MAX_MS, retryMs * 2);
+		}
+
 		function connect() {
+			if (stopped) return;
+			clearTimeout(retryTimer);
+			retryTimer = null;
 			if (source) source.close();
 			setState("busy", "conectando");
-			source = new EventSource("/api/logs");
-			source.onopen = () => setState("ok", "ao vivo");
-			source.onmessage = (ev) => onData(ev.data);
-			source.onerror = () => {
-				if (source && source.readyState !== EventSource.CLOSED) {
-					setState("down", "sem conexão (tenta de novo sozinho)");
-				}
+			const es = new EventSource("/api/logs");
+			source = es;
+			es.onopen = () => {
+				retryMs = RETRY_MIN_MS;
+				setState("ok", "ao vivo");
+			};
+			es.onmessage = (ev) => onData(ev.data);
+			es.onerror = () => {
+				if (es !== source) return;
+				if (es.readyState === EventSource.CLOSED) onClosed(es);
+				else setState("down", "sem conexão (tenta de novo sozinho)");
 			};
 			// O servidor avisa quando não há pm2 no ambiente: para de reconectar.
-			source.addEventListener("unavailable", () => {
-				source.close();
+			es.addEventListener("unavailable", () => {
+				es.close();
+				if (es === source) source = null;
 				setState("off", "indisponível neste ambiente");
 			});
 		}
@@ -146,14 +185,25 @@ export default {
 					text: "Limpar",
 					onclick: () => out.replaceChildren()
 				}),
-				h("button", { type: "button", class: "btn", text: "Reconectar", onclick: connect })
+				h("button", {
+					type: "button",
+					class: "btn",
+					text: "Reconectar",
+					onclick: () => {
+						retryMs = RETRY_MIN_MS;
+						connect();
+					}
+				})
 			),
 			out
 		);
 		connect();
 		live = { filter, applyFilter };
 		return () => {
+			stopped = true;
+			clearTimeout(retryTimer);
 			if (source) source.close();
+			source = null;
 			live = null;
 		};
 	},
