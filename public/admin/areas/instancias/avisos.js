@@ -94,6 +94,9 @@ export async function renderAvisos(root, ctx) {
 		draft.editing !== null && list.some((a) => Number(a.id) === draft.editing)
 			? draft.editing
 			: null;
+	// O aviso em edição sumiu (expirou ou foi removido em outro lugar): conflito à vista. O texto
+	// fica, mas salvar não vira publicação nova calada — o botão diz que será um aviso novo.
+	const orphan = !loadErr && draft.editing !== null && editing === null ? draft.editing : null;
 
 	/* Formulário */
 	const msgId = "aviso-texto";
@@ -187,8 +190,28 @@ export async function renderAvisos(root, ctx) {
 		type: "submit",
 		class: "btn btn-primary",
 		"data-key": "aviso-enviar",
-		text: editing ? "Salvar alterações" : "Publicar aviso"
+		text: editing
+			? "Salvar alterações"
+			: orphan !== null
+				? "Publicar como aviso novo"
+				: "Publicar aviso"
 	});
+	const discard =
+		orphan !== null
+			? h("button", {
+					type: "button",
+					class: "btn btn-quiet",
+					"data-key": "aviso-descartar",
+					text: "Descartar o texto",
+					onclick: () => {
+						draft.message = "";
+						draft.expires = "";
+						draft.editing = null;
+						if (location.hash !== BASE) ctx.navigate(BASE, { replace: true });
+						else ctx.refresh();
+					}
+				})
+			: null;
 	const cancelEdit = editing
 		? h("a", {
 				class: "btn btn-quiet",
@@ -213,7 +236,19 @@ export async function renderAvisos(root, ctx) {
 						": altere o texto ou o prazo e salve."
 					)
 				)
-			: null,
+			: orphan !== null
+				? h(
+						"div",
+						{ class: "notice error", role: "alert" },
+						h(
+							"span",
+							null,
+							"O aviso ",
+							h("b", { text: `#${orphan}` }),
+							" que você editava não está mais ativo (expirou ou foi removido em outro lugar). Nada foi salvo nele. O texto ficou aqui: publique como aviso novo ou descarte."
+						)
+					)
+				: null,
 		tools,
 		h(
 			"label",
@@ -243,7 +278,7 @@ export async function renderAvisos(root, ctx) {
 			})
 		),
 		err,
-		h("div", { class: "form-actions" }, submit, cancelEdit)
+		h("div", { class: "form-actions" }, submit, cancelEdit, discard)
 	);
 	formEl.addEventListener("submit", async (ev) => {
 		ev.preventDefault();
@@ -268,9 +303,16 @@ export async function renderAvisos(root, ctx) {
 			draft.message = "";
 			draft.expires = "";
 			draft.editing = null;
-			if (editing) ctx.navigate(BASE, { replace: true });
+			if ((editing || orphan !== null) && location.hash !== BASE)
+				ctx.navigate(BASE, { replace: true });
 			else ctx.refresh();
 		} catch (e) {
+			if (editing && e.status === 404) {
+				// Sumiu entre a leitura e o salvar: redesenha já com o conflito (o texto fica).
+				toast(`O aviso #${editing} não existe mais; nada foi salvo`, { kind: "error" });
+				ctx.refresh();
+				return;
+			}
 			err.textContent =
 				e.status !== undefined
 					? explain(e, editing ? "salvar o aviso" : "publicar o aviso")
