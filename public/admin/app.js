@@ -200,7 +200,8 @@ function makeCtx(parsed, extra = {}) {
 		areas: AREAS,
 		primary: PRIMARY,
 		navigate,
-		refresh: () => refresh(),
+		// Um ctx de uma tela que já saiu (timer ou resposta atrasada) não redesenha a área atual.
+		refresh: () => (extra.signal && extra.signal.aborted ? undefined : refresh()),
 		...extra
 	};
 }

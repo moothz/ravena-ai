@@ -19,6 +19,8 @@ import {
 	toast,
 	poll,
 	preserveFocus,
+	isEditing,
+	refreshLater,
 	fmt,
 	fmt2,
 	plural,
@@ -155,7 +157,7 @@ function instRow(b, ctx) {
 					);
 					say("ok", `Reinício pedido: ${msg || "aceito"}.`);
 					toast(`Reiniciando ${name}`, { kind: "ok" });
-					setTimeout(() => ctx.refresh(), 2500);
+					refreshLater(ctx, acts.closest(".view-root") || document.body);
 				})
 			})
 		);
@@ -376,9 +378,11 @@ export async function renderLista(root, ctx) {
 	window.addEventListener("instancias:dirty", onDirty);
 	// Atualização a cada 30 s (como a tela antiga), sem mexer em confirmação aberta.
 	const stop = poll(async () => {
-		if (root.querySelector(".confirm")) return;
+		if (isEditing(root)) return;
 		try {
 			const fresh = await loadBots(true);
+			// A confirmação pode ter aberto enquanto a leitura estava em voo.
+			if (ctx.signal.aborted || isEditing(root)) return;
 			await preserveFocus(root, () => draw(fresh));
 		} catch {
 			/* a próxima volta tenta de novo; o erro aparece no Atualizar */

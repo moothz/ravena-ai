@@ -1213,6 +1213,44 @@ export function poll(fn, ms) {
 	};
 }
 
+/**
+ * O admin está mexendo em algo dentro de `el` que um redesenho apagaria: confirmação aberta
+ * (confirmInline) ou foco num campo de formulário (a busca não conta: o redesenho a preserva).
+ * Polls e atualizações atrasadas pulam a volta enquanto isso durar.
+ * @param {Element|null} el
+ */
+export function isEditing(el) {
+	if (!el) return false;
+	if (el.querySelector(".confirm")) return true;
+	const a = document.activeElement;
+	return (
+		!!a &&
+		el.contains(a) &&
+		a.matches('input:not([type="search"]):not([type="button"]), textarea, select')
+	);
+}
+
+/**
+ * ctx.refresh() daqui a `ms` (ex. depois de reiniciar uma instância), cancelado ao sair da
+ * área (ctx.signal) e adiado enquanto o admin estiver mexendo em algo em `root` (isEditing).
+ * @param {{ refresh: () => any, signal?: AbortSignal }} ctx
+ * @param {Element} root
+ * @param {number} [ms]
+ */
+export function refreshLater(ctx, root, ms = 2500) {
+	let t = null;
+	const fire = () => {
+		if (ctx.signal && ctx.signal.aborted) return;
+		if (isEditing(root)) {
+			t = setTimeout(fire, ms);
+			return;
+		}
+		ctx.refresh();
+	};
+	t = setTimeout(fire, ms);
+	if (ctx.signal) ctx.signal.addEventListener("abort", () => clearTimeout(t), { once: true });
+}
+
 /* ── Links dos outros painéis (GET /api/admin/links) ────────────── */
 
 let linksPromise = null;

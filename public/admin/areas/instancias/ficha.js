@@ -23,6 +23,8 @@ import {
 	toast,
 	poll,
 	preserveFocus,
+	isEditing,
+	refreshLater,
 	fmt,
 	fmt2,
 	plural,
@@ -231,7 +233,7 @@ function renderResumo(root, ctx, bot, draft, isNew) {
 					);
 					out.set("ok", `Reinício de ${name}: ${msg || "pedido aceito"}.`);
 					toast(`Reiniciando ${name}`, { kind: "ok" });
-					setTimeout(() => ctx.refresh(), 2500);
+					refreshLater(ctx, root);
 				} catch (err) {
 					out.set("error", err.message);
 					return; // o motivo fica escrito na caixa; a confirmação fecha
@@ -313,7 +315,7 @@ function renderResumo(root, ctx, bot, draft, isNew) {
 					);
 					out.set("ok", `Logout de ${name}: ${msg || "feito"}.`);
 					toast(`${name} desconectada`, { kind: "ok" });
-					setTimeout(() => ctx.refresh(), 2500);
+					refreshLater(ctx, root);
 				} catch (err) {
 					out.set("error", err.message);
 					return; // o motivo fica escrito na caixa; a confirmação fecha
@@ -341,9 +343,10 @@ function renderResumo(root, ctx, bot, draft, isNew) {
 		);
 
 	const stop = poll(async () => {
-		if (root.querySelector(".confirm")) return;
+		if (isEditing(root)) return;
 		try {
 			const fresh = (await loadBots(true)).find((b) => b.nome === bot.nome);
+			if (ctx.signal.aborted || isEditing(root)) return;
 			if (fresh) await preserveFocus(box, () => box.replaceChildren(resumoCard(fresh)));
 		} catch {
 			/* tenta na próxima volta */

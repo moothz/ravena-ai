@@ -33,6 +33,7 @@ import {
 	grafanaLink,
 	grafanaMissing,
 	poll,
+	isEditing,
 	preserveFocus,
 	relTime,
 	dateFmt,
@@ -99,7 +100,8 @@ export default {
 			every: null, // escolha do seletor ainda não salva (sobrevive ao redesenho)
 			watchRun: false, // rodada pedida aqui: avisar quando terminar
 			lastFetch: 0,
-			loading: null
+			loading: null,
+			seq: 0 // número da leitura mais nova: uma resposta mais velha não redesenha por cima
 		};
 
 		/* ── Cabeçalho ── */
@@ -130,11 +132,17 @@ export default {
 		slots.sched.append(loading("Lendo o estado da carga…"));
 		root.append(body);
 
-		/** Relê o estado (e as possíveis mudanças); force: mesmo com uma confirmação aberta na lista. */
-		async function reload({ possible = true, force = false } = {}) {
+		/**
+		 * Relê o estado (e as possíveis mudanças); force: mesmo com uma confirmação aberta na lista.
+		 * fromPoll: a volta automática não redesenha o cartão de agendamento com o admin mexendo
+		 * nele (intervalo aberto, confirmação). Só a leitura mais nova desenha.
+		 */
+		async function reload({ possible = true, force = false, fromPoll = false } = {}) {
+			const seq = ++S.seq;
+			const stale = () => ctx.signal.aborted || seq !== S.seq;
 			const prevRunning = !!(S.st && S.st.running);
 			const r = await settle({ st: api(`${BASE}/status`, { fresh: true }) });
-			if (ctx.signal.aborted) return;
+			if (stale()) return;
 			S.lastFetch = Date.now();
 			S.stError = r.stError || null;
 			S.st = r.st || (r.stError ? null : S.st);
@@ -151,7 +159,7 @@ export default {
 			if (loadPossible) {
 				if (M.isAvailable(S.st)) {
 					const p = await settle({ list: api(`${BASE}/annotations?possiveis=1`, { fresh: true }) });
-					if (ctx.signal.aborted) return;
+					if (stale()) return;
 					S.possible = (p.list && p.list.annotations) || [];
 					S.possibleError = p.listError || null;
 				} else {
@@ -159,8 +167,9 @@ export default {
 					S.possibleError = null;
 				}
 			}
+			const keepSched = fromPoll && isEditing(slots.sched);
 			await preserveFocus(body, () => {
-				slots.sched.replaceChildren(scheduleCard());
+				if (!keepSched) slots.sched.replaceChildren(scheduleCard());
 				slots.src.replaceChildren(sourcesCard());
 				if (loadPossible) slots.poss.replaceChildren(possibleCard());
 			});
@@ -483,7 +492,7 @@ export default {
 			if (S.loading) return;
 			const due = (S.st && S.st.running) || S.watchRun || Date.now() - S.lastFetch >= IDLE_MS;
 			if (!due) return;
-			S.loading = reload({ possible: false }).finally(() => {
+			S.loading = reload({ possible: false, fromPoll: true }).finally(() => {
 				S.loading = null;
 			});
 			return S.loading;
