@@ -145,6 +145,21 @@ export function serviceKind(value) {
 	return "unknown";
 }
 
+/**
+ * Serviços de /api/services/status para contar e listar, numa regra só (menu, Visão geral,
+ * "Precisa de você" e Provedores): o F5 TTS com o mesmo estado do Kokoro TTS é o mesmo
+ * serviço (o checkServices testa um endereço só) e conta uma vez.
+ * @param {Object|null} services
+ * @returns {Array<[string, any]>} pares [chave, valor]
+ */
+export function serviceEntries(services) {
+	if (!services || typeof services !== "object") return [];
+	const same =
+		"kokorotts" in services &&
+		JSON.stringify(services.f5tts) === JSON.stringify(services.kokorotts);
+	return Object.entries(services).filter(([k]) => !(k === "f5tts" && same));
+}
+
 /** Palavra de cada serviceKind (para lâmpada/pílula). */
 export const SERVICE_KIND_WORD = {
 	ok: "no ar",
@@ -293,7 +308,7 @@ export function deriveNeeds(d = {}) {
 		});
 	}
 
-	const services = Object.entries(d.services || {});
+	const services = serviceEntries(d.services);
 	const svcName = ([k]) => SERVICE_NAMES[k] || k;
 	const svcDown = services.filter(([, v]) => serviceKind(v) === "down");
 	const svcBackup = services.filter(([, v]) => serviceKind(v) === "backup");

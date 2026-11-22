@@ -24,6 +24,7 @@ import {
 	errorNotice,
 	preserveFocus,
 	serviceKind,
+	serviceEntries,
 	isEventActive,
 	isEventUpcoming,
 	llmFailing,
@@ -93,7 +94,7 @@ function needsCard(p) {
 function stateTiles(p, extra) {
 	const bots = Array.isArray(p.bots) ? p.bots.filter((b) => b.enabled !== false) : [];
 	const on = bots.filter((b) => b.connected).length;
-	const services = Object.values(p.services || {});
+	const services = serviceEntries(p.services).map(([, v]) => v);
 	const svcDown = services.filter((v) => serviceKind(v) === "down").length;
 	const svcBackup = services.filter((v) => serviceKind(v) === "backup").length;
 	const svcUnknown = services.filter((v) => serviceKind(v) === "unknown").length;

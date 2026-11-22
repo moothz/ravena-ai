@@ -30,7 +30,8 @@ import {
 	llmFailing,
 	SERVICE_NAMES,
 	buildHash,
-	loadAreaCss
+	loadAreaCss,
+	serviceEntries
 } from "../core.js";
 import { renderGestao } from "./provedores/gestao.js";
 import {
@@ -251,7 +252,7 @@ export default {
 	title: "Provedores de IA",
 	desc: "Estado dos serviços, cadastro e prioridade dos provedores, fila do LLM e uso de IA.",
 	summary(p) {
-		const services = Object.entries(p.services || {});
+		const services = serviceEntries(p.services);
 		const down = services.filter(([, v]) => statusOf(v) === "down");
 		const backup = services.filter(([, v]) => statusOf(v) === "backup");
 		const failing = llmFailing(p.llm);

@@ -187,6 +187,26 @@ async function runTests() {
 	);
 	const many = lib.deriveNeeds({ services: { a: "down", b: "down", c: "down", d: "down" } });
 	assert.strictEqual(many.length, 1, "mais de 3 serviços fora viram uma linha");
+	// Contagem única de serviços: f5tts igual ao kokorotts conta uma vez (Provedores, menu e geral)
+	const eight = {
+		llm: "down",
+		laya: "down",
+		whisper: "down",
+		comfyui: "down",
+		bonsai: "down",
+		sdwebui: "down",
+		kokorotts: "down",
+		f5tts: "down"
+	};
+	assert.strictEqual(lib.serviceEntries(eight).length, 7, "f5tts igual ao kokoro some");
+	assert.strictEqual(
+		lib.deriveNeeds({ services: eight })[0].title,
+		"7 de 7 serviços fora do ar",
+		"o 'Precisa de você' conta como a área Provedores"
+	);
+	assert.strictEqual(lib.serviceEntries({ ...eight, f5tts: "up" }).length, 8, "diferentes: dois");
+	assert.strictEqual(lib.serviceEntries({ f5tts: "up" }).length, 1, "f5tts sozinho fica");
+	assert.deepStrictEqual(lib.serviceEntries(null), []);
 	console.log("✓ deriveNeeds e countActionable.");
 
 	await testLinks();

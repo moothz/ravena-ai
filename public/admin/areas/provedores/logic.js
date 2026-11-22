@@ -7,7 +7,7 @@
  * - fila do LLM, uso por provedor e tipo e simulador de custos (as fórmulas da tela antiga).
  */
 
-import { serviceKind } from "../../lib.js";
+import { serviceKind, serviceEntries } from "../../lib.js";
 
 /** Categorias na ordem da tela antiga, com o nome por extenso. */
 export const CATEGORIES = [
@@ -151,13 +151,12 @@ const SVC_ORDER = { down: 0, backup: 1, unknown: 2, up: 3 };
  */
 export function serviceRows(services, names = {}) {
 	if (!services || typeof services !== "object") return [];
-	const same = JSON.stringify(services.f5tts) === JSON.stringify(services.kokorotts);
-	return Object.entries(services)
-		.filter(([k]) => !(k === "f5tts" && same && "kokorotts" in services))
+	const entries = serviceEntries(services); // a mesma contagem do menu e da Visão geral
+	const merged = "f5tts" in services && !entries.some(([k]) => k === "f5tts");
+	return entries
 		.map(([k, v]) => {
 			let name = names[k] || k;
-			if (k === "kokorotts" && same && "f5tts" in services)
-				name = `${name} / ${names.f5tts || "F5 TTS"}`;
+			if (k === "kokorotts" && merged) name = `${name} / ${names.f5tts || "F5 TTS"}`;
 			const row = { key: k, name, status: statusOf(v), category: SERVICE_CATEGORY[k] || null };
 			if (v && typeof v === "object") {
 				if (v.model) row.model = String(v.model);
