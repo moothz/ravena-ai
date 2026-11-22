@@ -34,7 +34,8 @@ import {
 	runasSigned,
 	canUndo,
 	undoDefault,
-	parseNumber,
+	readNumber,
+	AMBIGUOUS_NUMBER,
 	pageOf,
 	txQuery
 } from "./lib.js";
@@ -59,6 +60,15 @@ function hrefWith(params, patch) {
  * Desfazer na própria linha: o botão vira "Desfazer #id? [valor final] Não · Desfazer".
  * O valor vem pré-calculado (5%) e pode ser trocado, como no modal da tela antiga.
  */
+/** Valor final do desfazer: número pt-BR, maior ou igual a zero. */
+function readUndoValue(text) {
+	const r = readNumber(text);
+	if (r.ok && r.value < 0) return { ok: false, error: "O valor final não pode ser negativo." };
+	if (!r.ok && r.error !== AMBIGUOUS_NUMBER)
+		return { ok: false, error: "Informe um valor final válido de Runas (ex.: 1.050,00)." };
+	return r;
+}
+
 function undoControl(tx, ctx) {
 	const trigger = h("button", {
 		type: "button",
@@ -74,7 +84,7 @@ function undoControl(tx, ctx) {
 		content: () => {
 			const def = undoDefault(tx);
 			const verb = def.debit ? "a debitar do jogador" : "a devolver ao jogador";
-			return field({
+			const f = field({
 				label: `Valor final em Runas (${verb})`,
 				name: "finalRunas",
 				value: money(def.final),
@@ -83,15 +93,29 @@ function undoControl(tx, ctx) {
 					? `Venda: ${money(tx.runas_amount)} recebidas + 5% (${money(def.fee)}). Os ativos voltam ao jogo.`
 					: `Compra: ${money(tx.runas_amount)} pagas − 5% (${money(def.fee)}). Os ativos voltam ao banco.`
 			});
+			// Valor como será gravado, antes de confirmar ("1.000" é mil, não 1).
+			const input = f.querySelector("input");
+			const preview = h("p", { class: "bk-preview", "aria-live": "polite" });
+			const show = () => {
+				const r = readUndoValue(input.value);
+				preview.className = `bk-preview${r.ok ? "" : " bad"}`;
+				preview.textContent = r.ok
+					? `Vai ${def.debit ? "debitar" : "devolver"} ${money(r.value)} ᚱ`
+					: r.error;
+			};
+			input.addEventListener("input", show);
+			show();
+			return h("div", { class: "bk-undo-fields" }, f, preview);
 		},
 		onConfirm: async (box) => {
 			const input = box.querySelector("input");
-			const finalRunas = parseNumber(input.value);
-			if (!Number.isFinite(finalRunas) || finalRunas < 0) {
-				toast("Informe um valor final válido de Runas (maior ou igual a zero).", { kind: "error" });
+			const read = readUndoValue(input.value);
+			if (!read.ok) {
+				toast(read.error, { kind: "error" });
 				input.focus();
 				return false;
 			}
+			const finalRunas = read.value;
 			try {
 				const r = await send("POST", "/api/games/bank/admin/undo-transaction", {
 					transactionId: tx.id,

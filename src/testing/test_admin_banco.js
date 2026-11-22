@@ -94,6 +94,31 @@ async function runTests() {
 	assert.strictEqual(lib.parseNumber("−20"), -20);
 	assert.ok(Number.isNaN(lib.parseNumber("abc")));
 	assert.ok(Number.isNaN(lib.parseNumber("")));
+	// Ponto com exatamente 3 dígitos é milhar em pt-BR; o ambíguo é recusado
+	assert.strictEqual(lib.parseNumber("1.500"), 1500);
+	assert.strictEqual(lib.parseNumber("+1.000"), 1000);
+	assert.strictEqual(lib.parseNumber("1.050,00"), 1050);
+	assert.strictEqual(lib.parseNumber("12.345.678,9"), 12345678.9);
+	assert.strictEqual(lib.parseNumber("1,5"), 1.5);
+	assert.strictEqual(lib.parseNumber("1234.56"), 1234.56);
+	assert.strictEqual(lib.parseNumber("1.5"), 1.5);
+	for (const bad of ["1,234.56", "1234.567", "1.5000", "1.50,00", "1.2.3", "1,5,0"]) {
+		assert.ok(Number.isNaN(lib.parseNumber(bad)), `"${bad}" é ambíguo`);
+		assert.strictEqual(lib.readNumber(bad).error, lib.AMBIGUOUS_NUMBER, `motivo de "${bad}"`);
+	}
+	assert.deepStrictEqual(lib.parseAdjust("1.500", 1000), {
+		ok: true,
+		target: 1500,
+		diff: 500,
+		relative: false
+	});
+	assert.deepStrictEqual(lib.parseAdjust("+1.000", 1000), {
+		ok: true,
+		target: 2000,
+		diff: 1000,
+		relative: true
+	});
+	assert.strictEqual(lib.parseAdjust("1,234.56", 1000).error, lib.AMBIGUOUS_NUMBER);
 	assert.deepStrictEqual(lib.parseAdjust("1500", 1000), {
 		ok: true,
 		target: 1500,

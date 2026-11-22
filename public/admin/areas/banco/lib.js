@@ -134,23 +134,46 @@ export function undoDefault(tx) {
 	return { fee, final, debit };
 }
 
+/** Motivo de recusa de um número ambíguo (o mesmo texto no ajuste e no desfazer). */
+export const AMBIGUOUS_NUMBER =
+	"Número ambíguo: use vírgula para os centavos e ponto só como milhar (ex.: 1.500 ou 1.500,50).";
+
 /**
- * Lê um número digitado em pt-BR ou com ponto: "1.234,5", "1234.5", "1234". NaN se inválido.
+ * Lê um número digitado em pt-BR: vírgula é decimal e ponto é milhar ("1.234,5" → 1234,5;
+ * "1.500" → 1500). Sem vírgula, um ponto seguido de 1 ou 2 dígitos ainda é decimal
+ * ("1234.56", "1.5"). Recusa o ambíguo: ponto com 3 dígitos fora do agrupamento de milhar
+ * ("1234.567"), mais de 2 dígitos depois de um ponto decimal ("1.5000"), vírgula antes de
+ * ponto ("1,234.56") e grupos de milhar quebrados ("1.50,00").
+ * @returns {{ ok: true, value: number } | { ok: false, error: string }}
  */
-export function parseNumber(text) {
-	let s = String(text ?? "")
+export function readNumber(text) {
+	const s = String(text ?? "")
 		.trim()
 		.replace(/\s/g, "")
 		.replace(/^−/, "-");
-	if (!s) return NaN;
-	if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
-	if (!/^[+-]?\d+(\.\d+)?$/.test(s)) return NaN;
-	return Number(s);
+	if (!s) return { ok: false, error: "Digite um número." };
+	const m = /^([+-]?)(.*)$/.exec(s);
+	const sign = m[1] === "-" ? -1 : 1;
+	const body = m[2];
+	let plain;
+	if (/^\d+(,\d+)?$/.test(body)) plain = body.replace(",", ".");
+	else if (/^\d{1,3}(\.\d{3})+(,\d+)?$/.test(body))
+		plain = body.replace(/\./g, "").replace(",", ".");
+	else if (/^\d+\.\d{1,2}$/.test(body)) plain = body;
+	else if (/^[\d.,]+$/.test(body) && /\d/.test(body)) return { ok: false, error: AMBIGUOUS_NUMBER };
+	else return { ok: false, error: "Digite um número." };
+	return { ok: true, value: sign * Number(plain) };
+}
+
+/** readNumber sem o motivo: o número ou NaN. */
+export function parseNumber(text) {
+	const r = readNumber(text);
+	return r.ok ? r.value : NaN;
 }
 
 /**
  * Valor do ajuste de saldo. A rota grava o saldo final (absoluto); aqui o admin pode digitar
- * o saldo novo ("1500") ou uma diferença com sinal ("+500", "-200", "−200").
+ * o saldo novo ("1500" ou "1.500") ou uma diferença com sinal ("+500", "-200", "−200").
  * @param {string} text
  * @param {number} current - saldo atual
  * @returns {{ ok: true, target: number, diff: number, relative: boolean } | { ok: false, error: string }}
@@ -158,9 +181,16 @@ export function parseNumber(text) {
 export function parseAdjust(text, current) {
 	const raw = String(text ?? "").trim();
 	const relative = /^[+\-−]/.test(raw);
-	const n = parseNumber(raw);
-	if (!Number.isFinite(n))
-		return { ok: false, error: "Digite um número (ex.: 1500, +500 ou −200)." };
+	const read = readNumber(raw);
+	if (!read.ok)
+		return {
+			ok: false,
+			error:
+				read.error === AMBIGUOUS_NUMBER
+					? read.error
+					: "Digite um número (ex.: 1.500, +500 ou −200)."
+		};
+	const n = read.value;
 	const base = Number(current) || 0;
 	const target = Math.round((relative ? base + n : n) * 100) / 100;
 	if (target < 0) return { ok: false, error: "O saldo não pode ficar negativo." };
