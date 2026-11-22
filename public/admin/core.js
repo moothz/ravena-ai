@@ -15,6 +15,7 @@
  *   Texto        fmt · fmt2 · plural · relTime · dateFmt   (de lib.js, sem DOM)
  *   Dados        api(path, {fresh}) · send(método, path, corpo) · settle({...}) · invalidate(prefixo)
  *                HttpError (status, message, serverMessage, body) · onSessionExpired(fn)
+ *                notifySessionExpired() (leituras fora de api/send que voltaram 401)
  *   Avisos       errorNotice(erro, "o quê") · loading(texto) · empty(texto, dica) · toast(msg, {kind})
  *   Layout       card({title, actions, body, pill}) · rows(itens) · rowItem({...}) · secLabel(t)
  *                kv(pares) · tiles(itens) · crumbs(itens) · note(texto) · loadAreaCss(área, href)
@@ -24,7 +25,9 @@
  *                busy(botão, rótulo, fn) · copyText(texto, {...})
  *   Tabelas      dataTable(colunas, linhas, {...})  (vira cartões em largura estreita)
  *   Tempo        poll(fn, ms) (só com a aba visível) · debounce(fn, ms)
+ *                isEditing(el) (pule o redesenho) · refreshLater(ctx, root, ms)
  *   Links        getLinks() · grafanaLink(painel, params) · panelLinks()
+ *                configHint(falta) · linksFailed() · LINKS_UNAVAILABLE
  *   Tema         themeSwitch() · applyTheme(escolha)
  *
  * Exemplo mínimo de área:
