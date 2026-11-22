@@ -41,8 +41,8 @@ import {
 	riskLevel,
 	scoreText,
 	parseTopics,
-	filterAnalyses,
 	mergeGroups,
+	searchGroups,
 	bankCandidates,
 	pickBankAccount,
 	platformLabel,
@@ -156,13 +156,23 @@ async function renderPeople(root, ctx, q) {
 
 /* ── Lista de grupos ───────────────────────────────────────────── */
 
-async function loadGroups(q) {
+/**
+ * Perfis (busca do servidor), análises (todas) e, com busca na lista, também os perfis sem
+ * busca: a busca pode casar só nas análises e a nota do grupo ainda precisa do perfil.
+ */
+async function loadGroups(q, { withAll = false } = {}) {
 	const s = await settle({
 		profiles: api(`/api/dossies/groups?q=${enc(q)}&limit=${LIST_LIMIT}`),
-		analyses: api("/api/groups-dossier")
+		analyses: api("/api/groups-dossier"),
+		...(withAll && q ? { all: api(`/api/dossies/groups?q=&limit=${LIST_LIMIT}`) } : {})
 	});
 	const analyses = Array.isArray(s.analyses) ? s.analyses : [];
-	return { s, analyses, profiles: Array.isArray(s.profiles) ? s.profiles : [] };
+	return {
+		s,
+		analyses,
+		profiles: Array.isArray(s.profiles) ? s.profiles : [],
+		all: Array.isArray(s.all) ? s.all : []
+	};
 }
 
 function groupStatus(g) {
@@ -189,7 +199,7 @@ async function renderGroups(root, ctx, q) {
 			onSearch: (v) => ctx.navigate(listHash("grupos", v), { replace: true })
 		})
 	);
-	const { s, analyses, profiles } = await loadGroups(q);
+	const { s, analyses, profiles, all } = await loadGroups(q, { withAll: true });
 	if (s.profilesError && s.analysesError) {
 		root.append(failure(s.profilesError, "a lista de grupos", ctx));
 		return;
@@ -199,7 +209,7 @@ async function renderGroups(root, ctx, q) {
 	if (s.analysesError)
 		root.append(errorNotice(s.analysesError, "o histórico de análises dos grupos"));
 
-	const list = mergeGroups(profiles, filterAnalyses(analyses, q));
+	const list = searchGroups({ matched: profiles, all, analyses, q });
 	root.append(
 		note(
 			"Ordenados pela nota de risco, maior primeiro. Junta o perfil que a IA mantém de cada grupo e o histórico das análises de moderação, refeito sozinho a cada 10.000 novos caracteres."

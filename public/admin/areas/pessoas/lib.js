@@ -95,12 +95,36 @@ export function filterAnalyses(list, q) {
 }
 
 /**
+ * Lista de grupos de uma busca: junta perfis e análises ANTES de filtrar (senão a nota e a
+ * ordem do mesmo grupo mudam conforme a busca casa com o perfil ou com as análises).
+ * Entra o grupo cujo perfil casou na busca do servidor (`matched`) ou cujas análises casaram
+ * (filterAnalyses); a nota usa o perfil e todas as análises do grupo, inclusive o perfil vindo
+ * da lista sem busca (`all`) quando a busca casou só nas análises.
+ * @param {{ matched?: Array, all?: Array, analyses?: Array, q?: string }} o
+ *   matched: /api/dossies/groups?q=<busca>; all: /api/dossies/groups sem busca;
+ *   analyses: /api/groups-dossier inteira (sem filtrar)
+ */
+export function searchGroups({ matched, all, analyses, q } = {}) {
+	const pool = new Map();
+	for (const p of [...(all || []), ...(matched || [])]) {
+		if (p && p.group_id) pool.set(String(p.group_id), p);
+	}
+	const merged = mergeGroups([...pool.values()], analyses);
+	if (!String(q || "").trim()) return merged;
+	const hit = new Set([
+		...(matched || []).filter((p) => p && p.group_id).map((p) => String(p.group_id)),
+		...filterAnalyses(analyses, q).map((a) => String(a.id))
+	]);
+	return merged.filter((g) => hit.has(g.id));
+}
+
+/**
  * Junta as duas fontes de grupos pelo id. Cada item:
  * { id, name, bot, profile|null, analyses|null, score (nota média para ordenar), max, avg,
  *   dossiers, reports }
  * Ordem: maior nota primeiro (as duas telas ordenavam assim), empate pelo nome.
  * @param {Array} profiles - /api/dossies/groups
- * @param {Array} analyses - /api/groups-dossier (já filtrada)
+ * @param {Array} analyses - /api/groups-dossier
  */
 export function mergeGroups(profiles, analyses) {
 	const byId = new Map();

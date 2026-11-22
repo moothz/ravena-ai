@@ -125,6 +125,35 @@ async function runTests() {
 	assert.deepStrictEqual(lib.filterAnalyses(analyses, "nada-disso"), []);
 	console.log("✓ filterAnalyses.");
 
+	// Busca na lista: junta antes de filtrar (a nota não muda com a busca)
+	const full = lib.searchGroups({ matched: profiles, analyses, q: "" });
+	assert.deepStrictEqual(
+		full.map((g) => [g.id, g.score]),
+		merged.map((g) => [g.id, g.score]),
+		"sem busca = mergeGroups"
+	);
+	// "Clube do Livro" casa só no perfil (servidor); as análises dele não casam, mas contam na nota
+	const byProfile = lib.searchGroups({
+		matched: [profiles[0]],
+		all: profiles,
+		analyses,
+		q: "Livro"
+	});
+	assert.deepStrictEqual(
+		byProfile.map((g) => [g.id, g.score, g.analysesCount]),
+		[["g1@g.us", 5, 2]],
+		"nota 5 (média das análises) e não 2 (só o perfil)"
+	);
+	// "romances" casa só nas análises; o perfil vem da lista sem busca
+	const byAnalysis = lib.searchGroups({ matched: [], all: profiles, analyses, q: "romances" });
+	assert.deepStrictEqual(
+		byAnalysis.map((g) => [g.id, g.name, g.dossiers]),
+		[["g1@g.us", "Clube do Livro", 3]],
+		"o perfil do grupo entra mesmo sem casar na busca"
+	);
+	assert.deepStrictEqual(lib.searchGroups({ matched: [], all: profiles, analyses, q: "zzz" }), []);
+	console.log("✓ searchGroups junta antes de filtrar.");
+
 	// Conta no RavenaBank: candidatos e escolha exata.
 	const d = {
 		canonical_user_id: "wa_5511900000001",
