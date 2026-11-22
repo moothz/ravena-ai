@@ -424,11 +424,9 @@ class InviteSystem {
 				if (item.inviteSystem.bot?.grupoLogs) {
 					await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoLogs, successMsg);
 				}
-				if (
-					item.inviteSystem.bot?.grupoInvites &&
-					item.inviteSystem.bot.grupoInvites !== item.inviteSystem.bot.grupoLogs
-				) {
-					await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoInvites, successMsg);
+				const queueGrupoInvites = item.inviteSystem.bot?.grupoInvites || process.env.GRUPO_INVITES;
+				if (queueGrupoInvites && queueGrupoInvites !== item.inviteSystem.bot?.grupoLogs) {
+					await item.inviteSystem.bot.sendMessage(queueGrupoInvites, successMsg);
 				}
 			} else {
 				item.attempts = (item.attempts || 0) + 1;
@@ -446,11 +444,9 @@ class InviteSystem {
 					if (item.inviteSystem.bot?.grupoLogs) {
 						await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoLogs, failMsg);
 					}
-					if (
-						item.inviteSystem.bot?.grupoInvites &&
-						item.inviteSystem.bot.grupoInvites !== item.inviteSystem.bot.grupoLogs
-					) {
-						await item.inviteSystem.bot.sendMessage(item.inviteSystem.bot.grupoInvites, failMsg);
+					const failGrupoInvites = item.inviteSystem.bot?.grupoInvites || process.env.GRUPO_INVITES;
+					if (failGrupoInvites && failGrupoInvites !== item.inviteSystem.bot?.grupoLogs) {
+						await item.inviteSystem.bot.sendMessage(failGrupoInvites, failMsg);
 					}
 				}
 			}
@@ -2558,8 +2554,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 			await this.bot.sendMessage(authorId, finalUserMessage);
 
-			// Envia notificações para o grupoInvites se configurado
-			if (this.bot.grupoInvites) {
+			// Envia notificações para o grupoInvites se configurado (WhatsApp e Telegram)
+			const targetGrupoInvites = this.bot.grupoInvites || process.env.GRUPO_INVITES;
+			if (targetGrupoInvites || process.env.GRUPO_INVITES_TELEGRAM) {
 				try {
 					let infoMessageHeader = `📩 *Nova Solicitação de Convite de Grupo*\n\n`;
 					if (autoAccepted) {
@@ -2699,45 +2696,96 @@ Decida se este grupo deve ser aceito automaticamente.`;
 							: "") +
 						(isDonator ? `\n💸💸${this.rndString()}💸💸` : `\n${this.rndString()}`);
 
-					await this.bot.sendMessage(this.bot.grupoInvites, infoMessage);
+					// 1. Envio para o grupo de convites do WhatsApp (se configurado)
+					if (targetGrupoInvites) {
+						try {
+							await this.bot.sendMessage(targetGrupoInvites, infoMessage);
 
-					if (
-						enqueuedAutoAccept &&
-						this.bot.grupoLogs &&
-						this.bot.grupoLogs !== this.bot.grupoInvites
-					) {
-						const eta = InviteSystem.getETA(queuePosition);
-						const queueLogMsg =
-							`⏳ *[Fila de Auto Accept]* Convite colocado na fila de espera!\n` +
-							`🏷️ *Grupo:* ${inviteInfoData?.Name || "Desconhecido"}\n` +
-							`👤 *Solicitante:* ${userName} (${authorId.split("@")[0]})\n` +
-							`🔗 *Código:* ${inviteCode}\n` +
-							`⏰ *Previsão de entrada:* ${eta.tempo} (às *${eta.horaPrevista}*)\n` +
-							`📍 *Posição na fila:* ${queuePosition}`;
-						await this.bot.sendMessage(this.bot.grupoLogs, queueLogMsg);
-					}
+							if (
+								enqueuedAutoAccept &&
+								this.bot.grupoLogs &&
+								this.bot.grupoLogs !== targetGrupoInvites
+							) {
+								const eta = InviteSystem.getETA(queuePosition);
+								const queueLogMsg =
+									`⏳ *[Fila de Auto Accept]* Convite colocado na fila de espera!\n` +
+									`🏷️ *Grupo:* ${inviteInfoData?.Name || "Desconhecido"}\n` +
+									`👤 *Solicitante:* ${userName} (${authorId.split("@")[0]})\n` +
+									`🔗 *Código:* ${inviteCode}\n` +
+									`⏰ *Previsão de entrada:* ${eta.tempo} (às *${eta.horaPrevista}*)\n` +
+									`📍 *Posição na fila:* ${queuePosition}`;
+								await this.bot.sendMessage(this.bot.grupoLogs, queueLogMsg);
+							}
 
-					// Envia comando para aceitar se não foi aceito automaticamente (apenas se não houver bot no grupo)
-					if (!autoAccepted && otherBotsInGroup.length === 0) {
-						const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
-						await this.bot.sendMessage(this.bot.grupoInvites, commandMessage);
-						// Se não há dados do convite, envia comando de inspecião para o super admin analisar manualmente
-						if (!inviteInfoData) {
-							const inspectCommand = `!sa-inviteInfo ${inviteCode}`;
-							await this.bot.sendMessage(this.bot.grupoInvites, inspectCommand);
+							// Envia comando para aceitar se não foi aceito automaticamente (apenas se não houver bot no grupo)
+							if (!autoAccepted && otherBotsInGroup.length === 0) {
+								const commandMessage = `!sa-joinGrupo ${inviteCode} ${authorId} ${userName}`;
+								await this.bot.sendMessage(targetGrupoInvites, commandMessage);
+								// Se não há dados do convite, envia comando de inspeção para o super admin analisar manualmente
+								if (!inviteInfoData) {
+									const inspectCommand = `!sa-inviteInfo ${inviteCode}`;
+									await this.bot.sendMessage(targetGrupoInvites, inspectCommand);
+								}
+							}
+
+							// Envia comando para bloquear convites (apenas se não houver bot no grupo)
+							if (otherBotsInGroup.length === 0) {
+								const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
+								await this.bot.sendMessage(targetGrupoInvites, blockCommand);
+							}
+						} catch (whatsappErr) {
+							this.logger.error(
+								"Erro ao enviar notificação de convite para grupoInvites (WhatsApp):",
+								whatsappErr
+							);
 						}
+					} else {
+						this.logger.warn("Nenhum grupoInvites do WhatsApp configurado.");
 					}
 
-					// Envia comando para bloquear convites (apenas se não houver bot no grupo)
-					if (otherBotsInGroup.length === 0) {
-						const blockCommand = `!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}`;
-						await this.bot.sendMessage(this.bot.grupoInvites, blockCommand);
+					// 2. Envio detalhado para o Telegram (GRUPO_INVITES_TELEGRAM)
+					try {
+						const TelegramNotificationService = require("./services/TelegramNotificationService");
+						const { formatWhatsAppToTelegram } = require("./utils/TelegramMarkupHelper");
+						const telegramService = TelegramNotificationService.getInstance({
+							database: this.database
+						});
+
+						const telegramChatId =
+							process.env.GRUPO_INVITES_TELEGRAM || telegramService.inviteChatId;
+
+						if (telegramChatId) {
+							// Converte o relatório completo para HTML do Telegram
+							let telegramText = formatWhatsAppToTelegram(infoMessage);
+
+							// Comandos clicáveis/copiáveis para o usuário copiar no Telegram e colar no WhatsApp
+							telegramText += `\n\n📋 <b>Comandos para copiar e colar no WhatsApp:</b>\n`;
+							telegramText += `<code>!sa-joinGrupo ${inviteCode} ${authorId} ${userName}</code>\n`;
+
+							if (otherBotsInGroup.length === 0) {
+								telegramText += `<code>!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}</code>\n`;
+							}
+							if (!inviteInfoData) {
+								telegramText += `<code>!sa-inviteInfo ${inviteCode}</code>\n`;
+							}
+
+							await telegramService.sendNotification(telegramChatId, telegramText, {
+								parse_mode: "HTML"
+							});
+						}
+					} catch (telegramErr) {
+						this.logger.error(
+							"Erro ao enviar notificação de convite para o Telegram:",
+							telegramErr
+						);
 					}
 				} catch (error) {
-					this.logger.error("Erro ao enviar notificação de convite para grupoInvites:", error);
+					this.logger.error("Erro ao processar envio de notificações de convite:", error);
 				}
 			} else {
-				this.logger.warn("Nenhum grupoInvites configurado, o convite não será encaminhado");
+				this.logger.warn(
+					"Nenhum grupoInvites (WhatsApp ou Telegram) configurado, o convite não será encaminhado."
+				);
 			}
 		} catch (error) {
 			this.logger.error("Erro ao tratar solicitação de convite:", error);

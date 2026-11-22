@@ -1117,7 +1117,9 @@ function registerFeaturesRoutes(api) {
 				}
 				if (type !== "ticket" && type !== "roll") {
 					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_type" });
-					return res.status(400).json({ success: false, error: "type deve ser 'ticket' ou 'roll'" });
+					return res
+						.status(400)
+						.json({ success: false, error: "type deve ser 'ticket' ou 'roll'" });
 				}
 				telemetry.setAttrs({
 					"ravena.user.id": telemetry.userIdAttr(userId),
@@ -1147,8 +1149,7 @@ function registerFeaturesRoutes(api) {
 				return res.status(400).json({ success: false, error: "userId inválido" });
 			}
 
-			const characterId =
-				typeof character?.id === "string" ? character.id.trim() : "";
+			const characterId = typeof character?.id === "string" ? character.id.trim() : "";
 			if (
 				!characterId ||
 				characterId.length > 128 ||
@@ -1276,7 +1277,10 @@ function registerFeaturesRoutes(api) {
 				);
 
 				if (!revertRes?.success) {
-					telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "no_previous_photo" });
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "no_previous_photo"
+					});
 					return res.status(400).json({
 						success: false,
 						error: revertRes?.message || "Nenhuma foto anterior disponível para desfazer."

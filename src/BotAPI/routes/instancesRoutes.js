@@ -1011,7 +1011,9 @@ function registerInstancesRoutes(api) {
 					if (botConfig.managementPW) liveBot.managementPW = botConfig.managementPW;
 					if (botConfig.grupoLogs !== undefined) liveBot.grupoLogs = botConfig.grupoLogs;
 					if (botConfig.grupoAvisos !== undefined) liveBot.grupoAvisos = botConfig.grupoAvisos;
-					if (botConfig.grupoInvites !== undefined) liveBot.grupoInvites = botConfig.grupoInvites;
+					if (botConfig.grupoInvites !== undefined) {
+						liveBot.grupoInvites = botConfig.grupoInvites || process.env.GRUPO_INVITES;
+					}
 					if (botConfig.dossieGroups !== undefined) liveBot.dossieGroups = botConfig.dossieGroups;
 					if (botConfig.linkGrupao !== undefined) liveBot.linkGrupao = botConfig.linkGrupao;
 					if (botConfig.linkAvisos !== undefined) liveBot.linkAvisos = botConfig.linkAvisos;

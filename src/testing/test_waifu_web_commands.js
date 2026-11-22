@@ -126,6 +126,8 @@ async function runTests() {
 
 		await pvSafety.recordPvInteraction(bot, "5511999999999@s.whatsapp.net");
 		eventHandler.commandHandler.userDebounceMap.clear();
+		eventHandler.commandHandler.cooldownCache.clear();
+		await bot.database.dbRun("cooldowns", "DELETE FROM cooldowns WHERE command = 'mu-adm'");
 		bot.resetCapture();
 
 		await eventHandler.processMessage(bot, msgGrupo);
@@ -153,6 +155,11 @@ async function runTests() {
 		// 3. Testar !mu-admin chamado direto no PRIVADO
 		console.log("[Teste 3] Testando !mu-admin disparado diretamente no PV...");
 		eventHandler.commandHandler.userDebounceMap.clear();
+		eventHandler.commandHandler.cooldownCache.clear();
+		await bot.database.dbRun(
+			"cooldowns",
+			"DELETE FROM cooldowns WHERE command IN ('mu-adm', 'mu-admin')"
+		);
 		bot.resetCapture();
 		const msgPv = createMessage({
 			content: "!mu-admin",
@@ -228,6 +235,11 @@ async function runTests() {
 		// 5. Testar alias !mu-compartilhar
 		console.log("[Teste 5] Testando alias !mu-compartilhar...");
 		eventHandler.commandHandler.userDebounceMap.clear();
+		eventHandler.commandHandler.cooldownCache.clear();
+		await bot.database.dbRun(
+			"cooldowns",
+			"DELETE FROM cooldowns WHERE command IN ('mu-share', 'mu-compartilhar')"
+		);
 		bot.resetCapture();
 		const msgCompartilhar = createMessage({
 			content: "!mu-compartilhar",
@@ -283,6 +295,11 @@ async function runTests() {
 		// 7. Testar alias !mu-tinder disparado em PV
 		console.log("[Teste 7] Testando alias !mu-tinder disparado em PV...");
 		eventHandler.commandHandler.userDebounceMap.clear();
+		eventHandler.commandHandler.cooldownCache.clear();
+		await bot.database.dbRun(
+			"cooldowns",
+			"DELETE FROM cooldowns WHERE command IN ('waifinder', 'mu-waifinder', 'mu-tinder')"
+		);
 		bot.resetCapture();
 		const msgTinderPv = createMessage({
 			content: "!mu-tinder",

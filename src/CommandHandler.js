@@ -398,11 +398,18 @@ class CommandHandler {
 	async handleCooldownMessage(bot, message, command, groupId, cooldownInfo, group = null) {
 		const commandName = command.name ?? command;
 		try {
+			const isReaction = Boolean(message?.originReaction?.reaction);
+			const reactionEmoji = message?.originReaction?.reaction;
+			const key = isReaction ? `${groupId}:reaction:${reactionEmoji}` : `${groupId}:${commandName}`;
+			const content = isReaction
+				? `O comando via react ${reactionEmoji} está em cooldown, aguarde ${cooldownInfo.formattedTime} para usar novamente.`
+				: `O comando '${commandName}' está em cooldown, aguarde ${cooldownInfo.formattedTime} para usar novamente.`;
+
 			await this.sendThrottledNotice(bot, message, {
-				key: `${groupId}:${commandName}`,
+				key,
 				emoji: "😴",
 				chatId: groupId,
-				content: `O comando '${commandName}' está em cooldown, aguarde ${cooldownInfo.formattedTime} para usar novamente.`,
+				content,
 				group
 			});
 		} catch (error) {

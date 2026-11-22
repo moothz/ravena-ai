@@ -2358,8 +2358,8 @@ function makeRollHandler(genderFilter) {
 
 				if (firstRollData?.instantMarriage) {
 					const shares = firstRollData.instantMarriageShares || 1;
-					const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
-					let marryText = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
+					const displayName = await getUserName(message);
+					let marryText = `💍 *Parabéns, ${displayName}!* Você se casou com *${character.name}*! 🎉\n`;
 					marryText += `⚡ *CASAMENTO INSTANTÂNEO POR COTA!* Você possuía *${shares}/4 cotas* (${shares * 25}%) e o casamento ocorreu imediatamente sem consumir cooldown!\n`;
 					marryText += `🔑 Chaves: *1/10*\n`;
 					if (firstRollData.refundedCompetitorsCount > 0) {
@@ -2376,7 +2376,7 @@ function makeRollHandler(genderFilter) {
 						await buildMarriageReturnMessage(bot, message, character, userId, name, marryText, {
 							quotedMessageId: message.origin?.id?._serialized,
 							goReply: message.origin,
-							mentions: [toJid(userId)]
+							mentions: []
 						})
 					);
 				}
@@ -2610,7 +2610,9 @@ function makeRollHandler(genderFilter) {
 						.filter(Boolean);
 					const stepPayload = {
 						...basePayload,
-						...(excludedCharacterIds.length > 0 ? { excludeCharacterIds: excludedCharacterIds } : {}),
+						...(excludedCharacterIds.length > 0
+							? { excludeCharacterIds: excludedCharacterIds }
+							: {}),
 						...(finalStepBonuses && Object.keys(finalStepBonuses).length > 0
 							? { bonuses: finalStepBonuses }
 							: {})
@@ -3173,8 +3175,8 @@ async function executeMarriageCall(bot, message, userId, groupId, characterId, n
 		}
 	}
 
-	const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
-	let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}*! 🎉\n`;
+	const displayName = await getUserName(message);
+	let text = `💍 *Parabéns, ${displayName}!* Você se casou com *${character.name}*! 🎉\n`;
 	text += `🔑 Chaves: *${keys}/10*\n`;
 	text += `💜 Saldo atual: *${kakeraBalance} Zinthos*`;
 	if (isSoulmate) {
@@ -3184,7 +3186,7 @@ async function executeMarriageCall(bot, message, userId, groupId, characterId, n
 	return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
 		quotedMessageId: message.origin?.id?._serialized,
 		goReply: message.origin,
-		mentions: [toJid(userId)]
+		mentions: []
 	});
 }
 
@@ -3920,8 +3922,8 @@ async function processWaifuReaction(bot, message, args, group) {
 
 		const { character, keys, isSoulmate, kakeraBalance } = data.data;
 
-		const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
-		let text = `💍 *Parabéns, ${userMention}!* Você se casou com *${character.name}* (Slot ${slot})! 🎉\n`;
+		const displayName = await getUserName(message);
+		let text = `💍 *Parabéns, ${displayName}!* Você se casou com *${character.name}* (Slot ${slot})! 🎉\n`;
 		text += `🔑 Chaves: *${keys}/10*\n`;
 		text += `💜 Saldo atual: *${kakeraBalance} Zinthos*`;
 		if (isSoulmate) {
@@ -3931,7 +3933,7 @@ async function processWaifuReaction(bot, message, args, group) {
 		return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
 			quotedMessageId: targetMsgId,
 			goReply: message.origin,
-			mentions: [toJid(userId)]
+			mentions: []
 		});
 	} catch (err) {
 		return handleApiError(
@@ -8320,7 +8322,14 @@ async function compartilharHarem(bot, message) {
 		const mythicIds = new Set(mythicChars.map((m) => m.id));
 		const favoriteChars = rawFavoriteChars.filter((f) => !mythicIds.has(f.id));
 
-		let text = `✨ *Harém de ${user.name || userName} — Waifuletes* ✨\n\n`;
+		const playerDisplayName = user.name || userName;
+		let text = "";
+		if (user.haremName) {
+			text += `✨ *${user.haremName}* — Harém de ${playerDisplayName} (Waifuletes) ✨\n\n`;
+			text += `👑 *Nome do Harém:* ${user.haremName}\n`;
+		} else {
+			text += `✨ *Harém de ${playerDisplayName} — Waifuletes* ✨\n\n`;
+		}
 		text += `Acesse a vitrine pública de personagens no catálogo web:\n`;
 		text += `🔗 ${publicUrl}\n\n`;
 		text += `👰 *Colecionados:* ${haremCount} waifus/husbandos\n`;
@@ -8730,8 +8739,8 @@ async function investirWaifuCmd(bot, message, args) {
 
 		if (res.acquired) {
 			// Casamento concluído com 4 cotas (100%) em waifu livre!
-			const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
-			let text = `💍 *Parabéns, ${userMention}!* Você adquiriu as 4 cotas (100%) e se casou com *${character.name}*! 🎉\n`;
+			const displayName = await getUserName(message);
+			let text = `💍 *Parabéns, ${displayName}!* Você adquiriu as 4 cotas (100%) e se casou com *${character.name}*! 🎉\n`;
 			text += `💎 Investimento total: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
 			text += `🔑 Chaves: *1/10*\n`;
 			text += `💜 Saldo atual: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*`;
@@ -8742,15 +8751,15 @@ async function investirWaifuCmd(bot, message, args) {
 			return await buildMarriageReturnMessage(bot, message, character, userId, name, text, {
 				quotedMessageId: message.origin?.id?._serialized,
 				goReply: message.origin,
-				mentions: [toJid(userId)]
+				mentions: []
 			});
 		}
 
 		if (res.isMarried) {
-			const userMention = userId.includes("@") ? `@${userId.split("@")[0]}` : `@${userId}`;
+			const displayName = await getUserName(message);
 			if (res.keyEarned) {
 				let text = `🔑 *CHAVE ADQUIRIDA COM COTAS!* 🔑\n\n`;
-				text += `💍 Parabéns, ${userMention}! Você completou as 4 cotas da sua esposa *${character.name}* com 80% de desconto!\n`;
+				text += `💍 Parabéns, ${displayName}! Você completou as 4 cotas da sua esposa *${character.name}* com 80% de desconto!\n`;
 				text += `🔑 Total de Chaves: *${res.currentKeys}/10*\n`;
 				text += `💰 Valor pago: *${res.cost.toLocaleString("pt-BR")} Zinthos*\n`;
 				text += `💜 Saldo restante: *${res.newBalance.toLocaleString("pt-BR")} Zinthos*\n`;
@@ -8766,7 +8775,7 @@ async function investirWaifuCmd(bot, message, args) {
 					options: {
 						quotedMessageId: message.origin?.id?._serialized,
 						goReply: message.origin,
-						mentions: [toJid(userId)]
+						mentions: []
 					}
 				});
 			}
