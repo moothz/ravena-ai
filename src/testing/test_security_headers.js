@@ -170,6 +170,34 @@ async function testSameOrigin() {
 				403
 			],
 			[
+				"HEAD /restart (o Express roda o handler do GET) puxado por outro site",
+				"HEAD",
+				"/restart/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
+				403
+			],
+			[
+				"HEAD /Recreate vindo de outro subdomínio (same-site)",
+				"HEAD",
+				"/Recreate/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "same-site" },
+				403
+			],
+			[
+				"HEAD /restart da mesma origem",
+				"HEAD",
+				"/restart/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "same-origin" },
+				200
+			],
+			[
+				"HEAD de leitura puxado por outro site",
+				"HEAD",
+				"/ler",
+				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
+				200
+			],
+			[
 				"GET /reconnect com Origin de outro site",
 				"GET",
 				"/reconnect/bot1",
