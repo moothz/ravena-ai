@@ -495,6 +495,10 @@ class LLMService {
 				timeout: 10000
 			});
 
+			if (res.status !== 200) {
+				throw new Error(`HTTP ${res.status}`);
+			}
+
 			const $ = cheerio.load(res.data);
 			const results = [];
 			$(".result").each((i, el) => {
@@ -541,6 +545,10 @@ class LLMService {
 				},
 				timeout: 10000
 			});
+
+			if (res.status !== 200) {
+				throw new Error(`HTTP ${res.status}`);
+			}
 
 			const $ = cheerio.load(res.data);
 			const results = [];
@@ -2637,20 +2645,23 @@ class LLMService {
 					nextPayload.repetition_penalty = options.repetition_penalty;
 				}
 
-				// No último turno permitido não envia tools: força a resposta final em texto
-				// (com tools o modelo pode devolver só outra tool_call e o usuário fica sem resposta)
+				// No último turno permitido mantém `tools` + `tool_choice: "none"` e instrui resposta final em texto:
+				// omitir `tools` no vLLM/Qwen com histórico de tool_calls pode fazer o parser filtrar uma nova tool call e devolver content: null.
 				const isFinalTurn = turn >= maxTurns;
-				const nextTools = isFinalTurn
-					? null
-					: Array.isArray(options.tools)
-						? options.tools
-						: this.getTools();
-				if (Array.isArray(nextTools) && nextTools.length > 0) {
-					nextPayload.tools = nextTools;
-				} else if (isFinalTurn) {
-					this.logger.info(
-						`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final sem tools.`
-					);
+				const activeTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(activeTools) && activeTools.length > 0) {
+					nextPayload.tools = activeTools;
+					if (isFinalTurn) {
+						nextPayload.tool_choice = "none";
+						messages.push({
+							role: "user",
+							content:
+								"Com base nos resultados das ferramentas acima, responda diretamente ao usuário agora, sem chamar novas ferramentas."
+						});
+						this.logger.info(
+							`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final com tool_choice="none".`
+						);
+					}
 				}
 
 				currentResponse = await this._postWithContextRetry(
@@ -2667,9 +2678,52 @@ class LLMService {
 				await this._trackUsage(providerName, currentResponse.data, model, options);
 			}
 
-			const finalMessage = currentResponse.data?.choices?.[0]?.message;
+			let finalMessage = currentResponse.data?.choices?.[0]?.message;
 			if (finalMessage && typeof finalMessage.content === "string") {
 				finalMessage.content = this._cleanResponse(finalMessage.content);
+			}
+
+			// Fallback defensivo: se após uso de tools o modelo ainda devolver content vazio/null (ex: vLLM filtrando tool call),
+			// faz 1 retry direto travando tool_choice="none".
+			if (turn > 0 && (!finalMessage || !finalMessage.content || !finalMessage.content.trim())) {
+				this.logger.warn(
+					`[LLMService][${providerName}] Resposta vazia após ${turn} turno(s) de ferramentas (finish_reason=${currentResponse.data?.choices?.[0]?.finish_reason || "unknown"}). Tentando retry final com tool_choice="none"...`
+				);
+				const retryMessages = [
+					...messages,
+					{
+						role: "user",
+						content:
+							"Responda diretamente ao usuário agora com base nas informações já obtidas, sem chamar ferramentas."
+					}
+				];
+				const activeTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				const retryPayload = {
+					model,
+					messages: retryMessages,
+					max_tokens: options.maxTokens ?? 5000,
+					temperature: options.temperature ?? 0.6,
+					stream: false
+				};
+				if (Array.isArray(activeTools) && activeTools.length > 0) {
+					retryPayload.tools = activeTools;
+					retryPayload.tool_choice = "none";
+				}
+				currentResponse = await this._postWithContextRetry(
+					endpoint,
+					retryPayload,
+					{
+						Authorization: apiKey,
+						"Content-Type": "application/json"
+					},
+					timeout,
+					providerName
+				);
+				await this._trackUsage(providerName, currentResponse.data, model, options);
+				finalMessage = currentResponse.data?.choices?.[0]?.message;
+				if (finalMessage && typeof finalMessage.content === "string") {
+					finalMessage.content = this._cleanResponse(finalMessage.content);
+				}
 			}
 
 			return currentResponse.data;
@@ -2951,20 +3005,23 @@ class LLMService {
 					nextPayload.repetition_penalty = options.repetition_penalty;
 				}
 
-				// No último turno permitido não envia tools: força a resposta final em texto
-				// (com tools o modelo pode devolver só outra tool_call e o usuário fica sem resposta)
+				// No último turno permitido mantém `tools` + `tool_choice: "none"` e instrui resposta final em texto:
+				// omitir `tools` em provedores OpenAI-compatíveis/vLLM com histórico de tool_calls pode resultar em content: null.
 				const isFinalTurn = turn >= maxTurns;
-				const nextTools = isFinalTurn
-					? null
-					: Array.isArray(options.tools)
-						? options.tools
-						: this.getTools();
-				if (Array.isArray(nextTools) && nextTools.length > 0) {
-					nextPayload.tools = nextTools;
-				} else if (isFinalTurn) {
-					this.logger.info(
-						`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final sem tools.`
-					);
+				const activeTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				if (Array.isArray(activeTools) && activeTools.length > 0) {
+					nextPayload.tools = activeTools;
+					if (isFinalTurn) {
+						nextPayload.tool_choice = "none";
+						messages.push({
+							role: "user",
+							content:
+								"Com base nos resultados das ferramentas acima, responda diretamente ao usuário agora, sem chamar novas ferramentas."
+						});
+						this.logger.info(
+							`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final com tool_choice="none".`
+						);
+					}
 				}
 
 				currentResponse = await this._postWithContextRetry(
@@ -2983,9 +3040,52 @@ class LLMService {
 				await this._trackUsage(providerName, currentResponse.data, model, options);
 			}
 
-			const finalMessage = currentResponse.data?.choices?.[0]?.message;
+			let finalMessage = currentResponse.data?.choices?.[0]?.message;
 			if (finalMessage && typeof finalMessage.content === "string") {
 				finalMessage.content = this._cleanResponse(finalMessage.content);
+			}
+
+			if (turn > 0 && (!finalMessage || !finalMessage.content || !finalMessage.content.trim())) {
+				this.logger.warn(
+					`[LLMService][${providerName}] Resposta vazia após ${turn} turno(s) de ferramentas (finish_reason=${currentResponse.data?.choices?.[0]?.finish_reason || "unknown"}). Tentando retry final com tool_choice="none"...`
+				);
+				const retryMessages = [
+					...messages,
+					{
+						role: "user",
+						content:
+							"Responda diretamente ao usuário agora com base nas informações já obtidas, sem chamar ferramentas."
+					}
+				];
+				const activeTools = Array.isArray(options.tools) ? options.tools : this.getTools();
+				const retryPayload = {
+					model,
+					messages: retryMessages,
+					max_tokens: options.maxTokens ?? 5000,
+					temperature: options.temperature ?? 0.6,
+					stream: false
+				};
+				if (Array.isArray(activeTools) && activeTools.length > 0) {
+					retryPayload.tools = activeTools;
+					retryPayload.tool_choice = "none";
+				}
+				currentResponse = await this._postWithContextRetry(
+					endpoint,
+					retryPayload,
+					{
+						Authorization: `Bearer ${apiKey}`,
+						"Content-Type": "application/json",
+						"HTTP-Referer": "https://ravena.local",
+						"X-Title": "RavenaBot"
+					},
+					timeout,
+					providerName
+				);
+				await this._trackUsage(providerName, currentResponse.data, model, options);
+				finalMessage = currentResponse.data?.choices?.[0]?.message;
+				if (finalMessage && typeof finalMessage.content === "string") {
+					finalMessage.content = this._cleanResponse(finalMessage.content);
+				}
 			}
 
 			return currentResponse.data;
@@ -3329,6 +3429,11 @@ class LLMService {
 				if (Array.isArray(nextTools) && nextTools.length > 0) {
 					nextPayload.tools = nextTools;
 				} else if (isFinalTurn) {
+					messages.push({
+						role: "user",
+						content:
+							"Com base nos resultados das ferramentas acima, responda diretamente ao usuário agora, sem chamar novas ferramentas."
+					});
 					this.logger.info(
 						`[LLMService][${providerName}] Limite de ${maxTurns} turnos de ferramentas atingido: chamada final sem tools.`
 					);
