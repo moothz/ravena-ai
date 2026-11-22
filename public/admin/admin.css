@@ -1344,8 +1344,13 @@ table.dt {
 	color: var(--muted);
 }
 
-.search-box input {
+/* :not() iguala a força do ".fld input:not(...)" quando a busca fica dentro de um campo. */
+.search-box input:not([type="checkbox"]) {
 	align-self: stretch;
+	min-height: 0;
+	width: auto;
+	padding: 0;
+	border-radius: 0;
 	flex: 1;
 	min-width: 0;
 	border: 0;
@@ -1594,6 +1599,12 @@ table.dt {
 		min-height: var(--touch-min);
 	}
 
+	/* O campo dos Logs ocupa os 44 px da caixa, como o da busca. */
+	.field input {
+		min-height: var(--touch-min);
+		margin-block: -1px;
+	}
+
 	.btn-label {
 		position: absolute;
 		width: 1px;
@@ -1775,13 +1786,19 @@ table.dt {
 		padding-block: 0;
 	}
 
-	.search-box input {
+	.search-box input:not([type="checkbox"]) {
 		min-height: var(--touch-min);
 		margin-block: -1px;
 	}
 
 	.field {
 		min-height: var(--touch-min);
+	}
+
+	/* O campo dos Logs ocupa os 44 px da caixa, como o da busca. */
+	.field input {
+		min-height: var(--touch-min);
+		margin-block: -1px;
 	}
 }
 
