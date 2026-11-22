@@ -176,7 +176,8 @@ const router = {
 	abort: null,
 	headSlot: null,
 	root: null,
-	ctx: null
+	ctx: null,
+	path: null // sub-rota desenhada ("jogador/42"), para saber se a troca é só de ?parâmetros
 };
 
 function layoutOf(area, ctx) {
@@ -235,7 +236,7 @@ function viewHead(area, headSlot) {
  * Desenha a área. sameArea: troca só a cabeça de ações e o corpo quando o novo conteúdo
  * estiver pronto, guardando o foco e a rolagem.
  */
-async function renderArea(area, parsed, { sameArea = false } = {}) {
+async function renderArea(area, parsed, { sameArea = false, toTop = false } = {}) {
 	const token = ++router.token;
 	const active = document.activeElement;
 	const pending = takePendingFocus();
@@ -292,13 +293,38 @@ async function renderArea(area, parsed, { sameArea = false } = {}) {
 	}
 	router.cleanup = cleanup;
 	if (placeholder) placeholder.remove();
+	let typed = null; // campo em que o admin digitava durante a carga (o valor não pode se perder)
 	if (sameArea && router.root && router.root !== root && router.root.isConnected) {
+		const live = document.activeElement;
+		if (
+			(live instanceof HTMLInputElement || live instanceof HTMLTextAreaElement) &&
+			(router.root.contains(live) || router.headSlot.contains(live))
+		)
+			typed = { key: focusKey(live), value: live.value, start: live.selectionStart };
 		document.body.dataset.layout = layoutOf(area, ctx);
 		router.headSlot.replaceWith(headSlot);
 		router.root.replaceWith(root);
+		if (toTop) window.scrollTo(0, 0);
 	}
 	router.headSlot = headSlot;
 	router.root = root;
+	router.path = parsed.segs.join("/");
+	if (typed && typed.key) {
+		const again = main.querySelector(typed.key);
+		if (
+			(again instanceof HTMLInputElement || again instanceof HTMLTextAreaElement) &&
+			again.value !== typed.value
+		) {
+			// A letra digitada depois do pedido fica; o debounce do campo antigo já pede a busca nova.
+			again.value = typed.value;
+			again.focus({ preventScroll: true });
+			try {
+				again.setSelectionRange(typed.start, typed.start);
+			} catch {
+				/* type sem seleção (number etc.) */
+			}
+		}
+	}
 	body.removeAttribute("aria-busy");
 
 	if (focusSel) {
@@ -344,11 +370,14 @@ async function route() {
 		}
 		if (handled) {
 			router.ctx = ctx;
+			router.path = parsed.segs.join("/");
 			document.body.dataset.layout = layoutOf(area, ctx);
 			return;
 		}
 	}
-	return renderArea(area, parsed, { sameArea });
+	// Lista → ficha (outra sub-rota) abre no topo; só ?parâmetros (busca, página) mantém a rolagem.
+	const toTop = sameArea && router.path !== parsed.segs.join("/");
+	return renderArea(area, parsed, { sameArea, toTop });
 }
 
 /** Lê tudo de novo (sem cache) e redesenha a área atual no lugar. */
