@@ -58,12 +58,38 @@ function allowedHosts(req) {
 }
 
 /**
+ * A requisição veio de outro site? Regra única da guarda de origem da BotAPI (também usada
+ * pelo csrfGuard das rotas da economia).
+ * - Sec-Fetch-Site é posto pelo navegador e não pode ser forjado por página: "cross-site" e
+ *   "same-site" recusam; "same-origin" aceita mesmo com Origin diferente do Host (proxy ou
+ *   túnel que troca o Host sem X-Forwarded-Host).
+ * - Sem Sec-Fetch-Site (navegador antigo, HTTP puro), Origin "null" ou de um host fora de
+ *   allowedHosts recusa.
+ * - Sem os dois, não decide (devolve false): curl, webhooks e servidor a servidor.
+ * @param {import("express").Request} req
+ * @returns {boolean}
+ */
+function isCrossOrigin(req) {
+	const site = String(req.headers["sec-fetch-site"] || "").toLowerCase();
+	if (site === "cross-site" || site === "same-site") return true;
+	if (site === "same-origin") return false;
+	const origin = req.headers.origin;
+	if (!origin) return false;
+	try {
+		return origin === "null" || !allowedHosts(req).has(new URL(origin).host.toLowerCase());
+	} catch {
+		return true;
+	}
+}
+
+/**
  * Recusa (403) escritas com credencial de admin que vêm de outro site (CSRF): métodos
  * de escrita e os GETs que mudam estado de uma instância (STATEFUL_GET).
  *
  * Só olha requisições que carregam credencial (cookie de sessão, Authorization ou ?auth=),
  * porque é aí que o navegador anexa a sessão sozinho. Sem Origin e sem Sec-Fetch-Site
- * (webhooks, curl, servidor a servidor) a requisição passa como antes.
+ * (webhooks, curl, servidor a servidor) a requisição passa como antes. A regra de origem
+ * está em isCrossOrigin.
  * @param {{ hasCredentials: (req: import("express").Request) => boolean, logger?: Object }} options
  * @returns {import("express").RequestHandler}
  */
@@ -76,14 +102,7 @@ function createSameOriginGuard({ hasCredentials, logger } = {}) {
 
 		const site = String(req.headers["sec-fetch-site"] || "").toLowerCase();
 		const origin = req.headers.origin;
-		let crossSite = site === "cross-site" || site === "same-site";
-		if (!crossSite && origin) {
-			try {
-				crossSite = origin === "null" || !allowedHosts(req).has(new URL(origin).host.toLowerCase());
-			} catch {
-				crossSite = true;
-			}
-		}
+		let crossSite = isCrossOrigin(req);
 		// GET que muda estado com o cookie do painel: em HTTP puro uma navegação de outro site não
 		// manda Sec-Fetch-Site nem Origin, então exige prova de mesma origem (o fetch das telas da
 		// Ravena manda o Referer da própria página). curl/scripts com Authorization seguem iguais.
@@ -106,4 +125,4 @@ function createSameOriginGuard({ hasCredentials, logger } = {}) {
 	};
 }
 
-module.exports = { createFrameAncestorsGuard, createSameOriginGuard };
+module.exports = { createFrameAncestorsGuard, createSameOriginGuard, isCrossOrigin, allowedHosts };

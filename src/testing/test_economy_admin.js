@@ -151,6 +151,29 @@ async function main() {
 				{ Origin: same, "Sec-Fetch-Site": "same-origin" }
 			);
 			assert.strictEqual(r.status, 200);
+			r = await post(
+				"/pause",
+				{},
+				{ Origin: "https://painel.exemplo", "Sec-Fetch-Site": "same-site" }
+			);
+			assert.strictEqual(r.status, 403, "same-site recusado (mesma regra da guarda geral)");
+			// Proxy que troca o Host: o navegador diz same-origin, e isso basta
+			r = await post(
+				"/schedule",
+				{ everyHours: 2 },
+				{ Origin: "https://painel.exemplo", "Sec-Fetch-Site": "same-origin" }
+			);
+			assert.strictEqual(r.status, 200, "Sec-Fetch-Site same-origin com Origin diferente do Host");
+			// Sem Sec-Fetch-Site, a Origin listada em BOTAPI_ALLOWED_ORIGINS vale aqui também
+			process.env.BOTAPI_ALLOWED_ORIGINS = "https://painel.exemplo";
+			try {
+				r = await post("/schedule", { everyHours: 2 }, { Origin: "https://painel.exemplo" });
+				assert.strictEqual(r.status, 200, "BOTAPI_ALLOWED_ORIGINS nas rotas da economia");
+			} finally {
+				delete process.env.BOTAPI_ALLOWED_ORIGINS;
+			}
+			r = await post("/pause", {}, { Origin: "https://painel.exemplo" });
+			assert.strictEqual(r.status, 403, "sem a variável, a mesma Origin é recusada");
 			const st = await (await call("/status")).json();
 			assert.strictEqual(st.schedule.paused, false, "as recusadas não pausaram nada");
 		});

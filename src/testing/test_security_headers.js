@@ -55,6 +55,7 @@ async function testSecureCookie() {
 }
 
 async function testSameOrigin() {
+	process.env.BOTAPI_ALLOWED_ORIGINS = "https://painel.exemplo, lixo";
 	const app = express();
 	app.use(security.createSameOriginGuard({ hasCredentials: (req) => !!req.headers.cookie }));
 	app.post("/escrever", (req, res) => res.json({ ok: true }));
@@ -84,6 +85,34 @@ async function testSameOrigin() {
 				200
 			],
 			["POST com cookie sem Origin (curl/servidor)", "POST", "/escrever", cookie, 200],
+			[
+				"proxy que troca o Host: Sec-Fetch-Site same-origin vale mesmo com Origin diferente",
+				"POST",
+				"/escrever",
+				{ ...cookie, Origin: "https://painel.exemplo", "Sec-Fetch-Site": "same-origin" },
+				200
+			],
+			[
+				"Origin de BOTAPI_ALLOWED_ORIGINS sem Sec-Fetch-Site",
+				"POST",
+				"/escrever",
+				{ ...cookie, Origin: "https://painel.exemplo" },
+				200
+			],
+			[
+				"Origin fora da lista sem Sec-Fetch-Site",
+				"POST",
+				"/escrever",
+				{ ...cookie, Origin: "https://outro.exemplo" },
+				403
+			],
+			[
+				"Sec-Fetch-Site same-site (subdomínio) continua recusado",
+				"POST",
+				"/escrever",
+				{ ...cookie, Origin: "https://painel.exemplo", "Sec-Fetch-Site": "same-site" },
+				403
+			],
 			[
 				"POST com cookie vindo de outro site",
 				"POST",
@@ -175,6 +204,7 @@ async function testSameOrigin() {
 			assert.strictEqual(res.status, expected, `${desc}: esperado ${expected}, veio ${res.status}`);
 		}
 	});
+	delete process.env.BOTAPI_ALLOWED_ORIGINS;
 	console.log("✓ Escritas com credencial vindas de outro site são recusadas; o resto passa.");
 }
 

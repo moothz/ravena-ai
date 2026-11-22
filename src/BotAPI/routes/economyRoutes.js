@@ -19,8 +19,9 @@
  * - POST /api/economy/admin/annotations/decide   - { id, decision: confirmada|descartada, texto? }
  *
  * Proteção contra CSRF nos POST (a sessão do admin é cookie): exige Content-Type application/json
- * (formulário de outro site não manda JSON sem preflight) → 415; recusa Sec-Fetch-Site cross-site e
- * Origin de outro host → 403. Escritas com ECONOMY_ANALYTICS_ENABLED diferente de "true" (ou com a
+ * (formulário de outro site não manda JSON sem preflight) → 415; recusa o que a guarda geral
+ * (isCrossOrigin) considera de outro site: Sec-Fetch-Site cross-site/same-site e Origin fora de
+ * Host, X-Forwarded-Host e BOTAPI_ALLOWED_ORIGINS → 403. Escritas com ECONOMY_ANALYTICS_ENABLED diferente de "true" (ou com a
  * carga parada, ex. DISABLE_ACTIVITY=true) → 409.
  *
  * @param {Object} api - Instância da BotAPI
@@ -29,25 +30,19 @@
 "use strict";
 
 const EconomyAnalyticsWorkerHost = require("../../services/EconomyAnalyticsWorkerHost");
+const { isCrossOrigin } = require("../middleware/security");
 
 const PRESETS = [1, 2, 3, 6, 12, 24];
 const MOEDAS = ["zinthos", "petalitas", "runas", "todas"];
 
-/** Guarda contra CSRF para os POST (ver cabeçalho). */
+/**
+ * Guarda contra CSRF para os POST (ver cabeçalho). A regra de origem é a mesma da guarda geral
+ * (isCrossOrigin em middleware/security.js: Sec-Fetch-Site, Host, X-Forwarded-Host e
+ * BOTAPI_ALLOWED_ORIGINS).
+ */
 function csrfGuard(req, res, next) {
-	if (String(req.get("sec-fetch-site") || "").toLowerCase() === "cross-site") {
-		return res.status(403).json({ status: "error", message: "Requisição de outro site recusada" });
-	}
-	const origin = req.get("origin");
-	if (origin) {
-		let host = null;
-		try {
-			host = new URL(origin).host;
-		} catch (_) {}
-		const allowed = [req.get("host"), req.get("x-forwarded-host")].filter(Boolean);
-		if (!host || !allowed.includes(host)) {
-			return res.status(403).json({ status: "error", message: "Origem recusada" });
-		}
+	if (isCrossOrigin(req)) {
+		return res.status(403).json({ status: "error", message: "Origem recusada" });
 	}
 	if (!/^application\/json\b/i.test(String(req.get("content-type") || ""))) {
 		return res
