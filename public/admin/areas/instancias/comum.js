@@ -204,15 +204,25 @@ window.addEventListener("beforeunload", (ev) => {
 	}
 });
 
+let saveQueue = Promise.resolve(); // fila de gravação do bots.json (ver saveAll)
+
 /**
  * Grava o bots.json (o POST leva a lista inteira). Sem patch: lista atual do servidor + todos os
  * rascunhos pendentes, que são limpos. Com patch (Desativar/Reativar): só aqueles campos sobre a
  * lista atual; os rascunhos ficam como estão, sem ir junto. Valida antes.
+ * As gravações entram numa fila: nunca dois POST da lista inteira em paralelo; a próxima espera
+ * a anterior e parte do que ela gravou (lê a lista de novo).
  * @param {{ patch?: Object<string, Object> }} [o] - nome → campos a sobrescrever
  * @returns {Promise<{ saved: string[], message: string, finalName: Object<string, string> }>}
  *   finalName: nome do rascunho novo → nome gravado (o identificador pode ter sido trocado)
  */
-export async function saveAll({ patch = {} } = {}) {
+export function saveAll(o = {}) {
+	const run = saveQueue.then(() => saveAllNow(o));
+	saveQueue = run.catch(() => {});
+	return run;
+}
+
+async function saveAllNow({ patch = {} } = {}) {
 	let current;
 	try {
 		current = await loadBots(true);

@@ -74,15 +74,29 @@ function modeOf(ctx) {
 	return { kind: "lista" };
 }
 
+/*
+ * Fila de gravação: o POST leva a config inteira, então dois cliques seguidos (desligar A e,
+ * antes de A gravar, desligar B) não podem correr em paralelo — o segundo regravaria A ligado.
+ * Cada gravação espera a anterior terminar e parte do que ela gravou (GET fresco).
+ */
+let writeQueue = Promise.resolve();
+
 /**
- * Grava uma mudança: relê a config, confere o provedor (posição + nome) e manda tudo.
+ * Grava uma mudança na fila: espera a gravação anterior, relê a config, confere o provedor
+ * (posição + nome) e manda tudo.
  * @param {Object} ctx
  * @param {{ cat: string, index: number, name?: string }} target - index -1 = provedor novo
  * @param {(config: Object) => Object} change
  * @param {string} okMsg
  * @param {string} [goTo] - rota depois de gravar (padrão: recarrega no lugar)
  */
-async function commit(ctx, target, change, okMsg, goTo) {
+function commit(ctx, target, change, okMsg, goTo) {
+	const run = writeQueue.then(() => commitNow(ctx, target, change, okMsg, goTo));
+	writeQueue = run.catch(() => {});
+	return run;
+}
+
+async function commitNow(ctx, target, change, okMsg, goTo) {
 	const fresh = await api(CONFIG, { fresh: true });
 	if (target.index >= 0) {
 		const cur = fresh && fresh[target.cat] && fresh[target.cat][target.index];
