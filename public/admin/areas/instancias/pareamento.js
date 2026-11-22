@@ -3,11 +3,46 @@
  * É a página /qrcode/<nome> dentro do painel: estado da conexão, QR code e código de pareamento
  * ao vivo (SSE /qrcode-stream), início automático do fluxo (/qrcode-initconnect) e as ações
  * Tentar reconectar, Recriar e Desconectar. Mesmas rotas e o mesmo comportamento da página
- * antiga (inclusive: ao fechar, o servidor reagenda o apagamento da instância desconectada).
+ * antiga.
+ *
+ * Cuidado com o stream: quando o último cliente do /qrcode-stream fecha e a instância está
+ * desconectada há mais de 15 min, o servidor a apaga NA HORA (instancesRoutes.js, req "close").
+ * Por isso "Atualizar" e trocar de aba dentro da mesma instância não fecham o EventSource: ele
+ * fica guardado (parked) e a próxima tela de pareamento da mesma instância o reaproveita. Só
+ * sair da instância (outra instância, outra área, fechar a aba) fecha o stream.
+ * A credencial é o cookie do painel (as rotas :botId aceitam a sessão do admin); nada de ?auth=.
  */
 
-import { h, lamp, card, note, confirmInline, toast } from "../../core.js";
+import { h, lamp, card, note, confirmInline, toast, parseHash } from "../../core.js";
 import { botAction, botFetch, explain, outcomeBox } from "./comum.js";
+
+/** Stream guardado entre redesenhos da mesma instância (ver o cabeçalho). */
+let parked = { nome: null, es: null };
+
+/** O endereço está dentro da ficha da instância `nome` (qualquer aba)? */
+const inInstance = (nome, hash) => {
+	const p = parseHash(hash || "");
+	return p.areaId === "instancias" && p.segs[0] === nome;
+};
+
+function closeParked() {
+	if (parked.es) parked.es.close();
+	parked = { nome: null, es: null };
+}
+
+/** Pega o stream guardado da instância, se ainda estiver aberto. */
+function takeParked(nome) {
+	const es = parked.nome === nome ? parked.es : null;
+	parked = { nome: null, es: null };
+	if (es && es.readyState !== EventSource.CLOSED) return es;
+	if (es) es.close();
+	return null;
+}
+
+// Saiu da instância (outra instância ou outra área): agora sim fecha o stream guardado.
+window.addEventListener("hashchange", () => {
+	if (parked.es && !inInstance(parked.nome, location.hash)) closeParked();
+});
 
 /** src seguro para o QR (data:image/… ou base64 puro). */
 export function qrSrc(code) {
@@ -200,7 +235,7 @@ export async function renderPareamento(root, ctx, bot) {
 				{ class: "notice", role: "note" },
 				lamp("attention"),
 				h("span", {
-					text: "Desconectada por mais de 15 minutos, a instância é apagada automaticamente."
+					text: "Desconectada por mais de 15 minutos, a instância é apagada automaticamente. Enquanto esta ficha está aberta o servidor espera; ao sair dela (outra instância, outra área ou fechar a aba) com a instância desconectada há mais de 15 minutos, ela é apagada na hora e será preciso recriar e parear de novo. Atualizar e trocar de aba dentro desta instância não contam."
 				})
 			)
 		);
@@ -246,7 +281,7 @@ export async function renderPareamento(root, ctx, bot) {
 		const start = () => {
 			if (closed) return;
 			// O cookie do painel basta (as rotas :botId aceitam a sessão do admin).
-			es = new EventSource(`/qrcode-stream/${id}`);
+			es = takeParked(bot.nome) || new EventSource(`/qrcode-stream/${id}`);
 			es.onmessage = (e) => {
 				let d;
 				try {
@@ -264,8 +299,10 @@ export async function renderPareamento(root, ctx, bot) {
 					);
 				}
 			};
+			// Erro passageiro: o EventSource reconecta sozinho (sem fechar, para o servidor não
+			// contar zero clientes). Só quando ele desiste (CLOSED) abrimos outro em 5 s.
 			es.onerror = () => {
-				if (es) es.close();
+				if (!es || es.readyState !== EventSource.CLOSED) return;
 				es = null;
 				if (!closed) timers.push(setTimeout(start, 5000));
 			};
@@ -294,6 +331,14 @@ export async function renderPareamento(root, ctx, bot) {
 		closed = true;
 		clearInterval(iv);
 		timers.forEach(clearTimeout);
-		if (es) es.close();
+		if (!es) return;
+		// Atualizar / outra aba da mesma instância: guarda o stream aberto (ver o cabeçalho).
+		if (inInstance(bot.nome, location.hash) && es.readyState !== EventSource.CLOSED) {
+			es.onmessage = null;
+			es.onerror = null;
+			closeParked();
+			parked = { nome: bot.nome, es };
+		} else es.close();
+		es = null;
 	};
 }
