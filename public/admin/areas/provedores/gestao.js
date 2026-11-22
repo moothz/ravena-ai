@@ -260,7 +260,7 @@ function providerForm(ctx, cat, index, existing) {
 				type: "number",
 				value: v.timeout_multiplier,
 				placeholder: "1",
-				attrs: { step: "0.1", min: "0" }
+				attrs: { step: "any", min: "0" }
 			}),
 			field({
 				label: "Tamanho do contexto (tokens)",
@@ -330,7 +330,7 @@ function providerForm(ctx, cat, index, existing) {
 				value: v.threshold,
 				placeholder: "0.8",
 				hint: "Sensibilidade quando o grupo não define a sua (ex.: 0,75 ou 0,8).",
-				attrs: { step: "0.05", min: "0", max: "1" }
+				attrs: { step: "any", min: "0", max: "1" }
 			}),
 			field({
 				label: "Pausa do circuit breaker (segundos)",

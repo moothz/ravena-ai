@@ -738,14 +738,14 @@ function renderConfig(root, ctx, draft) {
 					label: "Atraso orgânico mínimo, s (delayMin)",
 					type: "number",
 					hint: "Atraso mínimo antes de cada mensagem.",
-					attrs: { min: 0, max: 5, step: 0.5 }
+					attrs: { min: 0, max: 5, step: "any" }
 				}),
 				f({
 					name: "delayMax",
 					label: "Atraso orgânico máximo, s (delayMax)",
 					type: "number",
 					hint: "O atraso é sorteado entre o mínimo e o máximo.",
-					attrs: { min: 0, max: 5, step: 0.5 }
+					attrs: { min: 0, max: 5, step: "any" }
 				}),
 				f({
 					name: "deleteMessagesInterval",
