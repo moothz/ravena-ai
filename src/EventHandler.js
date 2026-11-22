@@ -139,6 +139,8 @@ class EventHandler extends EventEmitter {
 		this.sentStickersByOriginalMsg = new Map();
 		this.recentSpammerLeaveNotices = new Map();
 		this.greetingTimers = new Map();
+		this.greetingDelayMin = 10000;
+		this.greetingDelayMax = 45000;
 
 		this.logger.info(`[EventHandler] CmdWhitelist:`, this.comandosWhitelist);
 		this.loadGroups();
@@ -1649,12 +1651,46 @@ class EventHandler extends EventEmitter {
 	}
 
 	/**
+	 * Retorna delay aleatório (em ms) entre 10 e 45 segundos para saudações e despedidas.
+	 * Se bot estiver em testMode (sem flag enableGreetingDelay), retorna 0 para não travar suítes de teste.
+	 * @param {WhatsAppBot|null} bot
+	 * @returns {number} Delay em milissegundos
+	 */
+	getGreetingDelay(bot = null) {
+		if (bot?.testMode && !bot?.enableGreetingDelay) {
+			return 0;
+		}
+		const min = this.greetingDelayMin ?? 10000;
+		const max = this.greetingDelayMax ?? 45000;
+		return Math.floor(Math.random() * (max - min + 1)) + min;
+	}
+
+	/**
+	 * Aguarda o tempo restante para atingir o targetDelay desde o eventStartTime.
+	 * @param {number} eventStartTime - Timestamp Date.now() de quando o evento foi disparado
+	 * @param {number} targetDelay - Tempo total desejado em ms
+	 * @param {WhatsAppBot|null} bot - Instância do bot
+	 * @returns {Promise<void>}
+	 */
+	async waitRemainingGreetingDelay(eventStartTime, targetDelay, bot = null) {
+		if (targetDelay <= 0) return;
+		if (bot?.testMode && !bot?.enableGreetingDelay) return;
+
+		const elapsed = Date.now() - (eventStartTime || Date.now());
+		const remaining = Math.max(0, targetDelay - elapsed);
+		if (remaining > 0) {
+			await new Promise((resolve) => setTimeout(resolve, remaining));
+		}
+	}
+
+	/**
 	 * Manipula evento de entrada no grupo
 	 * @param {WhatsAppBot} bot - A instância do bot
 	 * @param {Object} data - Dados do evento
 	 *
 	 */
 	onGroupJoin(bot, data) {
+		if (data) data._eventTimestamp = data._eventTimestamp || Date.now();
 		// Processa entrada sem aguardar para evitar bloquear a thread de eventos
 		this.processGroupJoin(bot, data).catch((error) => {
 			this.logger.error("Erro em processGroupJoin:", error);
@@ -1668,6 +1704,7 @@ class EventHandler extends EventEmitter {
 	 *
 	 */
 	onGroupLeave(bot, data) {
+		if (data) data._eventTimestamp = data._eventTimestamp || Date.now();
 		// Processa entrada sem aguardar para evitar bloquear a thread de eventos
 		this.processGroupLeave(bot, data).catch((error) => {
 			this.logger.error("Erro em processGroupLeave:", error);
@@ -1680,6 +1717,7 @@ class EventHandler extends EventEmitter {
 	 * @param {Object} data - Dados do evento
 	 */
 	async processGroupJoin(bot, data) {
+		const eventStartTime = data?._eventTimestamp || Date.now();
 		const groupId = data.group.id;
 		const isBotJoining =
 			Boolean(data?.isBotJoining) ||
@@ -2175,6 +2213,7 @@ class EventHandler extends EventEmitter {
 
 				// Envia uma mensagem de boas-vindas padrão sobre o bot
 				let botInfoMessage = "";
+				const botJoinDelay = this.getGreetingDelay(bot);
 
 				// Se é grupo novo, a mensagem de boas vindas é enviada
 
@@ -2312,10 +2351,14 @@ Retorne um JSON com dois campos:
 											`[groupJoin] Resposta do LLM não é JSON válido, usando como mensagem direta: ${llmResponse}`
 										);
 										// Fallback: usa resposta crua como mensagem de boas-vindas
-										if (bot.sendJoinInfo !== false) {
+										if (bot.sendJoinInfo !== false && !joinSilencioso) {
+											await this.waitRemainingGreetingDelay(
+												eventStartTime,
+												botJoinDelay + 3000,
+												bot
+											);
 											bot
 												.sendMessage(group.id, llmResponse, {
-													delay: 5000,
 													maxChars: 3000
 												})
 												.catch((error) => {
@@ -2331,11 +2374,11 @@ Retorne um JSON com dois campos:
 									const { welcomeMessage, botPersonality } = parsed;
 
 									// Envia a mensagem de boas-vindas gerada
-									if (welcomeMessage && bot.sendJoinInfo !== false) {
+									if (welcomeMessage && bot.sendJoinInfo !== false && !joinSilencioso) {
 										this.logger.debug(`[groupJoin] LLM Welcome: ${welcomeMessage}`);
+										await this.waitRemainingGreetingDelay(eventStartTime, botJoinDelay + 3000, bot);
 										bot
 											.sendMessage(group.id, welcomeMessage, {
-												delay: 5000,
 												maxChars: 3000
 											})
 											.catch((error) => {
@@ -2483,9 +2526,18 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				}
 
 				if (!joinSilencioso && botInfoMessage && bot.sendJoinInfo !== false) {
-					bot.sendMessage(targetId, botInfoMessage).catch((error) => {
-						this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
-					});
+					if (botJoinDelay > 0) {
+						this.logger.info(
+							`[processGroupJoin] Aguardando delay orgânico de ${Math.round(botJoinDelay / 1000)}s para envio de boas-vindas do bot no grupo ${groupId}...`
+						);
+					}
+					await this.waitRemainingGreetingDelay(eventStartTime, botJoinDelay, bot);
+					const currentGroup = this.groups[groupId] || (await this.database.getGroup(groupId));
+					if (currentGroup && !currentGroup.notInGroup && !bot.isSkipGroup?.(groupId)) {
+						bot.sendMessage(targetId, botInfoMessage).catch((error) => {
+							this.logger.error("Erro ao enviar mensagem de boas-vindas do grupo:", error);
+						});
+					}
 				} else if (joinSilencioso || bot.sendJoinInfo === false) {
 					this.logger.info(
 						`[groupJoin] 🔇 Join silencioso ou sendJoinInfo desativado - mensagem de boas-vindas suprimida para ${groupId} (${group.name})`
@@ -2533,7 +2585,20 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						);
 						if (!greetingUsers) return;
 						const welcomes = await this.generateGreetingMessage(bot, group, greetingUsers, chat);
-						if (welcomes && Array.isArray(welcomes)) {
+						if (welcomes && Array.isArray(welcomes) && welcomes.length > 0) {
+							const memberJoinDelay = this.getGreetingDelay(bot);
+							if (memberJoinDelay > 0) {
+								this.logger.info(
+									`[processGroupJoin] Aguardando delay orgânico de ${Math.round(memberJoinDelay / 1000)}s para boas-vindas de membro no grupo ${group.id}...`
+								);
+							}
+							await this.waitRemainingGreetingDelay(eventStartTime, memberJoinDelay, bot);
+
+							// Verifica se o grupo ainda possui boas-vindas ativas e não está pausado
+							const currentGroup =
+								this.groups[group.id] || (await this.database.getGroup(group.id));
+							if (!currentGroup?.greetings || currentGroup.paused) return;
+
 							for (const welcome of welcomes) {
 								const options = welcome.options ?? {};
 								if (welcome.mentions) options.mentions = welcome.mentions;
@@ -2561,6 +2626,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	 * @param {Object} data - Dados do evento
 	 */
 	async processGroupLeave(bot, data) {
+		const eventStartTime = data?._eventTimestamp || Date.now();
 		//this.logger.info(`[processGroupLeave] `, { data });
 
 		this.logger.info(
@@ -3192,7 +3258,20 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 					);
 					if (!farewellUsers) return;
 					const farewells = await this.processFarewellMessage(group, farewellUsers, bot);
-					if (farewells && Array.isArray(farewells)) {
+					if (farewells && Array.isArray(farewells) && farewells.length > 0) {
+						const memberLeaveDelay = this.getGreetingDelay(bot);
+						if (memberLeaveDelay > 0) {
+							this.logger.info(
+								`[processGroupLeave] Aguardando delay orgânico de ${Math.round(memberLeaveDelay / 1000)}s para despedida de membro no grupo ${data.group.id}...`
+							);
+						}
+						await this.waitRemainingGreetingDelay(eventStartTime, memberLeaveDelay, bot);
+
+						// Verifica se o grupo ainda possui despedidas ativas e não está pausado
+						const currentGroup =
+							this.groups[data.group.id] || (await this.database.getGroup(data.group.id));
+						if (!currentGroup?.farewells || currentGroup.paused) return;
+
 						for (const farewell of farewells) {
 							const options = farewell.options ?? {};
 							if (farewell.mentions) options.mentions = farewell.mentions;
