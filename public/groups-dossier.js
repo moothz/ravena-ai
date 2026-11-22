@@ -38,6 +38,16 @@ document.addEventListener('DOMContentLoaded', () => {
         return 'score-low';
     }
 
+    // Texto vindo do LLM e dos grupos (nome, resumo, tipo) entra no innerHTML escapado.
+    function esc(value) {
+        return String(value ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function renderGroups(groups) {
         groupsContainer.innerHTML = '';
 
@@ -68,17 +78,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 historyHtml += `
                     <div class="history-item ${isLatest ? 'latest' : ''}">
                         <div class="history-header">
-                            <span class="history-date">${dateHeader}</span>
-                            <span class="group-score ${dossierScoreClass}">Nota: ${dossier.problematic_score}</span>
+                            <span class="history-date">${esc(dateHeader)}</span>
+                            <span class="group-score ${dossierScoreClass}">Nota: ${esc(dossier.problematic_score)}</span>
                         </div>
                         <div class="dossier-grid">
                             <div class="dossier-item">
                                 <div class="dossier-label">Tipo</div>
-                                <div class="dossier-value"><i class="fas fa-tag"></i> ${dossier.type}</div>
+                                <div class="dossier-value"><i class="fas fa-tag"></i> ${esc(dossier.type)}</div>
                             </div>
                             <div class="dossier-item">
                                 <div class="dossier-label">Resumo</div>
-                                <div class="dossier-value">${dossier.summary}</div>
+                                <div class="dossier-value">${esc(dossier.summary)}</div>
                             </div>
                         </div>
                     </div>
@@ -89,9 +99,9 @@ document.addEventListener('DOMContentLoaded', () => {
             section.innerHTML = `
                 <div class="group-header">
                     <div class="group-info">
-                        <span class="group-name">${group.name}</span>
-                        <span class="bot-badge">${group.bot_id}</span>
-                        <span class="group-score ${maxScoreClass}">Maior: ${maxScore}</span>
+                        <span class="group-name">${esc(group.name)}</span>
+                        <span class="bot-badge">${esc(group.bot_id)}</span>
+                        <span class="group-score ${maxScoreClass}">Maior: ${esc(maxScore)}</span>
                         <span class="group-score ${avgScoreClass}">Média: ${avgScore}</span>
                         <span class="stats-badge">${group.total_chars.toLocaleString()} chars totais | ${group.pending_chars.toLocaleString()} pnd</span>
                     </div>
@@ -100,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="group-content">
                     ${historyHtml}
                     <div style="margin-top: 15px; font-size: 0.75em; color: #666;">
-                        ID: ${group.id}
+                        ID: ${esc(group.id)}
                     </div>
                 </div>
             `;
