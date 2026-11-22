@@ -1050,14 +1050,41 @@ function registerInstancesRoutes(api) {
 		res.setHeader("Cache-Control", "no-cache");
 		res.setHeader("Connection", "keep-alive");
 
+		// Reconexão espaçada: o stream só cai quando o processo do pm2 morre ou a rede falha.
+		res.write("retry: 15000\n\n");
+
+		// Um chunk do pm2 pode ter várias linhas; no SSE cada uma precisa do próprio "data:",
+		// senão as linhas depois da primeira são descartadas pelo navegador.
+		const writeLines = (text, prefix = "") => {
+			const lines = text
+				.replace(/\r/g, "")
+				.split("\n")
+				.filter((line) => line.length > 0);
+			if (lines.length === 0) return;
+			res.write(`${lines.map((line) => `data: ${prefix}${line}`).join("\n")}\n\n`);
+		};
+
 		const logStream = spawn("pm2", ["logs", "ravena-ai", "--raw"]);
 
 		logStream.stdout.on("data", (data) => {
-			res.write(`data: ${data.toString()}\n\n`);
+			writeLines(data.toString());
 		});
 
 		logStream.stderr.on("data", (data) => {
-			res.write(`data: [ERROR] ${data.toString()}\n\n`);
+			writeLines(data.toString(), "[ERROR] ");
+		});
+
+		// Sem pm2 no ambiente (ex.: imagem Docker), o spawn falha: avisa o cliente e encerra
+		// o stream em vez de deixá-lo aberto e mudo. O evento nomeado "unavailable" deixa o
+		// painel /admin parar de reconectar; clientes antigos só veem a linha de erro.
+		logStream.on("error", (err) => {
+			api.logger.warn(`Stream de logs indisponível: ${err.message}`);
+			if (res.writableEnded) return;
+			res.write(
+				`data: [ERROR] Logs do pm2 indisponíveis neste ambiente (${err.code || err.message})\n\n`
+			);
+			res.write(`event: unavailable\ndata: ${err.code || "error"}\n\n`);
+			res.end();
 		});
 
 		req.on("close", () => {

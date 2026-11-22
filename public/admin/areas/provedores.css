@@ -1,0 +1,181 @@
+/* Área Provedores de IA (carregado por areas/provedores.js). Só var(--…) de tokens.css. */
+
+.prov-list {
+	display: grid;
+	container-type: inline-size;
+}
+
+.prov-it {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.25rem 0.75rem;
+	align-items: center;
+	padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.prov-it:last-child {
+	border-bottom: 0;
+}
+
+.prov-it[data-state="down"] {
+	background: var(--attention-bg);
+}
+
+.prov-it.is-editing {
+	background: var(--raised);
+}
+
+.prov-main {
+	display: grid;
+	gap: 0.125rem;
+	min-width: 0;
+}
+
+.prov-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.25rem 0.5rem;
+}
+
+.prov-title b {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.prov-title .state-word {
+	font: var(--text-sm) var(--font-mono);
+}
+
+.prov-sub {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow-wrap: anywhere;
+}
+
+.prov-sub .att {
+	color: var(--attention);
+}
+
+.prov-sub .bad {
+	color: var(--destructive);
+}
+
+.prov-acts {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	justify-content: flex-end;
+}
+
+.prov-edit {
+	grid-column: 1 / -1;
+	padding-top: 0.625rem;
+}
+
+.prov-edit .form-actions .spacer {
+	flex: 1;
+}
+
+.prov-new {
+	padding: 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+	background: var(--raised);
+}
+
+.prov-new h3 {
+	margin: 0 0 0.5rem;
+	font-size: var(--text-md);
+	font-weight: 600;
+}
+
+.prov-empty {
+	padding: 0.75rem;
+	color: var(--muted);
+	font-size: var(--text-sm);
+}
+
+/* Serviços: linha com lâmpada e palavra; o que está fora vai em destaque. */
+.prov-svc {
+	display: grid;
+}
+
+.prov-svc .rw[data-state="down"],
+.prov-svc .rw-static[data-state="down"] {
+	background: var(--attention-bg);
+}
+
+.prov-svc .rw-sub.bad {
+	color: var(--destructive);
+}
+
+.prov-svc-static {
+	display: grid;
+	grid-template-columns: 2.25rem minmax(0, 1fr);
+	gap: 0.75rem;
+	align-items: center;
+	padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.prov-svc-static:last-child {
+	border-bottom: 0;
+}
+
+.prov-svc-static .tx {
+	display: grid;
+	gap: 0.125rem;
+	min-width: 0;
+}
+
+.prov-svc-static .rw-sub {
+	color: var(--muted);
+	font-size: var(--text-sm);
+}
+
+.prov-svc .ic .lamp {
+	width: 0.875rem;
+	height: 0.875rem;
+}
+
+.prov-updated {
+	color: var(--faint);
+	font: var(--text-xs) var(--font-mono);
+}
+
+td.prov-bad {
+	color: var(--destructive);
+}
+
+.prov-pickers {
+	display: grid;
+	gap: 0.625rem;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 12.5rem), 1fr));
+}
+
+.prov-head-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+@container (max-width: 35rem) {
+	.prov-it {
+		grid-template-columns: auto minmax(0, 1fr);
+	}
+
+	.prov-acts {
+		grid-column: 2 / -1;
+		justify-content: flex-start;
+	}
+}
+
+tr.prov-q-failed td:last-child {
+	color: var(--destructive);
+}
+
+.prov-svc .state-word {
+	font: var(--text-sm) var(--font-mono);
+}

@@ -1,0 +1,1812 @@
+/*
+ * Componentes do painel de admin unificado. Só lê os tokens de tokens.css.
+ * Escala: rótulo 11 mono caixa alta · texto 13 · detalhe 12 · título 18 · número 20 (em rem).
+ *
+ * Partes: base · topo · botões · casca (menu, conteúdo) · kit (card, rows, tiles, pill, kv,
+ * crumbs, subnav, confirm, form, search, dataTable, toast, log) · celular · toque ·
+ * movimento reduzido. A lista das classes do kit está em admin-kit.md.
+ */
+
+* {
+	box-sizing: border-box;
+}
+
+/* O atributo hidden vence qualquer display dos componentes. */
+[hidden] {
+	display: none !important;
+}
+
+html,
+body {
+	min-height: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--work);
+	color: var(--fg);
+	font: var(--text-md) / 1.45 var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	overflow-x: hidden;
+}
+
+a {
+	color: var(--fg);
+}
+
+:focus-visible {
+	outline: 2px solid var(--focus);
+	outline-offset: 2px;
+}
+
+h1,
+h2,
+h3,
+p {
+	margin: 0;
+}
+
+.mono,
+code {
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.faint {
+	color: var(--faint);
+}
+
+.spacer {
+	flex: 1;
+}
+
+.label {
+	margin: 0;
+	font: 500 var(--text-xs) / 1.2 var(--font-mono);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--faint);
+}
+
+.sr-only,
+.btn-label-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.skip {
+	position: absolute;
+	left: 0.5rem;
+	top: -2.5rem;
+	z-index: 10;
+	padding: 0.375rem 0.625rem;
+	background: var(--fg);
+	color: var(--on-fg);
+	border-radius: var(--radius-row);
+	text-decoration: none;
+}
+
+.skip:focus {
+	top: 0.5rem;
+}
+
+/* ── Aviso global (sessão expirada) ─────────────────────────────── */
+
+.banner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 0.75rem;
+	padding: 0.5rem 0.75rem;
+	background: var(--panel);
+	border-bottom: 1px solid var(--destructive);
+}
+
+/* ── Barra do topo ─────────────────────────────────────────────── */
+
+.topbar {
+	position: sticky;
+	top: 0;
+	z-index: 5;
+	height: var(--topbar-h);
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0 0.75rem;
+	background: var(--chrome);
+	border-bottom: 1px solid var(--hairline-strong);
+}
+
+.brand {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	text-decoration: none;
+	color: var(--fg);
+	border-radius: var(--radius-row);
+	padding: 0.125rem 0.25rem;
+	flex: none;
+}
+
+.brand-mark {
+	width: 0.625rem;
+	height: 0.625rem;
+	align-self: center;
+	border: 1px solid var(--fg);
+	background: linear-gradient(90deg, var(--fg) 50%, transparent 0);
+}
+
+.brand-name {
+	font-weight: 600;
+	font-size: 0.875rem;
+}
+
+.brand-sub {
+	font: 500 var(--text-xs) var(--font-mono);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--muted);
+}
+
+.topbar-sep {
+	width: 1px;
+	height: 1rem;
+	background: var(--hairline-strong);
+	flex: none;
+}
+
+/* "N precisam de você": âmbar só quando há o que fazer; sempre com palavra. */
+.topbar-needs {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4375rem;
+	min-width: 0;
+	padding: 0.125rem 0.375rem;
+	border-radius: var(--radius-row);
+	color: var(--muted);
+	font-size: var(--text-sm);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.topbar-needs-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.topbar-needs[data-state="attention"] {
+	color: var(--attention);
+	font-weight: 600;
+}
+
+.topbar-needs:hover {
+	background: var(--hover);
+}
+
+/* ── Botões ────────────────────────────────────────────────────── */
+
+button {
+	font: inherit;
+	color: inherit;
+}
+
+.btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.375rem;
+	min-height: var(--control-h);
+	padding: 0 0.625rem;
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	background: var(--panel);
+	color: var(--fg);
+	font-family: var(--font-sans);
+	font-size: var(--text-sm);
+	line-height: 1.2;
+	text-decoration: none;
+	cursor: pointer;
+	white-space: nowrap;
+	transition:
+		background-color 100ms,
+		border-color 100ms;
+}
+
+.btn:hover {
+	background: var(--hover);
+}
+
+.btn:disabled,
+.btn[aria-disabled="true"] {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.btn[aria-disabled="true"] {
+	pointer-events: none;
+}
+
+/* Ocupado (busy()): continua focável (o foco não se perde), só não aceita clique. */
+.btn[aria-busy="true"] {
+	opacity: 0.55;
+	cursor: progress;
+}
+
+.btn-quiet {
+	border-color: transparent;
+	background: transparent;
+	color: var(--muted);
+}
+
+.btn-quiet:hover {
+	color: var(--fg);
+}
+
+.btn-primary {
+	background: var(--fg);
+	border-color: var(--fg);
+	color: var(--on-fg);
+	font-weight: 600;
+}
+
+.btn-primary:hover {
+	background: var(--fg);
+	opacity: 0.88;
+}
+
+.btn-danger {
+	color: var(--destructive);
+	border-color: var(--destructive);
+	font-weight: 600;
+}
+
+.btn-danger.btn-quiet {
+	border-color: transparent;
+}
+
+.btn svg,
+.nav-item svg,
+.icon {
+	width: 0.875rem;
+	height: 0.875rem;
+	flex: none;
+}
+
+/* Segmentado compacto (tema, períodos). */
+.seg {
+	display: inline-flex;
+	padding: 0.125rem;
+	gap: 0.125rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-pill);
+	background: var(--work);
+	flex: none;
+}
+
+.seg button,
+.seg .seg-link {
+	display: inline-flex;
+	align-items: center;
+	min-height: 1.5rem;
+	padding: 0 0.5625rem;
+	border: 0;
+	border-radius: var(--radius-row);
+	background: transparent;
+	color: var(--muted);
+	font-size: var(--text-sm);
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.seg button:hover,
+.seg .seg-link:hover {
+	color: var(--fg);
+	background: var(--hover);
+}
+
+.seg button[aria-pressed="true"],
+.seg .seg-link[aria-current="true"] {
+	background: var(--raised);
+	color: var(--fg);
+	font-weight: 600;
+	box-shadow: inset 0 0 0 1px var(--control-border);
+}
+
+/* ── Estrutura ─────────────────────────────────────────────────── */
+
+.shell {
+	display: grid;
+	grid-template-columns: 14.5rem minmax(0, 1fr);
+	min-height: calc(100dvh - var(--topbar-h));
+}
+
+.sidebar {
+	position: sticky;
+	top: var(--topbar-h);
+	align-self: start;
+	height: calc(100dvh - var(--topbar-h));
+	overflow-y: auto;
+	padding: 0.625rem 0.5rem 1rem;
+	background: var(--panel);
+	border-right: 1px solid var(--hairline-strong);
+}
+
+.nav-group + .nav-group {
+	margin-top: 0.875rem;
+}
+
+.nav-group > .label {
+	padding: 0 0.5rem 0.375rem;
+}
+
+.nav-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 1px;
+}
+
+.nav-item {
+	display: grid;
+	grid-template-columns: 1rem minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 0.5rem;
+	min-height: 1.875rem;
+	padding: 0 0.5rem;
+	border-radius: var(--radius-row);
+	color: var(--muted);
+	text-decoration: none;
+	transition:
+		background-color 100ms,
+		color 100ms;
+}
+
+.nav-item:hover {
+	background: var(--raised);
+	color: var(--fg);
+}
+
+.nav-item[aria-current="page"] {
+	background: var(--raised);
+	color: var(--fg);
+	box-shadow: inset 2px 0 0 var(--selected);
+	font-weight: 600;
+}
+
+.nav-item .nav-text {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.nav-item .nav-meta {
+	font: var(--text-xs) var(--font-mono);
+	color: var(--faint);
+	white-space: nowrap;
+}
+
+/* Contador de "pede atenção" (âmbar, com número: não é só cor). */
+.nav-badge {
+	min-width: 1.25rem;
+	padding: 0 0.3125rem;
+	border: 1px solid var(--attention);
+	border-radius: 999px;
+	background: var(--attention-bg);
+	color: var(--attention);
+	font: 600 var(--text-xs) / 1.125rem var(--font-mono);
+	text-align: center;
+}
+
+/* Sem ícone: o texto alinha com o rótulo "Outros painéis" (como no mock). */
+.nav-out {
+	grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.nav-out.is-disabled {
+	color: var(--faint);
+	cursor: default;
+}
+
+.nav-out.is-disabled:hover {
+	background: none;
+	color: var(--faint);
+}
+
+.nav-hint {
+	margin: 0.375rem 0.5rem 0;
+	font-size: var(--text-xs);
+	color: var(--faint);
+	overflow-wrap: anywhere;
+}
+
+.nav-item:focus-visible {
+	outline-offset: -2px;
+}
+
+.main {
+	min-width: 0;
+	padding: 1.25rem 1.5rem 3rem;
+	outline: none;
+}
+
+/* ── Cabeçalho da área ──────────────────────────────────────────── */
+
+.view-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.625rem 1rem;
+	margin-bottom: 1rem;
+}
+
+.view-titles {
+	margin-right: auto;
+	min-width: 0;
+}
+
+.view-title {
+	font-size: var(--text-lg);
+	font-weight: 600;
+	letter-spacing: -0.01em;
+}
+
+.view-desc {
+	margin-top: 0.125rem;
+	color: var(--muted);
+	max-width: 70ch;
+}
+
+.view-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.view-actions:empty {
+	display: none;
+}
+
+.view-root,
+.stack {
+	display: grid;
+	gap: 1rem;
+	align-content: start;
+	min-width: 0;
+}
+
+#view-body[aria-busy="true"] > .view-root:not(:empty) {
+	opacity: 0.6;
+	transition: opacity 150ms 150ms;
+}
+
+/* ── Abas internas (subnav): compactas e arredondadas ───────────── */
+
+.subnav {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 0.125rem;
+	padding: 0.125rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-pill);
+	background: var(--work);
+	max-width: 100%;
+}
+
+.subnav-tab {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	min-height: 1.625rem;
+	padding: 0 0.625rem;
+	border-radius: var(--radius-row);
+	color: var(--muted);
+	font-size: var(--text-sm);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.subnav-tab svg {
+	width: 0.75rem;
+	height: 0.75rem;
+}
+
+.subnav-tab:hover {
+	background: var(--hover);
+	color: var(--fg);
+}
+
+.subnav-tab[aria-selected="true"] {
+	background: var(--raised);
+	color: var(--fg);
+	font-weight: 600;
+	box-shadow: inset 0 0 0 1px var(--control-border);
+}
+
+/* ── Kit: cartão ────────────────────────────────────────────────── */
+
+.card {
+	min-width: 0;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	background: var(--panel);
+}
+
+.card > .hd {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem 0.625rem;
+	padding: 0.625rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.card-title {
+	font-size: var(--text-md);
+	font-weight: 600;
+	margin-right: auto;
+}
+
+.card-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	align-items: center;
+}
+
+.card > .bd {
+	padding: 0.75rem;
+	display: grid;
+	gap: 0.75rem;
+}
+
+.sec-label {
+	font: 500 var(--text-xs) / 1.2 var(--font-mono);
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: var(--faint);
+	margin: 0.25rem 0.125rem -0.5rem;
+}
+
+.note-in {
+	font-size: var(--text-sm);
+	color: var(--muted);
+	border: 1px dashed var(--hairline-strong);
+	border-radius: var(--radius-row);
+	padding: 0.5rem 0.625rem;
+}
+
+/* ── Kit: pílula, lista de definição, trilha ───────────────────── */
+
+.pill {
+	display: inline-block;
+	padding: 0.0625rem 0.4375rem;
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-pill);
+	color: var(--muted);
+	font: var(--text-xs) / 1.4 var(--font-mono);
+	white-space: nowrap;
+}
+
+.pill.att {
+	border-color: var(--attention);
+	color: var(--attention);
+	background: var(--attention-bg);
+}
+
+.pill.ok {
+	border-color: var(--ok);
+	color: var(--ok);
+}
+
+.pill.bad {
+	border-color: var(--destructive);
+	color: var(--destructive);
+}
+
+.kv {
+	display: grid;
+	grid-template-columns: max-content minmax(0, 1fr);
+	gap: 0.375rem 0.875rem;
+	margin: 0;
+	font-size: var(--text-md);
+}
+
+.kv dt {
+	color: var(--muted);
+}
+
+.kv dd {
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.crumbs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.375rem;
+	align-items: center;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	font-size: var(--text-sm);
+	color: var(--muted);
+}
+
+.crumbs li + li::before {
+	content: "/";
+	margin-right: 0.375rem;
+	color: var(--faint);
+}
+
+.crumbs a {
+	color: var(--muted);
+	text-underline-offset: 2px;
+}
+
+.crumbs [aria-current="page"] {
+	color: var(--fg);
+}
+
+/* ── Kit: faixa de números (tiles) ──────────────────────────────── */
+
+/* Blocos colados: a linha entre eles é a sombra de 1 px de cada bloco (sem buraco cinza no fim). */
+.tiles {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 9.5rem), 1fr));
+	gap: 1px;
+	background: var(--panel);
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	overflow: hidden;
+}
+
+.tile {
+	display: grid;
+	gap: 0.125rem;
+	align-content: start;
+	min-width: 0;
+	padding: 0.625rem 0.75rem;
+	background: var(--panel);
+	box-shadow: 0 0 0 1px var(--hairline-strong);
+	color: inherit;
+	text-decoration: none;
+}
+
+a.tile:hover {
+	background: var(--raised);
+}
+
+a.tile:focus-visible {
+	outline-offset: -2px;
+}
+
+.tile.att {
+	box-shadow:
+		inset 2px 0 0 var(--attention),
+		0 0 0 1px var(--hairline-strong);
+}
+
+.tile .v {
+	font: 600 var(--text-xl) / 1.2 var(--font-sans);
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+
+.tile .v-error {
+	font: 500 var(--text-sm) / 1.3 var(--font-sans);
+	color: var(--muted);
+}
+
+.tile .v-error .status {
+	white-space: normal;
+}
+
+.tile .d,
+.tile .label {
+	overflow-wrap: anywhere;
+}
+
+.tile .d {
+	color: var(--muted);
+	font-size: var(--text-sm);
+}
+
+.tile .d.att {
+	color: var(--attention);
+}
+
+/* ── Kit: linhas tocáveis (rowItem) ─────────────────────────────── */
+
+.rows {
+	display: grid;
+	overflow: hidden;
+}
+
+.rw {
+	display: grid;
+	grid-template-columns: 2.25rem minmax(0, 1fr) auto auto;
+	gap: 0 0.75rem;
+	align-items: center;
+	min-height: 3.5rem;
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+	color: inherit;
+	text-decoration: none;
+}
+
+.rw:last-child {
+	border-bottom: 0;
+}
+
+a.rw:hover {
+	background: var(--hover);
+}
+
+a.rw:focus-visible {
+	outline-offset: -2px;
+}
+
+.rw[aria-disabled="true"] .tx b {
+	color: var(--muted);
+}
+
+.rw-static {
+	grid-template-columns: 2.25rem minmax(0, 1fr) auto;
+}
+
+.rw .ic {
+	width: 2.25rem;
+	height: 2.25rem;
+	display: grid;
+	place-items: center;
+	border-radius: 0.5rem;
+	background: var(--raised);
+	border: 1px solid var(--hairline-strong);
+	color: var(--fg);
+}
+
+.rw .ic svg {
+	width: 1.125rem;
+	height: 1.125rem;
+}
+
+.rw .lt {
+	font-weight: 700;
+	font-size: 1rem;
+}
+
+.rw .lt[data-kind="grafana"] {
+	color: var(--panel-grafana);
+}
+
+.rw .lt[data-kind="waifuletes"] {
+	color: var(--panel-waifuletes);
+}
+
+.rw .lt[data-kind="jardim"] {
+	color: var(--panel-jardim);
+}
+
+.rw .tx {
+	min-width: 0;
+	display: grid;
+	gap: 1px;
+}
+
+.rw .tx b {
+	font-weight: 600;
+	font-size: var(--text-base);
+}
+
+.rw-sub {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.rw-sub.att {
+	color: var(--attention);
+}
+
+.rw-hint {
+	font-family: var(--font-mono);
+	font-size: var(--text-xs);
+	white-space: normal;
+}
+
+.rw .n {
+	min-width: 1.4rem;
+	padding: 0.0625rem 0.375rem;
+	border: 1px solid var(--attention);
+	border-radius: 999px;
+	background: var(--attention-bg);
+	color: var(--attention);
+	font: 600 var(--text-xs) / 1.3 var(--font-mono);
+	text-align: center;
+}
+
+.rw .chev {
+	width: 1rem;
+	color: var(--faint);
+	font-size: 1.125rem;
+	line-height: 1;
+	text-align: center;
+}
+
+/* ── Visão geral: "Precisa de você" ─────────────────────────────── */
+
+.needs {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+}
+
+.need {
+	display: flex;
+	align-items: stretch;
+	border-bottom: 1px solid var(--hairline);
+}
+
+.need:last-child {
+	border-bottom: 0;
+}
+
+.need-main {
+	flex: 1;
+	min-width: 0;
+	display: grid;
+	grid-template-columns: auto minmax(0, 1fr) auto;
+	gap: 0.625rem;
+	align-items: center;
+	min-height: 3rem;
+	padding: 0.5625rem 0.75rem;
+	color: inherit;
+	text-decoration: none;
+}
+
+.need-main:hover {
+	background: var(--hover);
+}
+
+.need-main:focus-visible,
+.need-ext:focus-visible {
+	outline-offset: -2px;
+}
+
+.need .what {
+	min-width: 0;
+	display: grid;
+	gap: 1px;
+}
+
+.need .what b {
+	font-weight: 600;
+}
+
+.need .what span {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	overflow-wrap: anywhere;
+}
+
+.need .go {
+	color: var(--muted);
+	font-size: var(--text-sm);
+	white-space: nowrap;
+}
+
+.need-ext {
+	display: flex;
+	align-items: center;
+	/* em flex o espaço antes do "↗" some: o vão faz esse papel */
+	gap: 0.25em;
+	padding: 0 0.75rem;
+	border-left: 1px solid var(--hairline);
+	color: var(--muted);
+	font-size: var(--text-sm);
+	text-decoration: none;
+	white-space: nowrap;
+}
+
+.need-ext:hover {
+	background: var(--hover);
+	color: var(--fg);
+}
+
+.needs-empty {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.875rem 0.75rem;
+	color: var(--muted);
+}
+
+/* ── Lâmpadas de estado (glifo + palavra; nunca só a cor) ───────── */
+
+.lamp {
+	width: 0.625rem;
+	height: 0.625rem;
+	flex: none;
+	display: inline-grid;
+	place-items: center;
+	border: 1px solid var(--muted);
+}
+
+.lamp::after {
+	content: "";
+	width: 0.375rem;
+	height: 0.375rem;
+}
+
+.lamp[data-state="ok"] {
+	border-color: var(--ok);
+}
+
+.lamp[data-state="ok"]::after {
+	background: var(--ok);
+}
+
+.lamp[data-state="attention"] {
+	border-color: var(--attention);
+	background: var(--attention);
+}
+
+.lamp[data-state="attention"]::after {
+	width: 2px;
+	height: 2px;
+	background: var(--work);
+}
+
+.lamp[data-state="down"] {
+	border-color: var(--destructive);
+}
+
+.lamp[data-state="down"]::after {
+	width: 0.375rem;
+	height: 1px;
+	background: var(--destructive);
+}
+
+.lamp[data-state="off"] {
+	border-color: var(--faint);
+	border-style: dashed;
+}
+
+.lamp[data-state="busy"]::after {
+	width: 0.25rem;
+	height: 0.25rem;
+	background: var(--fg);
+	animation: lamp-breathe 2.4s ease-in-out infinite alternate;
+}
+
+@keyframes lamp-breathe {
+	to {
+		opacity: 0.3;
+		transform: scale(0.75);
+	}
+}
+
+.state-word[data-state="ok"] {
+	color: var(--ok);
+}
+
+.state-word[data-state="attention"] {
+	color: var(--attention);
+}
+
+.state-word[data-state="down"] {
+	color: var(--destructive);
+}
+
+.state-word[data-state="off"] {
+	color: var(--faint);
+}
+
+.status {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.375rem;
+	font: var(--text-sm) var(--font-mono);
+	white-space: nowrap;
+}
+
+/* ── Kit: tabela que vira cartões (dataTable) ───────────────────── */
+
+.dt-wrap {
+	container-type: inline-size;
+	overflow-x: auto;
+	min-width: 0;
+}
+
+table.dt {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--text-md);
+}
+
+.dt th {
+	text-align: left;
+	font: 500 var(--text-xs) var(--font-mono);
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--faint);
+	background: var(--chrome);
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--hairline-strong);
+	white-space: nowrap;
+}
+
+.dt td {
+	padding: 0.5rem 0.75rem;
+	border-bottom: 1px solid var(--hairline);
+	vertical-align: middle;
+}
+
+.dt tr:last-child td {
+	border-bottom: 0;
+}
+
+.dt tbody tr:hover td {
+	background: var(--raised);
+}
+
+.dt tr.click {
+	cursor: pointer;
+}
+
+.dt tr.undone td {
+	color: var(--faint);
+	text-decoration: line-through;
+}
+
+.dt td.num,
+.dt th.num {
+	text-align: right;
+	font-family: var(--font-mono);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+@container (max-width: 34rem) {
+	.dt thead {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+
+	.dt,
+	.dt tbody,
+	.dt tr,
+	.dt td {
+		display: block;
+	}
+
+	.dt tr {
+		padding: 0.5rem 0.75rem;
+		border-bottom: 1px solid var(--hairline);
+	}
+
+	.dt tr:last-child {
+		border-bottom: 0;
+	}
+
+	.dt td {
+		display: flex;
+		justify-content: space-between;
+		gap: 0.75rem;
+		padding: 0.125rem 0;
+		border: 0;
+		text-align: right;
+	}
+
+	.dt td::before {
+		content: attr(data-label);
+		color: var(--muted);
+		font-size: var(--text-sm);
+		text-align: left;
+	}
+
+	.dt td.primary {
+		display: block;
+		padding-bottom: 0.25rem;
+		font-weight: 600;
+		text-align: left;
+	}
+
+	.dt td.primary::before {
+		content: none;
+	}
+
+	.dt tbody tr:hover td {
+		background: none;
+	}
+}
+
+/* ── Kit: avisos e estados ──────────────────────────────────────── */
+
+.empty {
+	display: grid;
+	gap: 0.25rem;
+	padding: 1rem 0.875rem;
+	color: var(--muted);
+	border: 1px dashed var(--control-border);
+	border-radius: var(--radius-row);
+	background: var(--panel);
+}
+
+.card .empty {
+	border: 0;
+	background: none;
+}
+
+.notice {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-row);
+	background: var(--panel);
+	color: var(--muted);
+}
+
+.notice.error {
+	border-color: var(--destructive);
+	color: var(--fg);
+}
+
+.loading {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--muted);
+}
+
+.spinner {
+	width: 0.75rem;
+	height: 0.75rem;
+	border: 2px solid var(--hairline-strong);
+	border-top-color: var(--fg);
+	border-radius: 50%;
+	animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* Confirmação no próprio lugar do botão. */
+.confirm {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.375rem 0.5rem;
+	border: 1px solid var(--attention);
+	border-radius: var(--radius-row);
+	background: var(--attention-bg);
+	font-size: var(--text-sm);
+	max-width: 100%;
+}
+
+.confirm .q {
+	font-weight: 600;
+}
+
+/* Confirmação com conteúdo (campo): bloco com os botões embaixo, à direita. */
+.confirm-block {
+	display: grid;
+	gap: 0.5rem;
+	width: min(24rem, 100%);
+	text-align: left;
+}
+
+.confirm-block .fld {
+	color: var(--fg);
+}
+
+.confirm-btns {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	justify-content: flex-end;
+}
+
+/* .confirm-bar no pai: a confirmação aberta ocupa a barra e esconde as outras ações. */
+.confirm-bar:has(> .confirm) > :not(.confirm) {
+	display: none;
+}
+
+.confirm-bar > .confirm {
+	flex: 1;
+}
+
+/* Avisos passageiros (toast). */
+.toasts {
+	position: fixed;
+	left: 50%;
+	bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+	transform: translateX(-50%);
+	z-index: 20;
+	display: grid;
+	gap: 0.5rem;
+	width: max-content;
+	max-width: calc(100vw - 2rem);
+	pointer-events: none;
+}
+
+.toast {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.875rem;
+	border-radius: var(--radius-pill);
+	background: var(--fg);
+	color: var(--on-fg);
+	font-size: var(--text-md);
+	box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+	pointer-events: auto;
+	cursor: pointer;
+}
+
+.toast.error {
+	background: var(--destructive);
+	color: var(--work);
+}
+
+/* ── Kit: formulário, busca, link externo ───────────────────────── */
+
+.form {
+	display: grid;
+	gap: 0.625rem;
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 11.25rem), 1fr));
+}
+
+.fld {
+	display: grid;
+	gap: 0.25rem;
+	align-content: start;
+	min-width: 0;
+	font-size: var(--text-sm);
+	color: var(--muted);
+}
+
+.fld.wide,
+.form-actions {
+	grid-column: 1 / -1;
+}
+
+.fld-check {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--fg);
+}
+
+.fld-hint {
+	color: var(--faint);
+	font-size: var(--text-xs);
+}
+
+.fld input:not([type="checkbox"]),
+.fld select,
+.fld textarea,
+.search-box {
+	font: inherit;
+	font-size: var(--text-md);
+	color: var(--fg);
+	background: var(--work);
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	padding: 0.3125rem 0.5rem;
+	min-height: var(--control-h);
+	min-width: 0;
+	width: 100%;
+}
+
+.form-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.search {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	align-items: center;
+}
+
+.search-box {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	min-width: min(100%, 12rem);
+	color: var(--muted);
+}
+
+/* :not() iguala a força do ".fld input:not(...)" quando a busca fica dentro de um campo. */
+.search-box input:not([type="checkbox"]) {
+	align-self: stretch;
+	min-height: 0;
+	width: auto;
+	padding: 0;
+	border-radius: 0;
+	flex: 1;
+	min-width: 0;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--fg);
+	font: inherit;
+}
+
+.search-box:focus-within {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.ext-link .ext,
+.btn .ext {
+	font-size: var(--text-xs);
+}
+
+.is-disabled {
+	color: var(--faint);
+	cursor: default;
+}
+
+.btn.is-disabled {
+	opacity: 1;
+	border-style: dashed;
+}
+
+.ext-hint {
+	font: var(--text-xs) var(--font-mono);
+	color: var(--faint);
+	white-space: normal;
+}
+
+/* Moedas (coinEmblem): alinhadas ao texto. */
+.coin {
+	display: inline-block;
+	vertical-align: -0.2em;
+	flex: none;
+}
+
+/* ── Logs ─────────────────────────────────────────────────────── */
+
+.toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.field {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-height: var(--control-h);
+	padding: 0 0.5rem;
+	border: 1px solid var(--control-border);
+	border-radius: var(--radius-control);
+	background: var(--work);
+	color: var(--muted);
+	min-width: 0;
+}
+
+.field input {
+	align-self: stretch;
+	border: 0;
+	outline: none;
+	background: transparent;
+	color: var(--fg);
+	font: inherit;
+	min-width: 0;
+	width: 15rem;
+	max-width: 100%;
+}
+
+.field:focus-within {
+	outline: 2px solid var(--focus);
+	outline-offset: 1px;
+}
+
+.fld-inline {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	color: var(--muted);
+	font-size: var(--text-sm);
+	min-width: 0;
+}
+
+.log {
+	margin: 0;
+	height: calc(100dvh - 13.75rem);
+	min-height: min(20rem, calc(100dvh - var(--topbar-h)));
+	overflow: auto;
+	padding: 0.625rem 0.75rem;
+	background: var(--chrome);
+	border: 1px solid var(--hairline-strong);
+	border-radius: var(--radius-row);
+	font: var(--text-sm) / 1.55 var(--font-mono);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	color: var(--fg);
+}
+
+.log .err {
+	color: var(--destructive);
+}
+
+.log .warn {
+	color: var(--attention);
+}
+
+/* ── Barra inferior (só no celular) ─────────────────────────────── */
+
+.bottombar {
+	display: none;
+}
+
+/* Mais: o tema fica no fim da linha. */
+.rw-static .seg {
+	justify-self: end;
+}
+
+/*
+ * ── Layout compacto ───────────────────────────────────────────────
+ * Janela estreita (celular em pé, janela lateral) ou baixa (celular deitado: 844×390). Nos dois
+ * casos a barra lateral e as descrições não cabem: entram a barra inferior e a página Mais.
+ * Tablet em pé (768 px ou mais, alto) fica com a barra lateral.
+ */
+
+@media (max-width: 47.5rem), (max-height: 31.25rem) {
+	.topbar {
+		gap: 0.5rem;
+		padding: 0 max(0.5rem, env(safe-area-inset-right, 0px)) 0
+			max(0.5rem, env(safe-area-inset-left, 0px));
+	}
+
+	.topbar-sep,
+	.brand-sub,
+	#topbar-theme {
+		display: none;
+	}
+
+	.topbar-needs,
+	.topbar .btn,
+	.brand {
+		min-height: var(--touch-min);
+		align-items: center;
+	}
+
+	.shell {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.sidebar {
+		display: none;
+	}
+
+	.main {
+		padding: 1rem 1rem 2.5rem;
+	}
+
+	body {
+		padding-bottom: calc(var(--bottombar-h) + env(safe-area-inset-bottom, 0px));
+	}
+
+	.bottombar {
+		position: fixed;
+		inset: auto 0 0;
+		z-index: 6;
+		display: grid;
+		grid-template-columns: repeat(5, minmax(0, 1fr));
+		height: calc(var(--bottombar-h) + env(safe-area-inset-bottom, 0px));
+		padding: 0 env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px)
+			env(safe-area-inset-left, 0px);
+		background: var(--chrome);
+		border-top: 1px solid var(--hairline-strong);
+	}
+
+	.bottom-item {
+		position: relative;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		gap: 0.1875rem;
+		min-width: 0;
+		padding: 0;
+		color: var(--muted);
+		font: 500 0.6875rem / 1 var(--font-sans);
+		text-decoration: none;
+	}
+
+	.bottom-item svg {
+		width: 1.375rem;
+		height: 1.375rem;
+	}
+
+	.bottom-item[aria-current="page"] {
+		color: var(--fg);
+		font-weight: 600;
+		box-shadow: inset 0 2px 0 var(--selected);
+	}
+
+	.bottom-item:focus-visible {
+		outline-offset: -3px;
+	}
+
+	.bottom-text {
+		max-width: 100%;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.bottom-badge {
+		position: absolute;
+		top: 0.375rem;
+		left: calc(50% + 0.375rem);
+		min-width: 1.125rem;
+		height: 1.125rem;
+		padding: 0 0.25rem;
+		border: 1px solid var(--attention);
+		border-radius: 999px;
+		background: var(--chrome);
+		color: var(--attention);
+		font: 600 0.6875rem / 1rem var(--font-mono);
+		text-align: center;
+	}
+
+	/* Título sem a descrição: a primeira tela fica para o conteúdo. */
+	.view-desc {
+		display: none;
+	}
+
+	.view-head {
+		margin-bottom: 0.75rem;
+	}
+
+	.btn,
+	.subnav-tab,
+	.seg button,
+	.seg .seg-link,
+	.field {
+		min-height: var(--touch-min);
+	}
+
+	/* O campo dos Logs ocupa os 44 px da caixa, como o da busca. */
+	.field input {
+		min-height: var(--touch-min);
+		margin-block: -1px;
+	}
+
+	.btn-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.btn:has(.btn-label) {
+		min-width: var(--touch-min);
+	}
+
+	.need-main {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+	}
+
+	.need .go-where {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
+
+	.field {
+		flex: 1 1 10rem;
+	}
+
+	.field input {
+		width: 100%;
+	}
+
+	.fld-inline {
+		flex: 1 1 100%;
+	}
+
+	/* Logs: a página não rola; o log ocupa o resto da tela e só ele rola. */
+	body[data-layout="fill"] {
+		height: 100dvh;
+		overflow: hidden;
+	}
+
+	body[data-layout="fill"] .shell {
+		height: calc(100dvh - var(--topbar-h) - var(--bottombar-h) - env(safe-area-inset-bottom, 0px));
+		min-height: 0;
+	}
+
+	body[data-layout="fill"] .main {
+		display: flex;
+		flex-direction: column;
+		min-height: 0;
+		overflow: hidden;
+		padding-bottom: 0;
+	}
+
+	body[data-layout="fill"] #view-body,
+	body[data-layout="fill"] .view-root {
+		flex: 1;
+		min-height: 0;
+		display: flex;
+		flex-direction: column;
+	}
+
+	body[data-layout="fill"] .view-root {
+		gap: 0.625rem;
+	}
+
+	body[data-layout="fill"] .log {
+		flex: 1;
+		height: auto;
+		min-height: 0;
+		margin-bottom: 0.75rem;
+		overscroll-behavior: contain;
+	}
+}
+
+/* Tela baixa (celular deitado): barra inferior mais fina, ícone ao lado do texto. */
+@media (max-height: 31.25rem) {
+	:root {
+		--bottombar-h: 2.75rem;
+	}
+
+	.bottom-item {
+		flex-direction: row;
+		gap: 0.375rem;
+		font-size: 0.75rem;
+	}
+
+	.bottom-item svg {
+		width: 1.125rem;
+		height: 1.125rem;
+	}
+
+	.bottom-badge {
+		position: static;
+	}
+
+	.view-head {
+		margin-bottom: 0.375rem;
+	}
+}
+
+/* Celular estreito: a linha de "Precisa de você" esconde o destino; o atalho externo desce. */
+@media (max-width: 30rem) {
+	.need {
+		flex-wrap: wrap;
+	}
+
+	.need-ext {
+		flex: 1 1 100%;
+		min-height: var(--touch-min);
+		padding-left: 2.125rem;
+		border-left: 0;
+		border-top: 1px dashed var(--hairline);
+	}
+
+	.rw-static {
+		grid-template-columns: 2.25rem minmax(0, 1fr);
+		row-gap: 0.5rem;
+	}
+
+	.rw-static .seg {
+		grid-column: 2;
+		justify-self: start;
+	}
+}
+
+/* Toque com o menu lateral (tablet): o topo cresce para o tema ter alvos de 44 px. */
+@media (pointer: coarse) and (min-width: 47.5625rem) and (min-height: 31.3125rem) {
+	:root {
+		--topbar-h: 3.5rem;
+	}
+}
+
+/*
+ * Tela de toque em qualquer largura (celular deitado, tablet com barra lateral): alvos de 44 px
+ * e campos com 16 px (o iOS dá zoom ao focar campo menor).
+ */
+@media (pointer: coarse) {
+	input,
+	select,
+	textarea,
+	.field input,
+	.search-box input {
+		font-size: max(16px, 1em);
+	}
+
+	.btn,
+	.subnav-tab,
+	.seg button,
+	.seg .seg-link,
+	.nav-item,
+	.brand,
+	.topbar-needs,
+	.crumbs a,
+	.ext-link,
+	.fld input:not([type="checkbox"]),
+	.fld select,
+	.search-box {
+		min-height: var(--touch-min);
+	}
+
+	/* Links da trilha e de ação são inline: sem isto a altura de toque não pega. */
+	.crumbs a,
+	.ext-link {
+		display: inline-flex;
+		align-items: center;
+	}
+
+	/* Em flex o espaço antes do "↗" some: o vão faz esse papel. */
+	.ext-link {
+		flex-wrap: wrap;
+		column-gap: 0.25em;
+	}
+
+	/* O campo da busca ocupa a caixa toda (44 px), não só os 32 px do meio. */
+	.search-box {
+		padding-block: 0;
+	}
+
+	.search-box input:not([type="checkbox"]) {
+		min-height: var(--touch-min);
+		margin-block: -1px;
+	}
+
+	.field {
+		min-height: var(--touch-min);
+	}
+
+	/* O campo dos Logs ocupa os 44 px da caixa, como o da busca. */
+	.field input {
+		min-height: var(--touch-min);
+		margin-block: -1px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}

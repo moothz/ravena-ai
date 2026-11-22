@@ -94,7 +94,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			card.className = "user-card";
 
 			const platformBadge = u.platform === "whatsapp" ? '<span class="user-badge badge-wa">WhatsApp</span>' : '<span class="user-badge badge-tg">Telegram</span>';
-			const factsBadge = u.facts_count > 0 ? `<span class="user-badge badge-facts">${u.facts_count} fatos IA</span>` : "";
+			const factsBadge = u.facts_count > 0 ? `<span class="user-badge badge-facts">${esc(u.facts_count)} fatos IA</span>` : "";
 
 			card.innerHTML = `
 				<div class="user-card-header">
@@ -134,7 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			let identitiesHtml = "";
 			if (d.identities && d.identities.length > 0) {
 				identidadesHtml = d.identities
-					.map((i) => `<li>[${i.platform}] <strong>${i.id_type}:</strong> <code>${i.platform_id}</code></li>`)
+					.map((i) => `<li>[${esc(i.platform)}] <strong>${esc(i.id_type)}:</strong> <code>${esc(i.platform_id)}</code></li>`)
 					.join("");
 			}
 
@@ -147,7 +147,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				gamesHtml += `
 					<div class="stat-item">
 						<div class="stat-label">🎣 Pesca Ravena</div>
-						<div class="stat-val">${peixes} peixes (${peso} kg)</div>
+						<div class="stat-val">${esc(peixes)} peixes (${peso} kg)</div>
 						<div style="font-size:0.8em; color:#aaa;">Peso acumulado</div>
 					</div>`;
 			}
@@ -155,8 +155,8 @@ document.addEventListener("DOMContentLoaded", () => {
 				gamesHtml += `
 					<div class="stat-item">
 						<div class="stat-label">🎰 Cassino / Slots</div>
-						<div class="stat-val">${g.slots.coins || 0} fichas</div>
-						<div style="font-size:0.8em; color:#aaa;">${g.slots.total_bets || 0} apostas realizadas</div>
+						<div class="stat-val">${esc(g.slots.coins || 0)} fichas</div>
+						<div style="font-size:0.8em; color:#aaa;">${esc(g.slots.total_bets || 0)} apostas realizadas</div>
 					</div>`;
 			}
 			if (g.donation && g.donation.valor > 0) {
@@ -172,8 +172,8 @@ document.addEventListener("DOMContentLoaded", () => {
 				gamesHtml += `
 					<div class="stat-item">
 						<div class="stat-label">💍 Relacionamento</div>
-						<div class="stat-val">${r.tipo} (${r.status})</div>
-						<div style="font-size:0.8em; color:#aaa;">${r.coisas_count || 0} interações</div>
+						<div class="stat-val">${esc(r.tipo)} (${esc(r.status)})</div>
+						<div style="font-size:0.8em; color:#aaa;">${esc(r.coisas_count || 0)} interações</div>
 					</div>`;
 			}
 			gamesHtml += "</div>";
@@ -185,7 +185,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					.map((f) => {
 						const date = f.last_confirmed_at ? new Date(f.last_confirmed_at).toLocaleDateString("pt-BR") : "";
 						return `<div class="fact-pill">
-							<span style="font-size: 0.75em; text-transform: uppercase; color: #b197fc; font-weight: bold;">[${f.category}]</span> 
+							<span style="font-size: 0.75em; text-transform: uppercase; color: #b197fc; font-weight: bold;">[${esc(f.category)}]</span> 
 							${escapeHtml(f.fact_text)} 
 							<span style="float: right; color: #888; font-size: 0.8em;">${date}</span>
 						</div>`;
@@ -199,14 +199,14 @@ document.addEventListener("DOMContentLoaded", () => {
 			let groupsHtml = "";
 			if (d.active_groups && d.active_groups.length > 0) {
 				groupsHtml = d.active_groups
-					.map((ag) => `<li><code>${escapeHtml(ag.target_id)}</code>: <strong>${ag.msgs_count}</strong> mensagens recentes</li>`)
+					.map((ag) => `<li><code>${escapeHtml(ag.target_id)}</code>: <strong>${esc(ag.msgs_count)}</strong> mensagens recentes</li>`)
 					.join("");
 			}
 
 			modalUserBody.innerHTML = `
 				<div class="section-box">
 					<div class="section-title"><i class="fas fa-id-card"></i> Identidades & Vinculações</div>
-					<div style="font-size: 0.9em; margin-bottom: 6px;"><strong>ID Canônico:</strong> <code>${d.canonical_user_id}</code></div>
+					<div style="font-size: 0.9em; margin-bottom: 6px;"><strong>ID Canônico:</strong> <code>${esc(d.canonical_user_id)}</code></div>
 					<ul style="padding-left: 20px; font-size: 0.9em;">
 						${identidadesHtml || "<li>Nenhuma identidade adicional vinculada</li>"}
 					</ul>
@@ -230,7 +230,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				</div>
 			`;
 		} catch (err) {
-			modalUserBody.innerHTML = `<div class="alert alert-danger">Erro ao carregar dossiê: ${err.message}</div>`;
+			modalUserBody.innerHTML = `<div class="alert alert-danger">Erro ao carregar dossiê: ${esc(err.message)}</div>`;
 		}
 	}
 
@@ -261,7 +261,7 @@ document.addEventListener("DOMContentLoaded", () => {
 					<div style="display: flex; align-items: center; gap: 15px; flex: 1;">
 						<span style="font-weight: 500; font-size: 1.1em;">${escapeHtml(g.title || g.group_id)}</span>
 						<span class="group-score ${scoreClass}">Nota Risco: ${score.toFixed(1)}</span>
-						<span style="font-size: 0.85em; color: #888;">${g.dossiers_count || 0} dossiês</span>
+						<span style="font-size: 0.85em; color: #888;">${esc(g.dossiers_count || 0)} dossiês</span>
 					</div>
 					<div class="toggle-icon"><i class="fas fa-chevron-down"></i></div>
 				</div>
@@ -274,6 +274,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 			groupsContainer.appendChild(section);
 		});
+	}
+
+	// Escapa qualquer valor (inclusive número e 0) antes de ir para o innerHTML.
+	function esc(value) {
+		return escapeHtml(value === null || value === undefined ? "" : String(value));
 	}
 
 	function escapeHtml(str) {

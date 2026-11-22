@@ -94,8 +94,19 @@ function setAdminSessionCookie(api, res) {
 	const maxAge = 30 * 24 * 60 * 60; // 30 dias em segundos
 	res.setHeader(
 		"Set-Cookie",
-		`ravena_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax`
+		`ravena_admin_session=${encodeURIComponent(token)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Lax${secureFlag(res)}`
 	);
+}
+
+/**
+ * "; Secure" quando a requisição chegou por HTTPS (req.secure respeita o X-Forwarded-Proto
+ * com trust proxy). Em HTTP puro (desenvolvimento, rede local) o cookie segue sem Secure,
+ * senão o navegador o descartaria.
+ * @param {import("express").Response} res
+ * @returns {string}
+ */
+function secureFlag(res) {
+	return res && res.req && res.req.secure ? "; Secure" : "";
 }
 
 /**
@@ -104,7 +115,10 @@ function setAdminSessionCookie(api, res) {
  */
 function clearAdminSessionCookie(res) {
 	if (!res || res.headersSent) return;
-	res.setHeader("Set-Cookie", "ravena_admin_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax");
+	res.setHeader(
+		"Set-Cookie",
+		`ravena_admin_session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secureFlag(res)}`
+	);
 }
 
 /**
@@ -156,6 +170,10 @@ function createAuthenticateBasic(api) {
 		const { botId } = req.params;
 		let user = api.apiUser;
 		let pass = api.apiPassword;
+
+		// O admin geral (sessão do painel ou usuário da API) gerencia qualquer instância; a
+		// credencial própria da instância continua valendo para quem só tem ela.
+		if (isAdmin(api, req)) return next();
 
 		if (botId) {
 			const bot = api.bots.find((b) => b.id === botId);

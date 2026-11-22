@@ -739,6 +739,105 @@
             transform: translateY(-1px);
         }
 
+        /* Painel da economia (carga do Grafana) */
+        .econ-grid {
+            display: grid;
+            /* min(): no celular a coluna nunca passa da largura do cartão */
+            grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+            gap: 14px;
+        }
+        .econ-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+        .econ-table th,
+        .econ-table td {
+            text-align: left;
+            padding: 6px 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            vertical-align: top;
+        }
+        .econ-table th {
+            color: #94a3b8;
+            font-weight: 600;
+        }
+        .econ-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 11.5px;
+            font-weight: 600;
+            border: 1px solid transparent;
+        }
+        .econ-pill.ok { color: var(--accent-green); background: rgba(16, 185, 129, 0.1); border-color: rgba(16, 185, 129, 0.3); }
+        .econ-pill.warn { color: var(--accent-orange); background: rgba(245, 158, 11, 0.1); border-color: rgba(245, 158, 11, 0.3); }
+        .econ-pill.err { color: var(--accent-red); background: rgba(239, 68, 68, 0.1); border-color: rgba(239, 68, 68, 0.3); }
+        .econ-pill.off { color: #94a3b8; background: rgba(148, 163, 184, 0.08); border-color: rgba(148, 163, 184, 0.25); }
+        .econ-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-top: 12px;
+        }
+        .econ-input {
+            background: var(--card-color);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            outline: none;
+        }
+        .econ-btn {
+            background: var(--card-color);
+            border: 1px solid var(--border-highlight);
+            color: #f1f5f9;
+            padding: 8px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 12.5px;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .econ-btn:hover { background: var(--card-hover); }
+        .econ-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .econ-btn.confirm { border-color: rgba(16, 185, 129, 0.5); color: var(--accent-green); }
+        .econ-btn.discard { border-color: rgba(239, 68, 68, 0.4); color: var(--accent-red); }
+        .econ-muted { font-size: 12px; color: #8b8ea8; margin: 0; }
+        .econ-form { display: grid; gap: 10px; }
+        .econ-form textarea { min-height: 60px; resize: vertical; font-family: inherit; }
+        /* Tela de toque, qualquer largura: alvos de 44 px e campos com 16 px (o iOS dá zoom ao focar
+           campo menor). */
+        @media (pointer: coarse) {
+            .econ-input { font-size: 16px; min-height: 44px; }
+            .econ-btn { min-height: 44px; min-width: 44px; justify-content: center; }
+        }
+        /* As tabelas do cartão olham a largura da própria caixa (container query), não a da tela:
+           numa caixa estreita (celular, ou meia coluna no tablet) cada linha vira um bloco. */
+        #econ-panel-card .rate-box { min-width: 0; container: econbox / inline-size; }
+        @container econbox (max-width: 400px) {
+            .econ-table thead { display: none; }
+            .econ-table, .econ-table tbody, .econ-table tr, .econ-table td { display: block; width: 100%; }
+            .econ-table tr { padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.08); }
+            .econ-table td { border: 0; padding: 2px 0; overflow-wrap: break-word; }
+            .econ-table td[data-label] { display: grid; grid-template-columns: minmax(6.5em, 40%) minmax(0, 1fr); gap: 8px; }
+            .econ-table td[data-label]::before { content: attr(data-label); color: #94a3b8; font-weight: 600; }
+            .econ-table td.econ-title { font-weight: 600; color: #f1f5f9; padding-bottom: 4px; }
+            .econ-table td.econ-actions { display: flex; gap: 10px; padding-top: 8px; white-space: normal !important; }
+        }
+        /* Caixa bem estreita (celular pequeno): rótulo em cima do valor. */
+        @container econbox (max-width: 280px) {
+            .econ-table td[data-label] { grid-template-columns: minmax(0, 1fr); gap: 0; }
+        }
+        @media (max-width: 640px) {
+            .econ-input { max-width: 100%; }
+            .econ-btn { font-size: 14px; }
+            .econ-controls > .econ-input, .econ-form .econ-input { flex: 1 1 100%; }
+        }
+
         /* Toasts Container */
         #bank-toast-container {
             position: fixed;
@@ -1205,6 +1304,64 @@
                 </div>
             </div>
 
+            <!-- Painel da economia (carga do Grafana): estado, agendamento e mudanças -->
+            <div class="config-section" id="econ-panel-card">
+                <h3 style="justify-content: space-between; flex-wrap: wrap;">
+                    <span style="display: inline-flex; align-items: center; gap: 10px;"><i class="fas fa-chart-line" style="color: var(--accent-cyan);"></i> Painel da economia</span>
+                    <span id="econ-state-pill" class="econ-pill off">carregando…</span>
+                </h3>
+                <p class="econ-muted" id="econ-summary">Carga que alimenta o painel da economia no Grafana (analytics.db).</p>
+                <div class="econ-grid" style="margin-top: 14px;">
+                    <div class="rate-box">
+                        <div class="rate-box-header"><span>Estado por fonte</span></div>
+                        <table class="econ-table">
+                            <thead><tr><th>Fonte</th><th>Dados até</th><th>Atraso</th><th>Última tentativa</th></tr></thead>
+                            <tbody id="econ-sources-body"><tr><td colspan="4">—</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="rate-box">
+                        <div class="rate-box-header"><span>Agendamento</span><span class="rate-value-badge" id="econ-schedule-badge">—</span></div>
+                        <p class="econ-muted" id="econ-schedule-detail">—</p>
+                        <div class="econ-controls">
+                            <label class="econ-muted" for="econ-every">A cada</label>
+                            <select id="econ-every" class="econ-input"></select>
+                            <button type="button" class="econ-btn" id="econ-btn-schedule"><i class="fas fa-save"></i> Salvar intervalo</button>
+                        </div>
+                        <div class="econ-controls">
+                            <button type="button" class="econ-btn" id="econ-btn-pause"><i class="fas fa-pause"></i> Pausar</button>
+                            <button type="button" class="econ-btn" id="econ-btn-run"><i class="fas fa-play"></i> Rodar agora</button>
+                            <button type="button" class="econ-btn" id="econ-btn-refresh" title="Atualizar"><i class="fas fa-sync-alt"></i></button>
+                        </div>
+                    </div>
+                </div>
+                <div class="econ-grid" style="margin-top: 14px;">
+                    <div class="rate-box">
+                        <div class="rate-box-header"><span>Possíveis mudanças (detectadas nos dados)</span><span class="rate-value-badge" id="econ-possible-count">0</span></div>
+                        <table class="econ-table">
+                            <thead><tr><th>Dia</th><th>Moeda</th><th>O que</th><th></th></tr></thead>
+                            <tbody id="econ-possible-body"><tr><td colspan="4">—</td></tr></tbody>
+                        </table>
+                    </div>
+                    <div class="rate-box">
+                        <div class="rate-box-header"><span>Registrar mudança</span></div>
+                        <form id="econ-annotation-form" class="econ-form" autocomplete="off">
+                            <textarea id="econ-ann-text" class="econ-input" maxlength="300" placeholder="O que mudou e por quê (ex.: prêmio do evento dobrado)" required></textarea>
+                            <div class="econ-controls" style="margin-top: 0;">
+                                <select id="econ-ann-currency" class="econ-input">
+                                    <option value="todas">Todas as moedas</option>
+                                    <option value="zinthos">Zinthos</option>
+                                    <option value="petalitas">Petalitas</option>
+                                    <option value="runas">Runas</option>
+                                </select>
+                                <input type="datetime-local" id="econ-ann-when" class="econ-input" title="Hora em que passou a valer (vazio = agora)">
+                                <button type="submit" class="econ-btn confirm"><i class="fas fa-plus"></i> Registrar</button>
+                            </div>
+                            <p class="econ-muted">Hora vazia = agora. Use a hora do deploy ou da execução do script; constantes expostas pelos serviços já entram sozinhas.</p>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
             <!-- Manual Rates Action -->
             <div class="config-section" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;">
                 <div>
@@ -1243,6 +1400,6 @@
     <!-- Toast Notifications Container -->
     <div id="bank-toast-container"></div>
 
-    <script src="/banco-admin.js?v=20261110_1"></script>
+    <script src="/banco-admin.js?v=20261120_1"></script>
 </body>
 </html>

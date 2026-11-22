@@ -33,35 +33,17 @@ const waifuApi = axios.create({
 	timeout: 8000
 });
 
-// Constantes econômicas base (1.000 Runas = 800 kg = 3.500 Z = 8.000 Ptl)
-const BASE_RUNAS_PER_KG_FISH = 1000 / 800; // 1.25 Runas / kg
-const BASE_RUNAS_PER_ZINTHOS = 1000 / 3500; // ~0.2857 Runas / Zinthos
-const BASE_RUNAS_PER_JARDIM = 1000 / 8000; // 0.125 Runas / Petalita (Ptl)
-
-// Cotas diárias de economia: venda para ganhar Runas (300k/dia unificado) e caminho inverso para jogos (base 500k Zinthos, 300k Petalitas, 300 moedas, 200 iscas)
-const DAILY_LIMITS = {
-	venda_runas: 300000, // 300.000 ᚱ/dia (limite unificado para ganhar Runas vendendo peixes, zinthos ou petalitas)
-	compra_zinthos: 500000, // Base de 500.000 Zinthos/dia (progressivo diário com inflação, inicia ~600k)
-	compra_jardim: 300000, // Base de 300.000 Petalitas/dia (progressivo diário com inflação, inicia ~320k)
-	compra_moedas: 300, // 300 moedas/dia no SlotsGame
-	compra_iscas: 200, // 200 iscas/dia no FishingGame
-	// Legado para compatibilidade:
-	pesca: 300000,
-	zinthos: 500000,
-	jardim: 300000,
-	compra: 300000
-};
-
-// Configurações da Loja do RavenaBank (compra de consumíveis com Runas)
-const STORE_PRICES = {
-	moeda: 55, // 55 Runas por moedinha de Slots
-	isca: 45 // 45 Runas por isca de Pesca
-};
-
-const STORE_LIMITS = {
-	dailySlotsCoins: 300, // Limite diário de 300 moedas compradas
-	dailyFishingBaits: 200 // Limite diário de 200 iscas compradas
-};
+// Parâmetros de balanceamento (câmbio, cotas, loja): ficam em economyConstants.js, lido também pela
+// carga do painel da economia para registrar mudanças sozinha
+const {
+	BASE_RUNAS_PER_KG_FISH,
+	BASE_RUNAS_PER_ZINTHOS,
+	BASE_RUNAS_PER_JARDIM,
+	DAILY_LIMITS,
+	STORE_PRICES,
+	STORE_LIMITS,
+	economyParams
+} = require("./economyConstants");
 
 // Duração da sessão web (3 dias em milissegundos)
 const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
@@ -91,6 +73,11 @@ class BankService {
 		this.STORE_LIMITS = STORE_LIMITS;
 		this._initDatabase();
 		this._setupCron();
+	}
+
+	/** Parâmetros de balanceamento das Runas (economyConstants.js), só leitura. */
+	getEconomyParams() {
+		return economyParams();
 	}
 
 	_initDatabase() {
@@ -2232,7 +2219,93 @@ class BankService {
 
 		const now = Date.now();
 		const g = String(tx.game).toLowerCase().trim();
+		const undoneBy = isAdmin ? `admin:${adminUser}` : `user:${cleanUser}`;
 
+		// 0. Trava atômica: marca a transação como desfeita só se ainda não estava. Dois pedidos
+		// simultâneos passam pela leitura acima, mas só um consegue esta linha (changes = 1); o
+		// outro para aqui, antes de reverter qualquer coisa.
+		const claim = await database.dbRun(
+			dbName,
+			`UPDATE bank_transactions SET 
+				status = 'UNDONE', 
+				undone_at = ?, 
+				undone_by = ?, 
+				undo_fee_runas = ?, 
+				undo_final_runas = ? 
+			WHERE id = ? AND (status IS NULL OR status <> 'UNDONE')`,
+			[now, undoneBy, spreadFeeRunas, finalRunas, txId]
+		);
+		if (!claim || claim.changes !== 1) {
+			throw new Error(`A transação #${txId} já foi desfeita anteriormente.`);
+		}
+
+		try {
+			await this._revertUndoEffects(tx, { g, cleanUser, finalRunas, now });
+		} catch (err) {
+			// A reversão falhou (ex.: Waifuletes fora): solta a trava para poder tentar de novo.
+			await database
+				.dbRun(
+					dbName,
+					`UPDATE bank_transactions SET 
+						status = ?, undone_at = NULL, undone_by = NULL, undo_fee_runas = NULL, undo_final_runas = NULL 
+					WHERE id = ? AND status = 'UNDONE' AND undone_at = ?`,
+					[tx.status || "COMPLETED", txId, now]
+				)
+				.catch((e) =>
+					logger.error(`[RavenaBank] Falha ao soltar a trava do desfazer #${txId}: ${e.message}`)
+				);
+			throw err;
+		}
+
+		// 5. Registra transação de auditoria
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_transactions 
+			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
+			VALUES (?, 'UNDO_TRADE', ?, ?, ?, ?, ?, ?, ?, 'COMPLETED')`,
+			[
+				cleanUser,
+				tx.game,
+				tx.game_amount,
+				finalRunas,
+				SPREAD_FEE_RATE,
+				spreadFeeRunas,
+				JSON.stringify({
+					originalTxId: tx.id,
+					originalType: tx.type,
+					undoneBy,
+					spreadFeeRunas,
+					finalRunas,
+					timestamp: now
+				}),
+				now
+			]
+		);
+
+		logger.info(
+			`[RavenaBank] Transação #${txId} (${tx.type} ${tx.game}) desfeita com sucesso por ${undoneBy}. Final Runas: ${finalRunas} (spread fee: ${spreadFeeRunas})`
+		);
+
+		const updatedAccount = await this.getAccount(cleanUser);
+		return {
+			transactionId: txId,
+			undone: true,
+			undoneBy,
+			originalType: tx.type,
+			game: tx.game,
+			gameAmount: tx.game_amount,
+			spreadFeeRunas,
+			finalRunas,
+			newBalance: updatedAccount.runas
+		};
+	}
+
+	/**
+	 * Passos 1 a 3 do undoTransaction (ativos no jogo, Runas na conta, cota do dia), já com a
+	 * transação travada como desfeita. Lança Error se algum serviço recusar.
+	 */
+	async _revertUndoEffects(tx, { g, cleanUser, finalRunas, now }) {
+		const txId = tx.id;
 		// 1. Reversão dos ativos nos respectivos jogos
 		if (g === "waifu" || g === "zinthos" || g === "waifus") {
 			const amount = Math.floor(tx.game_amount);
@@ -2432,62 +2505,6 @@ class BankService {
 				}
 			}
 		}
-
-		// 4. Marca a transação original como desfeita
-		const undoneBy = isAdmin ? `admin:${adminUser}` : `user:${cleanUser}`;
-		await database.dbRun(
-			dbName,
-			`UPDATE bank_transactions SET 
-				status = 'UNDONE', 
-				undone_at = ?, 
-				undone_by = ?, 
-				undo_fee_runas = ?, 
-				undo_final_runas = ? 
-			WHERE id = ?`,
-			[now, undoneBy, spreadFeeRunas, finalRunas, txId]
-		);
-
-		// 5. Registra transação de auditoria
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_transactions 
-			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
-			VALUES (?, 'UNDO_TRADE', ?, ?, ?, ?, ?, ?, ?, 'COMPLETED')`,
-			[
-				cleanUser,
-				tx.game,
-				tx.game_amount,
-				finalRunas,
-				SPREAD_FEE_RATE,
-				spreadFeeRunas,
-				JSON.stringify({
-					originalTxId: tx.id,
-					originalType: tx.type,
-					undoneBy,
-					spreadFeeRunas,
-					finalRunas,
-					timestamp: now
-				}),
-				now
-			]
-		);
-
-		logger.info(
-			`[RavenaBank] Transação #${txId} (${tx.type} ${tx.game}) desfeita com sucesso por ${undoneBy}. Final Runas: ${finalRunas} (spread fee: ${spreadFeeRunas})`
-		);
-
-		const updatedAccount = await this.getAccount(cleanUser);
-		return {
-			transactionId: txId,
-			undone: true,
-			undoneBy,
-			originalType: tx.type,
-			game: tx.game,
-			gameAmount: tx.game_amount,
-			spreadFeeRunas,
-			finalRunas,
-			newBalance: updatedAccount.runas
-		};
 	}
 
 	/**

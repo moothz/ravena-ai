@@ -508,8 +508,10 @@ function registerServicesRoutes(api) {
 
 			res.json({ status: "ok", message: "Configuration saved successfully" });
 		} catch (error) {
-			api.logger.error("Error saving service providers via API:", error);
-			res.status(500).json({ status: "error", message: error.message });
+			// 409: o arquivo atual está com erro (gravar apagaria o conteúdo); 400: corpo inválido
+			const status = error.statusCode === 409 || error.statusCode === 400 ? error.statusCode : 500;
+			if (status === 500) api.logger.error("Error saving service providers via API:", error);
+			res.status(status).json({ status: "error", message: error.message });
 		}
 	});
 

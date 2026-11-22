@@ -25,6 +25,10 @@ const {
 } = require("./BotAPI/middleware/auth");
 const { createRateLimiters } = require("./BotAPI/middleware/rateLimiters");
 const {
+	createFrameAncestorsGuard,
+	createSameOriginGuard
+} = require("./BotAPI/middleware/security");
+const {
 	upload,
 	uploadNsfw,
 	uploadsDir,
@@ -54,6 +58,8 @@ const { registerWebhooksRoutes } = require("./BotAPI/routes/webhooksRoutes");
 const { registerFeaturesRoutes } = require("./BotAPI/routes/featuresRoutes");
 const { registerGamesRoutes } = require("./BotAPI/routes/gamesRoutes");
 const registerEventsRoutes = require("./BotAPI/routes/eventsRoutes");
+const { registerEconomyRoutes } = require("./BotAPI/routes/economyRoutes");
+const { registerAdminRoutes } = require("./BotAPI/routes/adminRoutes");
 
 /**
  * Servidor API para o ecossistema do bot WhatsApp Ravena
@@ -61,6 +67,7 @@ const registerEventsRoutes = require("./BotAPI/routes/eventsRoutes");
  * Arquitetura Modular:
  * - src/BotAPI/middleware/auth.js: Autenticação de admin, sessão via cookie, Basic Auth e UPS Secret
  * - src/BotAPI/middleware/rateLimiters.js: Limitadores de taxa geral e restrito
+ * - src/BotAPI/middleware/security.js: frame-ancestors e checagem de origem nas escritas
  * - src/BotAPI/middleware/upload.js: Configuração de upload via Multer (geral e fotos NSFW)
  * - src/BotAPI/services/analyticsHelper.js: Agregação analítica, estatísticas e cache de comandos
  * - src/BotAPI/services/webhookManager.js: Servidor de webhooks de grupos e fila de bufferização
@@ -71,6 +78,8 @@ const registerEventsRoutes = require("./BotAPI/routes/eventsRoutes");
  * - src/BotAPI/routes/webhooksRoutes.js: Webhooks de doação (Tipa.ai), telemetria UPS e Copa
  * - src/BotAPI/routes/featuresRoutes.js: Jogos e coleções (Pesca, Waifuletes e API de Analytics)
  * - src/BotAPI/routes/gamesRoutes.js: Integração de minigames com serviços externos (webhook de colheita do Jardim)
+ * - src/BotAPI/routes/economyRoutes.js: Admin da carga do painel da economia (estado, agendamento, anotações)
+ * - src/BotAPI/routes/adminRoutes.js: Apoio do painel /admin (links dos outros painéis)
  */
 class BotAPI {
 	/**
@@ -102,6 +111,23 @@ class BotAPI {
 			})
 		);
 
+		// Só a própria origem pode pôr as páginas da Ravena num iframe
+		this.app.use(createFrameAncestorsGuard());
+
+		// Escritas com credencial de admin só da própria origem (CSRF). Webhooks e chamadas
+		// servidor a servidor não mandam Origin/Sec-Fetch-Site e passam como antes.
+		this.app.use(
+			createSameOriginGuard({
+				hasCredentials: (req) =>
+					Boolean(
+						getCookie(req, "ravena_admin_session") ||
+						req.headers.authorization ||
+						(req.query && req.query.auth)
+					),
+				logger: this.logger
+			})
+		);
+
 		// Injeta referência do botApi nos bots
 		this.bots.forEach((bot) => {
 			bot.botApi = this;
@@ -123,7 +149,10 @@ class BotAPI {
 		this.upsApiSecret = process.env.UPS_API_SECRET ?? false;
 
 		// Middlewares de rate limiting e upload
-		const { generalLimiter, strictLimiter } = createRateLimiters();
+		// O strictLimiter não conta requisições de admin autenticado (ver rateLimiters.js)
+		const { generalLimiter, strictLimiter } = createRateLimiters({
+			isAdmin: (req) => isAdmin(this, req)
+		});
 		this.generalLimiter = generalLimiter;
 		this.strictLimiter = strictLimiter;
 
@@ -232,6 +261,7 @@ class BotAPI {
 	 *    - GET  /                                  -> Homepage Desktop OS (redireciona/serve UI)
 	 *    - GET  /os, /os/*                         -> Interface Desktop OS
 	 *    - GET  /classic, /legado                  -> Dashboard clássico/legado
+	 *    - GET  /admin, /admin.html                -> Painel de admin unificado (experimental)
 	 *    - GET  /dashboard, /dashboard.html        -> Redirecionamento para /instances
 	 *    - GET  /logout                            -> Limpeza de cookie de sessão de admin
 	 *    - GET  /health                            -> Verificação de saúde em tempo real (RAM)
@@ -346,6 +376,8 @@ class BotAPI {
 		registerFeaturesRoutes(this);
 		registerGamesRoutes(this);
 		registerEventsRoutes(this);
+		registerEconomyRoutes(this);
+		registerAdminRoutes(this);
 
 		// Middleware global de tratamento de erros para rotas da API
 		this.app.use((err, req, res, next) => {

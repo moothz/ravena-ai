@@ -90,7 +90,7 @@ document.addEventListener("DOMContentLoaded", () => {
 				: type === "error"
 					? "fa-exclamation-triangle"
 					: "fa-info-circle";
-		toast.innerHTML = `<i class="fas ${iconClass}"></i><span>${message}</span>`;
+		toast.innerHTML = `<i class="fas ${iconClass}"></i><span>${esc(message)}</span>`;
 
 		toastContainer.appendChild(toast);
 		// Animação de entrada
@@ -395,14 +395,14 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="bot-header-main">
                     <span class="bot-title">
                         ${platformIcon}
-                        <span>${bot.nomeExibir || bot.nome}</span>
-                        ${bot.nomeExibir && bot.nomeExibir !== bot.nome ? `<small style="font-size:0.75rem; color:var(--text-muted);">(${bot.nome})</small>` : ""}
+                        <span>${esc(bot.nomeExibir || bot.nome)}</span>
+                        ${bot.nomeExibir && bot.nomeExibir !== bot.nome ? `<small style="font-size:0.75rem; color:var(--text-muted);">(${esc(bot.nome)})</small>` : ""}
                     </span>
                     ${statusBadge}
                     ${bot.privado ? '<span class="badge badge-private"><i class="fas fa-lock"></i> Privada</span>' : ""}
                     ${bot.vip ? '<span class="badge badge-vip"><i class="fas fa-gem"></i> VIP</span>' : ""}
                     ${bot.comunitario ? '<span class="badge badge-community"><i class="fas fa-hands-helping"></i> Comunitária</span>' : ""}
-                    <span class="badge badge-platform">${platform}</span>
+                    <span class="badge badge-platform">${esc(platform)}</span>
                     <span class="badge badge-stat" title="Mensagens por hora"><i class="fas fa-envelope"></i> ${msgsHr} msgs/h</span>
                     <span class="badge badge-stat" title="Grupos conectados"><i class="fas fa-users"></i> ${groupsCount} grupos</span>
                     ${avgDelay > 0 ? `<span class="badge badge-stat" title="Delay médio de resposta">⚡ ${avgDelay.toFixed(1)}s</span>` : ""}
@@ -433,33 +433,33 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Identificador Único (nome) *</label>
-                            <input type="text" class="form-control field-nome" value="${bot.nome || ""}" placeholder="ex: ravena1" ${bot.isNew ? "" : "readonly"}>
+                            <input type="text" class="form-control field-nome" value="${esc(bot.nome || "")}" placeholder="ex: ravena1" ${bot.isNew ? "" : "readonly"}>
                             <div class="field-hint">Nome único da instância no bots.json (não editável após criada).</div>
                         </div>
                         <div class="form-group">
                             <label>Nome de Exibição (nomeExibir)</label>
-                            <input type="text" class="form-control field-nome-exibir" value="${bot.nomeExibir || ""}" placeholder="ex: Ravena VIP">
+                            <input type="text" class="form-control field-nome-exibir" value="${esc(bot.nomeExibir || "")}" placeholder="ex: Ravena VIP">
                             <div class="field-hint">Nome amigável exibido nas saudações e menus.</div>
                         </div>
                         <div class="form-group">
                             <label>Número de Telefone (numero)</label>
-                            <input type="text" class="form-control field-numero" value="${bot.numero || ""}" placeholder="ex: 5511999999999">
+                            <input type="text" class="form-control field-numero" value="${esc(bot.numero || "")}" placeholder="ex: 5511999999999">
                             <div class="field-hint">Número internacional do WhatsApp sem símbolos.</div>
                         </div>
                         <div class="form-group">
                             <label>Prefixo Customizado (customPrefix)</label>
-                            <input type="text" class="form-control field-custom-prefix" value="${bot.customPrefix || "!"}" placeholder="ex: ! ou /" maxlength="3">
+                            <input type="text" class="form-control field-custom-prefix" value="${esc(bot.customPrefix || "!")}" placeholder="ex: ! ou /" maxlength="3">
                             <div class="field-hint">Símbolo que aciona comandos nesta instância.</div>
                         </div>
                         <div class="form-group">
                             <label>Usuário do Painel (managementUser)</label>
-                            <input type="text" class="form-control field-mgmt-user" value="${bot.managementUser || ""}" placeholder="ex: admin">
+                            <input type="text" class="form-control field-mgmt-user" value="${esc(bot.managementUser || "")}" placeholder="ex: admin">
                             <div class="field-hint">Usuário para acesso administrativo a /manage.</div>
                         </div>
                         <div class="form-group">
                             <label>Senha do Painel (managementPW)</label>
                             <div class="input-with-actions">
-                                <input type="password" class="form-control field-mgmt-pw" value="${bot.managementPW || ""}" placeholder="Senha de acesso">
+                                <input type="password" class="form-control field-mgmt-pw" value="${esc(bot.managementPW || "")}" placeholder="Senha de acesso">
                                 <button type="button" class="btn btn-secondary btn-sm btn-toggle-pw" title="Mostrar/Ocultar"><i class="fas fa-eye"></i></button>
                                 <button type="button" class="btn btn-secondary btn-sm btn-gen-pw" title="Gerar Senha Segura"><i class="fas fa-dice"></i></button>
                             </div>
@@ -601,12 +601,12 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Data de Nascimento / Criação (dataNascimento)</label>
-                            <input type="text" class="form-control field-data-nascimento" value="${bot.dataNascimento || ""}" placeholder="ex: 15/01/2023 ou 2023-01-15">
+                            <input type="text" class="form-control field-data-nascimento" value="${esc(bot.dataNascimento || "")}" placeholder="ex: 15/01/2023 ou 2023-01-15">
                             <div class="field-hint">Data em que a botinha entrou em operação (opcional).</div>
                         </div>
                         <div class="form-group">
                             <label>Data de Falecimento / Ban (dataMorte)</label>
-                            <input type="text" class="form-control field-data-morte" value="${bot.dataMorte || ""}" placeholder="ex: 20/11/2026 ou 2026-11-20">
+                            <input type="text" class="form-control field-data-morte" value="${esc(bot.dataMorte || "")}" placeholder="ex: 20/11/2026 ou 2026-11-20">
                             <div class="field-hint">Data em que a botinha foi banida (opcional).</div>
                         </div>
                     </div>
@@ -618,17 +618,17 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-grid">
                         <div class="form-group" style="grid-column: 1 / -1;">
                             <label>Personalidade da IA (aiPersonality)</label>
-                            <textarea class="form-control field-ai-personality" placeholder="Defina a personalidade customizada desta Ravena (ex: bem-humorada, debochada, formal, etc.)...">${bot.aiPersonality || ""}</textarea>
+                            <textarea class="form-control field-ai-personality" placeholder="Defina a personalidade customizada desta Ravena (ex: bem-humorada, debochada, formal, etc.)...">${esc(bot.aiPersonality || "")}</textarea>
                             <div class="field-hint">Injetada como contexto de sistema em comandos de IA para este bot.</div>
                         </div>
                         <div class="form-group">
                             <label>Mensagem de Suporte (msgSuporte)</label>
-                            <textarea class="form-control field-msg-suporte" placeholder="Mensagem padrão enviada ao pedir suporte...">${bot.msgSuporte || bot.supportMsg || ""}</textarea>
+                            <textarea class="form-control field-msg-suporte" placeholder="Mensagem padrão enviada ao pedir suporte...">${esc(bot.msgSuporte || bot.supportMsg || "")}</textarea>
                             <div class="field-hint">Texto explicativo de contato para suporte com o administrador.</div>
                         </div>
                         <div class="form-group">
                             <label>Número do Responsável (numeroResponsavel)</label>
-                            <input type="text" class="form-control field-numero-responsavel" value="${bot.numeroResponsavel || ""}" placeholder="ex: 5511999998888">
+                            <input type="text" class="form-control field-numero-responsavel" value="${esc(bot.numeroResponsavel || "")}" placeholder="ex: 5511999998888">
                             <div class="field-hint">Contato do ADM ou dono desta ravena comunitária.</div>
                         </div>
                     </div>
@@ -640,27 +640,27 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-grid-3">
                         <div class="form-group">
                             <label>Grupo de Logs (grupoLogs)</label>
-                            <input type="text" class="form-control field-grupo-logs" value="${bot.grupoLogs || ""}" placeholder="ex: 1203634...@g.us">
+                            <input type="text" class="form-control field-grupo-logs" value="${esc(bot.grupoLogs || "")}" placeholder="ex: 1203634...@g.us">
                             <div class="field-hint">JID do grupo para envio de logs.</div>
                         </div>
                         <div class="form-group">
                             <label>Grupo de Avisos (grupoAvisos)</label>
-                            <input type="text" class="form-control field-grupo-avisos" value="${bot.grupoAvisos || ""}" placeholder="ex: 1203634...@g.us">
+                            <input type="text" class="form-control field-grupo-avisos" value="${esc(bot.grupoAvisos || "")}" placeholder="ex: 1203634...@g.us">
                             <div class="field-hint">JID do grupo para comunicados.</div>
                         </div>
                         <div class="form-group">
                             <label>Grupo de Convites (grupoInvites)</label>
-                            <input type="text" class="form-control field-grupo-invites" value="${bot.grupoInvites || ""}" placeholder="ex: 1203634...@g.us">
+                            <input type="text" class="form-control field-grupo-invites" value="${esc(bot.grupoInvites || "")}" placeholder="ex: 1203634...@g.us">
                             <div class="field-hint">JID do grupo de triagem de convites.</div>
                         </div>
                         <div class="form-group">
                             <label>Grupo de Dossiês (dossieGroups)</label>
-                            <input type="text" class="form-control field-dossie-groups" value="${bot.dossieGroups || ""}" placeholder="ex: 1203634...@g.us">
+                            <input type="text" class="form-control field-dossie-groups" value="${esc(bot.dossieGroups || "")}" placeholder="ex: 1203634...@g.us">
                             <div class="field-hint">JID para envio de dossiês automáticos.</div>
                         </div>
                         <div class="form-group">
                             <label>Porta Webhook (webhookPort)</label>
-                            <input type="number" class="form-control field-webhook-port" value="${bot.webhookPort || ""}" placeholder="ex: 6200">
+                            <input type="number" class="form-control field-webhook-port" value="${esc(bot.webhookPort || "")}" placeholder="ex: 6200">
                             <div class="field-hint">Porta HTTP para eventos do Whatsmeow Go.</div>
                         </div>
                     </div>
@@ -674,7 +674,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <label>Rate Limit de Envio (ratelimit)</label>
                             <input type="number"
                                    class="form-control field-ratelimit"
-                                   value="${bot.ratelimit !== undefined && bot.ratelimit !== null ? bot.ratelimit : 0}"
+                                   value="${esc(bot.ratelimit !== undefined && bot.ratelimit !== null ? bot.ratelimit : 0)}"
                                    min="0" max="600" step="1"
                                    placeholder="0 = desabilitado">
                             <div class="field-hint">
@@ -688,7 +688,7 @@ document.addEventListener("DOMContentLoaded", () => {
                             <label>Delay Orgânico Mínimo (delayMin - s)</label>
                             <input type="number"
                                    class="form-control field-delay-min"
-                                   value="${bot.delayMin !== undefined && bot.delayMin !== null ? bot.delayMin : 0}"
+                                   value="${esc(bot.delayMin !== undefined && bot.delayMin !== null ? bot.delayMin : 0)}"
                                    min="0" max="5" step="0.5"
                                    placeholder="0 = sem delay mínimo">
                             <div class="field-hint">Atraso mínimo em segundos antes de enviar cada mensagem.</div>
@@ -697,14 +697,14 @@ document.addEventListener("DOMContentLoaded", () => {
                             <label>Delay Orgânico Máximo (delayMax - s)</label>
                             <input type="number"
                                    class="form-control field-delay-max"
-                                   value="${bot.delayMax !== undefined && bot.delayMax !== null ? bot.delayMax : (bot.privado ? 0 : 2)}"
+                                   value="${esc(bot.delayMax !== undefined && bot.delayMax !== null ? bot.delayMax : (bot.privado ? 0 : 2))}"
                                    min="0" max="5" step="0.5"
                                    placeholder="0 = sem delay máximo">
                             <div class="field-hint">Atraso máximo em segundos. Gera atraso aleatório entre min e max. ${bot.privado ? '<br><span style="color: var(--status-green);">✓ Bot privado — delay orgânico zerado por padrão.</span>' : ""}</div>
                         </div>
                         <div class="form-group">
                             <label>Intervalo de Limpeza de Mensagens (deleteMessagesInterval)</label>
-                            <input type="text" class="form-control field-delete-messages-interval" value="${bot.deleteMessagesInterval !== undefined ? bot.deleteMessagesInterval : "false"}" placeholder="false ou número de dias (ex: 3 ou 7)">
+                            <input type="text" class="form-control field-delete-messages-interval" value="${esc(bot.deleteMessagesInterval !== undefined ? bot.deleteMessagesInterval : "false")}" placeholder="false ou número de dias (ex: 3 ou 7)">
                             <div class="field-hint">false = nunca apaga; 3 = apaga a cada 3 dias; 7 = semanalmente às 03:30 AM via ClearChat.</div>
                         </div>
                     </div>
@@ -716,19 +716,19 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-grid">
                         <div class="form-group">
                             <label>Token do Bot (telegramBotToken)</label>
-                            <input type="password" class="form-control field-telegram-token" value="${bot.telegramBotToken || ""}" placeholder="Token do BotFather">
+                            <input type="password" class="form-control field-telegram-token" value="${esc(bot.telegramBotToken || "")}" placeholder="Token do BotFather">
                         </div>
                         <div class="form-group">
                             <label>Nome do Bot (telegramBotName)</label>
-                            <input type="text" class="form-control field-telegram-name" value="${bot.telegramBotName || ""}" placeholder="ex: ravenosabot">
+                            <input type="text" class="form-control field-telegram-name" value="${esc(bot.telegramBotName || "")}" placeholder="ex: ravenosabot">
                         </div>
                         <div class="form-group">
                             <label>ID do Bot Telegram (telegramBotId)</label>
-                            <input type="text" class="form-control field-telegram-bot-id" value="${bot.telegramBotId || ""}" placeholder="ex: 8402791288">
+                            <input type="text" class="form-control field-telegram-bot-id" value="${esc(bot.telegramBotId || "")}" placeholder="ex: 8402791288">
                         </div>
                         <div class="form-group">
                             <label>Webhook Host (webhookHost)</label>
-                            <input type="text" class="form-control field-webhook-host" value="${bot.webhookHost || ""}" placeholder="ex: rav-telegram.moothz.com">
+                            <input type="text" class="form-control field-webhook-host" value="${esc(bot.webhookHost || "")}" placeholder="ex: rav-telegram.moothz.com">
                         </div>
                     </div>
                 </div>
@@ -739,7 +739,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-grid">
                         <div class="form-group" style="grid-column: 1 / -1;">
                             <label>Token do Bot Discord (discordToken)</label>
-                            <input type="password" class="form-control field-discord-token" value="${bot.discordToken || ""}" placeholder="Token da aplicação no Discord Developer Portal">
+                            <input type="password" class="form-control field-discord-token" value="${esc(bot.discordToken || "")}" placeholder="Token da aplicação no Discord Developer Portal">
                         </div>
                     </div>
                 </div>
@@ -749,7 +749,7 @@ document.addEventListener("DOMContentLoaded", () => {
                     <div class="form-section-title">
                         <span><i class="fas fa-cubes"></i> Parâmetros Extras (3 Níveis: extras &rarr; categoria &rarr; propriedade)</span>
                     </div>
-                    <div class="extras-container" id="extras-container-${bot.nome}">
+                    <div class="extras-container" id="extras-container-${esc(bot.nome)}">
                         <!-- Categorias de extras renderizadas aqui -->
                     </div>
                     <div class="extras-actions-bar">
@@ -771,7 +771,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${
 													platform === "WhatsApp"
 														? `
-                            <a href="/qrcode/${bot.nome}" target="_blank" class="btn btn-secondary">
+                            <a href="/qrcode/${esc(bot.nome)}" target="_blank" class="btn btn-secondary">
                                 <i class="fas fa-qrcode"></i> QRCode / Reconectar
                             </a>
                         `
@@ -780,7 +780,7 @@ document.addEventListener("DOMContentLoaded", () => {
                         ${
 													rawPhone
 														? `
-                            <a href="${chatUrl}" target="_blank" class="btn btn-secondary">
+                            <a href="${esc(chatUrl)}" target="_blank" class="btn btn-secondary">
                                 <i class="fas fa-comment-dots"></i> Abrir Conversa
                             </a>
                         `
@@ -973,7 +973,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
 			catCard.innerHTML = `
                 <div class="extras-cat-header">
-                    <span class="extras-cat-title"><i class="fas fa-folder-open"></i> ${catKey}</span>
+                    <span class="extras-cat-title"><i class="fas fa-folder-open"></i> ${esc(catKey)}</span>
                     <div style="display:flex; gap:6px;">
                         <button type="button" class="btn btn-secondary btn-sm btn-add-prop" title="Adicionar Propriedade"><i class="fas fa-plus"></i> Propriedade</button>
                         <button type="button" class="btn btn-danger-outline btn-sm btn-del-cat" title="Remover Categoria"><i class="fas fa-trash"></i></button>
@@ -1043,7 +1043,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		else if (typeof propVal === "boolean") detectedType = "boolean";
 
 		row.innerHTML = `
-            <input type="text" class="form-control extras-prop-key" value="${propKey}" placeholder="Chave (propriedade)">
+            <input type="text" class="form-control extras-prop-key" value="${esc(propKey)}" placeholder="Chave (propriedade)">
             <select class="form-control extras-prop-type">
                 <option value="string" ${detectedType === "string" ? "selected" : ""}>Texto</option>
                 <option value="number" ${detectedType === "number" ? "selected" : ""}>Número</option>
@@ -1464,6 +1464,11 @@ document.addEventListener("DOMContentLoaded", () => {
 	const btnCancelAnnouncementEdit = document.getElementById("btn-cancel-announcement-edit");
 
 	let editingAnnouncementId = null;
+
+	// Texto de bots.json, do servidor e do LLM (aiPersonality, nomes, extras) entra no innerHTML escapado.
+	function esc(value) {
+		return escapeHtml(value);
+	}
 
 	function escapeHtml(text) {
 		return String(text ?? "").replace(

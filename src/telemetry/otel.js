@@ -10,6 +10,10 @@
  */
 "use strict";
 
+// Workers (worker_threads) herdam o --require do processo: neles só traces (sem métricas de runtime nem
+// leitor de métricas, que duplicariam as séries do bot) e só a instrumentação do fetch (undici).
+const { isMainThread } = require("worker_threads");
+
 const endpoint =
 	process.env.OTEL_EXPORTER_OTLP_ENDPOINT || process.env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT;
 const disabled = String(process.env.OTEL_SDK_DISABLED || "").toLowerCase() === "true";
@@ -121,6 +125,23 @@ function start() {
 	const IGNORED_INCOMING = [/^\/health/, /^\/favicon/, /^\/public\//, /^\/static\//];
 	const IGNORED_OUTGOING = [/\/getUpdates/, /\/v1\/(traces|metrics|logs)$/];
 
+	// Instrumentações criadas só onde valem: o construtor já liga o patch do módulo.
+	const undici = new UndiciInstrumentation({
+		requireParentforSpans: true,
+		ignoreRequestHook: (req) => IGNORED_OUTGOING.some((re) => re.test(req.path || "")),
+		requestHook: (span, req) => {
+			try {
+				rememberCommand(span, new URL(req.origin).host, req.method, req.path);
+			} catch {}
+		},
+		responseHook: (span, { response }) => noteResponse(span, response?.statusCode),
+		startSpanHook: (req) => ({
+			"url.full": `${req.origin}${sanitizePath(req.path)}`,
+			"url.path": sanitizePath(req.path),
+			"url.query": undefined
+		})
+	});
+
 	const sdk = new NodeSDK({
 		resource,
 		// Fila limitada: se o collector cair, spans excedentes são descartados (nunca bloqueia).
@@ -131,73 +152,66 @@ function start() {
 				scheduledDelayMillis: 2000
 			})
 		],
-		metricReader: new PeriodicExportingMetricReader({
-			exporter: new OTLPMetricExporter({ timeoutMillis: 10000 }),
-			exportIntervalMillis: Number(process.env.OTEL_METRIC_EXPORT_INTERVAL || 30000)
-		}),
-		instrumentations: [
-			new HttpInstrumentation({
-				// Chamadas de saída sem span pai (health checks periódicos, timers) não viram traces soltos.
-				requireParentforOutgoingSpans: true,
-				ignoreIncomingRequestHook: (req) => IGNORED_INCOMING.some((re) => re.test(req.url || "")),
-				ignoreOutgoingRequestHook: (opts) =>
-					IGNORED_OUTGOING.some((re) => re.test(opts.path || "")),
-				// URL de saída sem query string e sem token de bot do Telegram (o collector repete a máscara).
-				requestHook: (span, req) => {
-					if (typeof req.getHeader !== "function") {
-						// IncomingMessage (servidor): caminho sem query e com IDs longos mascarados
-						if (typeof req.url === "string") {
-							span.setAttribute("url.path", sanitizePath(req.url));
-							span.setAttribute("http.target", sanitizePath(req.url));
-							// query de entrada: só os nomes dos parâmetros (valores podem ter texto livre/IDs)
-							const q = req.url.split("?")[1];
-							if (q)
-								span.setAttribute(
-									"url.query",
-									q
-										.split("&")
-										.map((kv) => `${kv.split("=")[0].slice(0, 40)}=REDACTED`)
-										.join("&")
-								);
-						}
-						return;
-					}
-					if (typeof req.path !== "string") return;
-					const host = req.getHeader("host") || req.host || "";
-					const path = sanitizePath(req.path);
-					span.setAttribute("url.full", `${req.protocol || "http:"}//${host}${path}`);
-					rememberCommand(span, host, req.method, req.path);
-				},
-				responseHook: (span, res) => {
-					// resposta de cliente (IncomingMessage com statusCode e sem método)
-					if (res && typeof res.statusCode === "number" && !res.method)
-						noteResponse(span, res.statusCode);
-				},
-				// Não grava headers.
-				headersToSpanAttributes: {
-					client: { requestHeaders: [], responseHeaders: [] },
-					server: { requestHeaders: [], responseHeaders: [] }
+		...(isMainThread
+			? {
+					metricReader: new PeriodicExportingMetricReader({
+						exporter: new OTLPMetricExporter({ timeoutMillis: 10000 }),
+						exportIntervalMillis: Number(process.env.OTEL_METRIC_EXPORT_INTERVAL || 30000)
+					})
 				}
-			}),
-			new UndiciInstrumentation({
-				requireParentforSpans: true,
-				ignoreRequestHook: (req) => IGNORED_OUTGOING.some((re) => re.test(req.path || "")),
-				requestHook: (span, req) => {
-					try {
-						rememberCommand(span, new URL(req.origin).host, req.method, req.path);
-					} catch {}
-				},
-				responseHook: (span, { response }) => noteResponse(span, response?.statusCode),
-				startSpanHook: (req) => ({
-					"url.full": `${req.origin}${sanitizePath(req.path)}`,
-					"url.path": sanitizePath(req.path),
-					"url.query": undefined
-				})
-			}),
-			new ExpressInstrumentation({ ignoreLayersType: ["middleware", "request_handler"] }),
-			new IORedisInstrumentation({ requireParentSpan: true }),
-			new RuntimeNodeInstrumentation()
-		]
+			: {}),
+		instrumentations: !isMainThread
+			? [undici]
+			: [
+					new HttpInstrumentation({
+						// Chamadas de saída sem span pai (health checks periódicos, timers) não viram traces soltos.
+						requireParentforOutgoingSpans: true,
+						ignoreIncomingRequestHook: (req) =>
+							IGNORED_INCOMING.some((re) => re.test(req.url || "")),
+						ignoreOutgoingRequestHook: (opts) =>
+							IGNORED_OUTGOING.some((re) => re.test(opts.path || "")),
+						// URL de saída sem query string e sem token de bot do Telegram (o collector repete a máscara).
+						requestHook: (span, req) => {
+							if (typeof req.getHeader !== "function") {
+								// IncomingMessage (servidor): caminho sem query e com IDs longos mascarados
+								if (typeof req.url === "string") {
+									span.setAttribute("url.path", sanitizePath(req.url));
+									span.setAttribute("http.target", sanitizePath(req.url));
+									// query de entrada: só os nomes dos parâmetros (valores podem ter texto livre/IDs)
+									const q = req.url.split("?")[1];
+									if (q)
+										span.setAttribute(
+											"url.query",
+											q
+												.split("&")
+												.map((kv) => `${kv.split("=")[0].slice(0, 40)}=REDACTED`)
+												.join("&")
+										);
+								}
+								return;
+							}
+							if (typeof req.path !== "string") return;
+							const host = req.getHeader("host") || req.host || "";
+							const path = sanitizePath(req.path);
+							span.setAttribute("url.full", `${req.protocol || "http:"}//${host}${path}`);
+							rememberCommand(span, host, req.method, req.path);
+						},
+						responseHook: (span, res) => {
+							// resposta de cliente (IncomingMessage com statusCode e sem método)
+							if (res && typeof res.statusCode === "number" && !res.method)
+								noteResponse(span, res.statusCode);
+						},
+						// Não grava headers.
+						headersToSpanAttributes: {
+							client: { requestHeaders: [], responseHeaders: [] },
+							server: { requestHeaders: [], responseHeaders: [] }
+						}
+					}),
+					undici,
+					new ExpressInstrumentation({ ignoreLayersType: ["middleware", "request_handler"] }),
+					new IORedisInstrumentation({ requireParentSpan: true }),
+					new RuntimeNodeInstrumentation()
+				]
 	});
 
 	// O construtor do NodeSDK troca o logger de diagnóstico quando OTEL_LOG_LEVEL está definido;
@@ -214,7 +228,9 @@ function start() {
 	globalThis.__RAVENA_OTEL_SHUTDOWN = () =>
 		Promise.race([sdk.shutdown().catch(() => {}), new Promise((r) => setTimeout(r, 3000).unref())]);
 
-	console.log(
-		`[otel] telemetria ligada → ${endpoint} (service.name=${process.env.OTEL_SERVICE_NAME || "ravena-ai"})`
-	);
+	if (isMainThread) {
+		console.log(
+			`[otel] telemetria ligada → ${endpoint} (service.name=${process.env.OTEL_SERVICE_NAME || "ravena-ai"})`
+		);
+	}
 }

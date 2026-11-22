@@ -26,6 +26,9 @@ const { getCommunityLinks } = require("../../utils/communityLinks");
  * - GET  /tts, /falar                 - Interface web de síntese de voz (TTS)
  * - GET  /pesca, /fishing             - Interface web do jogo de pesca
  * - GET  /status                      - Página pública de status das instâncias e canais de aviso
+ * - GET  /admin, /admin.html          - Painel de admin unificado (experimental, Basic Auth)
+ * - (middleware) telas antigas de admin  - 302 para /admin#/<área> quando estão em
+ *                                          LEGACY_ADMIN_REDIRECTS (?legado=1 mantém a antiga)
  * - GET  /waifuletes, /waifus         - Atalho para o app de Waifuletes na OS
  * - GET  /groups-dossier              - Visualizador HTML de dossiês de grupos
  * - GET  /service-providers           - Interface de gerenciamento de provedores de IA
@@ -37,6 +40,8 @@ const { getCommunityLinks } = require("../../utils/communityLinks");
  */
 const PUBLIC_DIR = path.join(__dirname, "../../../public");
 const ONE_WEEK_SECONDS = 7 * 24 * 60 * 60;
+/** HTML do painel /admin, fora de public/ para só sair pela rota autenticada */
+const ADMIN_VIEW = path.join(__dirname, "../views/admin.html");
 
 /**
  * Política de cache dos arquivos estáticos (express.static):
@@ -52,6 +57,12 @@ function setStaticCacheHeaders(res, filePath) {
 		res.setHeader("Cache-Control", "no-cache");
 		return;
 	}
+	// Módulos do painel /admin (core.js, areas/*.js...) são importados sem ?v=: revalidam
+	// sempre (ETag), senão um deploy misturaria app.js novo com módulos antigos por até 1 dia.
+	if (isAdminModule(filePath)) {
+		res.setHeader("Cache-Control", "no-cache");
+		return;
+	}
 	const query = (res.req?.originalUrl || res.req?.url || "").split("?")[1] || "";
 	if (/(^|&)v=/.test(query)) {
 		res.setHeader("Cache-Control", `public, max-age=${ONE_WEEK_SECONDS}`);
@@ -59,6 +70,65 @@ function setStaticCacheHeaders(res, filePath) {
 }
 
 const STATIC_OPTIONS = { maxAge: "1d", etag: true, setHeaders: setStaticCacheHeaders };
+
+/** Arquivo .js/.css de public/admin/ (inclusive subpastas como areas/)? */
+const isAdminModule = (filePath) =>
+	/^admin[\\/].+\.(js|css)$/.test(path.relative(PUBLIC_DIR, filePath));
+
+/**
+ * Telas antigas de admin que já têm área nativa no /admin: caminho canônico → rota interna
+ * do painel (o que vem depois de "#/"). COMEÇA VAZIO; cada área nativa acrescenta a sua
+ * entrada quando ficar pronta, por exemplo:
+ *   "/banco/admin": "banco",
+ *   "/dossies": "pessoas",
+ *   "/groups-dossier": "pessoas/grupos",
+ * Os apelidos de cada tela (LEGACY_ADMIN_ALIASES) seguem a entrada do caminho canônico.
+ * Saída de emergência: ?legado=1 continua servindo a tela antiga.
+ * @type {Object<string, string>}
+ */
+const LEGACY_ADMIN_REDIRECTS = {
+	"/instances": "instancias",
+	"/banco/admin": "banco",
+	"/eventos/admin": "eventos",
+	"/service-providers": "provedores",
+	"/dossies": "pessoas",
+	"/groups-dossier": "pessoas/grupos"
+};
+
+/** Outros endereços da mesma tela antiga → caminho canônico usado em LEGACY_ADMIN_REDIRECTS. */
+const LEGACY_ADMIN_ALIASES = {
+	"/instances.html": "/instances",
+	"/banco-admin.html": "/banco/admin",
+	"/ravenabank/admin": "/banco/admin",
+	"/eventos-admin.html": "/eventos/admin",
+	"/events/admin": "/eventos/admin",
+	"/service-providers.html": "/service-providers",
+	"/dossies.html": "/dossies",
+	"/dossier": "/dossies",
+	"/dossie": "/dossies",
+	"/groups-dossier.html": "/groups-dossier"
+};
+
+/**
+ * Middleware: GET/HEAD numa tela antiga do mapa → 302 para /admin#/<área>, preservando ?auth=
+ * (o /admin cria a sessão e tira a credencial da barra de endereço).
+ * @param {Object<string, string>} [map] - padrão: LEGACY_ADMIN_REDIRECTS (lido a cada pedido)
+ * @returns {import("express").RequestHandler}
+ */
+function createLegacyAdminRedirect(map = LEGACY_ADMIN_REDIRECTS) {
+	return (req, res, next) => {
+		if (req.method !== "GET" && req.method !== "HEAD") return next();
+		const raw = req.path.length > 1 ? req.path.replace(/\/+$/, "") : req.path;
+		const canonical = LEGACY_ADMIN_ALIASES[raw] || raw;
+		if (!Object.prototype.hasOwnProperty.call(map, canonical)) return next();
+		const q = req.query || {};
+		if (q.legado === "1") return next();
+		const target = String(map[canonical]).replace(/^#?\/?/, "");
+		const auth = typeof q.auth === "string" && q.auth ? `?auth=${encodeURIComponent(q.auth)}` : "";
+		res.setHeader("Cache-Control", "no-store");
+		return res.redirect(302, `/admin${auth}#/${target}`);
+	};
+}
 
 /**
  * Versão de cache-busting baseada no mtime do arquivo em public/.
@@ -134,6 +204,10 @@ function registerIndexRoutes(api) {
 		lastCemiterioCheck = 0;
 	};
 
+	// Telas antigas que já viraram área nativa do /admin (ver LEGACY_ADMIN_REDIRECTS). Antes de
+	// tudo: as rotas explícitas abaixo e o express.static de public/ também servem essas telas.
+	app.use(createLegacyAdminRedirect());
+
 	// Rota para o dashboard clássico legado
 	app.get(["/classic", "/legado"], (req, res) => {
 		res.sendFile(path.join(__dirname, "../../../public/classic.html"));
@@ -195,6 +269,41 @@ function registerIndexRoutes(api) {
 		}
 		res.setHeader("Cache-Control", "no-cache");
 		res.sendFile(path.join(__dirname, "../../../public/status.html"));
+	});
+
+	// Painel de admin unificado (experimental). O HTML fica fora de public/ (em
+	// src/BotAPI/views), então só esta rota autenticada o entrega: caminhos codificados como
+	// /%61dmin.html ou //admin.html não chegam a ele pelo express.static. Os assets em
+	// public/admin/ continuam estáticos (não têm dados). As telas antigas seguem como estão.
+	app.get(["/admin", "/admin/", "/admin.html"], api.authenticateBasic, async (req, res) => {
+		if (api.isAdmin(req)) {
+			api.setAdminSessionCookie(res);
+			// Entrada por ?auth=: a sessão já está no cookie; a credencial sai da URL (barra de
+			// endereço, histórico, Referer) antes de qualquer script. O #/área segue o redirect.
+			if (req.query && "auth" in req.query) {
+				const rest = new URLSearchParams(req.originalUrl.split("?")[1] || "");
+				rest.delete("auth");
+				const qs = rest.toString();
+				res.setHeader("Cache-Control", "no-store");
+				return res.redirect(302, `/admin${qs ? `?${qs}` : ""}`);
+			}
+		}
+		res.setHeader("Cache-Control", "no-cache");
+		try {
+			const rawHtml = await fs.readFile(ADMIN_VIEW, "utf-8");
+			const [vTokens, vCss, vJs] = await Promise.all([
+				assetVersion("admin/tokens.css"),
+				assetVersion("admin/admin.css"),
+				assetVersion("admin/app.js")
+			]);
+			const html = rawHtml
+				.replace(/tokens\.css\?v=[^"']+/g, `tokens.css?v=${vTokens}`)
+				.replace(/admin\.css\?v=[^"']+/g, `admin.css?v=${vCss}`)
+				.replace(/app\.js\?v=[^"']+/g, `app.js?v=${vJs}`);
+			return res.type("html").send(html);
+		} catch {
+			return res.sendFile(ADMIN_VIEW);
+		}
 	});
 
 	// Entrega da interface Desktop OS como homepage principal (/)
@@ -883,4 +992,9 @@ function registerIndexRoutes(api) {
 	});
 }
 
-module.exports = { registerIndexRoutes };
+module.exports = {
+	registerIndexRoutes,
+	createLegacyAdminRedirect,
+	LEGACY_ADMIN_REDIRECTS,
+	LEGACY_ADMIN_ALIASES
+};

@@ -1,0 +1,86 @@
+/*
+ * Tokens de tema do painel de admin da Ravena.
+ *
+ * Um único lugar para cores, fontes, tamanhos e cantos. Os componentes (admin.css) só
+ * leem var(--…); nenhuma cor é escrita fora deste arquivo.
+ *
+ * Inspirado no tema "Instrument" do Ara (painel de instrumentos: plano, quase neutro,
+ * âmbar só para "precisa de você") e no "Paper" para o claro (o mesmo painel impresso).
+ *
+ * Cada cor é declarada uma vez com light-dark(claro, escuro). Quem escolhe o lado é o
+ * color-scheme do <html>:
+ *   - sem data-theme: "light dark", segue o prefers-color-scheme do sistema;
+ *   - data-theme="light" | "dark": escolha manual, salva no navegador pelo admin.js.
+ */
+
+:root {
+	color-scheme: light dark;
+
+	/* Superfícies, do quadro da janela ao que fica acima de um painel. */
+	--chrome: light-dark(#e8e3d7, #0f0f0e);
+	--work: light-dark(#f8f5ee, #151514);
+	--panel: light-dark(#f0ece2, #1c1c1a);
+	--raised: light-dark(#fbf9f4, #232321);
+	--hover: light-dark(#e2dccd, #2c2c29);
+
+	/* Linhas decorativas entre superfícies (não precisam de 3:1). */
+	--hairline: light-dark(rgba(52, 44, 30, 0.14), rgba(255, 255, 255, 0.08));
+	--hairline-strong: light-dark(rgba(52, 44, 30, 0.26), rgba(255, 255, 255, 0.14));
+	/* Borda de controle (botão, campo, aba selecionada): pelo menos 3:1 contra work e panel. */
+	--control-border: light-dark(#857d70, #6e6b64);
+
+	/* Texto. */
+	--fg: light-dark(#24211c, #e6e4df);
+	--muted: light-dark(#57524a, #a8a59d);
+	--faint: light-dark(#605a50, #96938b);
+	--on-fg: light-dark(#f8f5ee, #151514); /* texto sobre um fundo var(--fg) */
+
+	/* Estados: precisa de você (âmbar), falha, tudo certo. */
+	--attention: light-dark(#825200, #e3ad4f);
+	--attention-bg: light-dark(
+		rgba(130, 82, 0, 0.1),
+		rgba(227, 173, 79, 0.12)
+	); /* fundo de pílula/aviso */
+	--destructive: light-dark(#b02a20, #ff7a7a);
+	--ok: light-dark(#3b6620, #93b97f);
+
+	/* Letra dos "outros painéis" na página Mais: G Grafana, W Waifuletes, J Jardim. */
+	--panel-grafana: light-dark(#a0520f, #f0a35e);
+	--panel-waifuletes: light-dark(#8a3d62, #e08ab8);
+	--panel-jardim: light-dark(#3b6620, #93b97f);
+
+	/* Seleção neutra (nunca âmbar) e foco. */
+	--selected: var(--fg);
+	--focus: var(--fg);
+
+	/* Cantos: controles quase retos, linhas e abas levemente arredondadas. */
+	--radius-control: 0.125rem;
+	--radius-row: 0.25rem;
+	--radius-pill: 0.375rem;
+
+	/* Tipografia (rem: respeita o tamanho de fonte do navegador). */
+	--font-sans: "Figtree", "Segoe UI", system-ui, -apple-system, sans-serif;
+	--font-mono:
+		"IBM Plex Mono", "Cascadia Mono", "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono",
+		monospace;
+	--text-xs: 0.6875rem; /* 11px: rótulos mono em caixa alta, números pequenos */
+	--text-sm: 0.75rem; /* 12px: detalhes */
+	--text-md: 0.8125rem; /* 13px: texto */
+	--text-base: 0.9375rem; /* 15px: título de linha (rowItem) */
+	--text-lg: 1.125rem; /* 18px: título da área */
+	--text-xl: 1.25rem; /* 20px: número de um bloco */
+
+	/* Alturas. */
+	--topbar-h: 2.75rem;
+	--control-h: 1.75rem;
+	--touch-min: 2.75rem; /* alvo mínimo de toque no celular (44px, WCAG 2.5.5 / Apple HIG) */
+	--bottombar-h: 3.5rem; /* barra inferior do celular, sem a área segura */
+}
+
+:root[data-theme="light"] {
+	color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+	color-scheme: dark;
+}

@@ -107,9 +107,19 @@ services:
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/ravena-red.json
+      # Painel da economia (OBSERVABILITY.md): plugins instalados em segundo plano na subida (versões
+      # fixas; ficam no volume grafana-data). Não usar GF_PLUGINS_PREINSTALL_SYNC: no 13.2.6, se o download
+      # falhar (sem internet, grafana.com fora), o Grafana inteiro sai com erro na subida.
+      # - frser-sqlite-datasource: fonte Economia (SQLite);
+      # - volkovlabs-variable-panel (Business Variable, Grafana Labs; exige Grafana >= 12.3): botões de moeda no
+      #   topo das abas. Sem ele os botões mostram "plugin não encontrado" e a lista Moedas do topo segue valendo.
+      GF_PLUGINS_PREINSTALL: frser-sqlite-datasource@4.0.6,volkovlabs-variable-panel@5.2.0
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning:ro
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # Painel da economia: DIRETÓRIO onde a ravena-ai publica o analytics.db (ECONOMY_ANALYTICS_PUBLISH_DIR),
+      # só leitura. Se não existir, o Docker cria vazio (dono root) e a ravena (root no contêiner) escreve nele.
+      - ${ECONOMY_ANALYTICS_DIR_HOST:-../data/economia}:/var/lib/economia:ro
       - grafana-data:/var/lib/grafana
     ports:
       - "127.0.0.1:3001:3000"

@@ -79,7 +79,7 @@ http://localhost:5001/qrcode/<nome-do-bot>
 
 ## 🔌 Dependências Externas & APIs
 
-A Ravena conta com uma arquitetura modular que permite estender suas funcionalidades através de APIs e serviços externos. Esses serviços podem ser configurados no arquivo `service-providers.json` (ou no `.env` em integrações específicas) ou gerenciados dinamicamente via painel web no endpoint `/service-providers` da API do bot.
+A Ravena conta com uma arquitetura modular que permite estender suas funcionalidades através de APIs e serviços externos. Esses serviços podem ser configurados no arquivo `service-providers.json` (ou no `.env` em integrações específicas) ou gerenciados dinamicamente pelo painel web da API do bot, em `/admin` → Provedores de IA (o endereço antigo `/service-providers` leva para lá).
 
 As dependências dividem-se em duas categorias principais:
 

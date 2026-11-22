@@ -370,6 +370,19 @@ async function main() {
 			groupMediaRetentionService.start();
 		}
 
+		// Carga horária do painel da economia (analytics.db, minuto 5), num worker_threads próprio para
+		// não pesar na thread do bot. Ver OBSERVABILITY.md
+		// ECONOMY_ANALYTICS_RUN_WITH_DISABLE_ACTIVITY=true liga mesmo com DISABLE_ACTIVITY=true: só para
+		// instância de demonstração/teste com bancos próprios (a carga só lê os SQLites do bot)
+		const economyWithoutActivity =
+			process.env.ECONOMY_ANALYTICS_RUN_WITH_DISABLE_ACTIVITY === "true";
+		if (
+			(!disableActivity || economyWithoutActivity) &&
+			process.env.ECONOMY_ANALYTICS_ENABLED === "true"
+		) {
+			require("./src/services/EconomyAnalyticsWorkerHost").getInstance().start();
+		}
+
 		// Inicializa servidor da API
 		botAPI = new BotAPI({
 			port: process.env.API_PORT || 5000,
@@ -417,6 +430,14 @@ async function main() {
 		try {
 			require("./src/services/ScheduledEventService").getInstance().stop();
 		} catch (_e) {}
+
+		// Para a carga do painel da economia
+		if (process.env.ECONOMY_ANALYTICS_ENABLED === "true") {
+			try {
+				// pede parada ao worker (aborta a rodada) e espera no máximo 3 s; depois, terminate()
+				await require("./src/services/EconomyAnalyticsWorkerHost").getInstance().stop();
+			} catch (_e) {}
+		}
 
 		// 1. Para o servidor API primeiro para não aceitar novas conexões
 		if (telegramNotificationService) {
