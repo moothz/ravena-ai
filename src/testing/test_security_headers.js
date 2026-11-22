@@ -156,6 +156,20 @@ async function testSameOrigin() {
 				403
 			],
 			[
+				"GET /RECREATE (case-insensitive no Express) puxado por outro site",
+				"GET",
+				"/RECREATE/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
+				403
+			],
+			[
+				"GET /Restart (case-insensitive no Express) puxado por outro site",
+				"GET",
+				"/Restart/bot1",
+				{ ...cookie, "Sec-Fetch-Site": "cross-site" },
+				403
+			],
+			[
 				"GET /reconnect com Origin de outro site",
 				"GET",
 				"/reconnect/bot1",

@@ -45,6 +45,27 @@ async function runTests() {
 			"sem temporário sobrando"
 		);
 		console.log("✓ Corpo inválido 400; gravação boa por temporário + rename.");
+
+		// Simula bind mount de arquivo único no Docker: rename falha com EBUSY e cai para gravação direta.
+		const origRename = fs.promises.rename;
+		fs.promises.rename = async () => {
+			const err = new Error("EBUSY: resource busy or locked");
+			err.code = "EBUSY";
+			throw err;
+		};
+		try {
+			const fallbackCfg = { llm: [{ name: "principal", apiKey: "k", enabled: true }], laya: [] };
+			assert.strictEqual(await svc.saveConfig(fallbackCfg), true);
+			assert.deepStrictEqual(JSON.parse(fs.readFileSync(file, "utf8")), fallbackCfg);
+			assert.deepStrictEqual(
+				fs.readdirSync(tmp).filter((f) => f.endsWith(".tmp")),
+				[],
+				"sem temporário sobrando após fallback EBUSY"
+			);
+			console.log("✓ Fallback de gravação direta quando rename retorna EBUSY (Docker bind mount).");
+		} finally {
+			fs.promises.rename = origRename;
+		}
 	} finally {
 		if (svc && svc.watcher) svc.watcher.close();
 		process.chdir(cwd);

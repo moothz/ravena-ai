@@ -113,11 +113,22 @@ class ServiceProviderService {
 			throw err;
 		}
 		// Arquivo temporário + rename: uma queda no meio não deixa o JSON pela metade.
+		// Em bind mount de arquivo único no Docker (ex.: ./service-providers.json:/app/service-providers.json),
+		// rename(2) sobre o ponto de montagem falha com EBUSY/EXDEV; nesse caso, cai para gravação direta.
 		const tmp = `${this.configPath}.${process.pid}.${Date.now()}.tmp`;
 		try {
 			const data = JSON.stringify(newConfig, null, 2);
 			await fs.promises.writeFile(tmp, data, "utf8");
-			await fs.promises.rename(tmp, this.configPath);
+			try {
+				await fs.promises.rename(tmp, this.configPath);
+			} catch (renameErr) {
+				if (renameErr && (renameErr.code === "EBUSY" || renameErr.code === "EXDEV")) {
+					await fs.promises.writeFile(this.configPath, data, "utf8");
+					await fs.promises.unlink(tmp).catch(() => {});
+				} else {
+					throw renameErr;
+				}
+			}
 			if (!this.watcher) this.setupWatcher();
 			this.config = newConfig;
 			this.lastLoadedTime = Date.now();

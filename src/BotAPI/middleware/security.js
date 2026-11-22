@@ -23,7 +23,7 @@ const WRITE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
  * GETs que mudam estado (legado: as telas de instância os chamam com fetch da mesma origem).
  * /recreate apaga e recria a instância; /reconnect e /qrcode-initconnect mexem na sessão.
  */
-const STATEFUL_GET = /^\/(restart|logout|recreate|reconnect|qrcode-initconnect)\/[^/]+\/?$/;
+const STATEFUL_GET = /^\/(restart|logout|recreate|reconnect|qrcode-initconnect)\/[^/]+\/?$/i;
 
 /** A requisição traz o cookie de sessão do painel (que o navegador anexa sozinho). */
 const hasSessionCookie = (req) =>
