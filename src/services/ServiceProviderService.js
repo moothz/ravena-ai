@@ -23,6 +23,11 @@ class ServiceProviderService {
 		this.configPath = path.join(process.cwd(), "service-providers.json");
 		this.config = null;
 		this.lastLoadedTime = 0;
+		// Motivo da última leitura que falhou (arquivo com erro de sintaxe, etc.); null quando a
+		// config em memória é a do arquivo. Com erro, saveConfig recusa: gravar sobrescreveria o
+		// arquivo (e as chaves de API) com a config vazia/antiga em memória.
+		this.loadError = null;
+		this.watcher = null;
 		this.loadConfig();
 		this.setupWatcher();
 	}
@@ -38,6 +43,7 @@ class ServiceProviderService {
 					`Configuration file not found at ${this.configPath}. Using empty default.`
 				);
 				this.config = this.getDefaultConfig();
+				this.loadError = null;
 				return;
 			}
 
@@ -51,8 +57,10 @@ class ServiceProviderService {
 
 			this.config = newConfig;
 			this.lastLoadedTime = Date.now();
+			this.loadError = null;
 			this.logger.info("Service providers configuration loaded successfully");
 		} catch (error) {
+			this.loadError = error.message;
 			this.logger.error(`Error loading service providers configuration: ${error.message}`);
 			// Fallback to existing config if available, otherwise use default
 			if (!this.config) {
@@ -65,18 +73,26 @@ class ServiceProviderService {
 	 * Automatically watches for file changes and reloads the configuration.
 	 */
 	setupWatcher() {
+		if (this.watcher) {
+			this.watcher.close();
+			this.watcher = null;
+		}
 		if (!fs.existsSync(this.configPath)) return;
 
 		let debounceTimeout;
-		fs.watch(this.configPath, (event) => {
-			if (event === "change") {
+		this.watcher = fs.watch(this.configPath, (event) => {
+			if (event === "change" || event === "rename") {
 				if (debounceTimeout) clearTimeout(debounceTimeout);
 				debounceTimeout = setTimeout(() => {
 					this.logger.info("File change detected, reloading configuration...");
 					this.loadConfig();
+					// Trocado por rename (o saveConfig grava assim; editores também): o watch seguia
+					// o arquivo antigo, então volta a observar o caminho.
+					if (event === "rename") this.setupWatcher();
 				}, 100);
 			}
 		});
+		this.watcher.on("error", () => {});
 	}
 
 	/**
@@ -84,15 +100,32 @@ class ServiceProviderService {
 	 * @param {Object} newConfig - The new configuration to save.
 	 */
 	async saveConfig(newConfig) {
+		if (this.loadError) {
+			const err = new Error(
+				`service-providers.json está com erro e não foi carregado (${this.loadError}). Corrija o arquivo antes de salvar pelo painel; gravar agora apagaria o que está nele.`
+			);
+			err.statusCode = 409;
+			throw err;
+		}
+		if (!newConfig || typeof newConfig !== "object" || Array.isArray(newConfig)) {
+			const err = new Error("A configuração deve ser um objeto JSON.");
+			err.statusCode = 400;
+			throw err;
+		}
+		// Arquivo temporário + rename: uma queda no meio não deixa o JSON pela metade.
+		const tmp = `${this.configPath}.${process.pid}.${Date.now()}.tmp`;
 		try {
 			const data = JSON.stringify(newConfig, null, 2);
-			await fs.promises.writeFile(this.configPath, data, "utf8");
+			await fs.promises.writeFile(tmp, data, "utf8");
+			await fs.promises.rename(tmp, this.configPath);
+			if (!this.watcher) this.setupWatcher();
 			this.config = newConfig;
 			this.lastLoadedTime = Date.now();
 			this.logger.info("Service providers configuration saved successfully");
 			return true;
 		} catch (error) {
 			this.logger.error(`Error saving service providers configuration: ${error.message}`);
+			await fs.promises.unlink(tmp).catch(() => {});
 			throw error;
 		}
 	}
