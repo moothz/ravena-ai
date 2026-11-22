@@ -96,7 +96,9 @@ function isCrossOrigin(req) {
 function createSameOriginGuard({ hasCredentials, logger } = {}) {
 	return (req, res, next) => {
 		const isWrite = WRITE_METHODS.has(req.method);
-		const isStatefulGet = req.method === "GET" && STATEFUL_GET.test(req.path);
+		// O Express entrega HEAD ao handler do GET da mesma rota, então HEAD também muda estado.
+		const isStatefulGet =
+			(req.method === "GET" || req.method === "HEAD") && STATEFUL_GET.test(req.path);
 		if (!isWrite && !isStatefulGet) return next();
 		if (typeof hasCredentials === "function" && !hasCredentials(req)) return next();
 
