@@ -92,18 +92,36 @@ const btn = (text, cls = "btn", extra = {}) =>
 
 /* ── Ações (as mesmas no cartão e na página do evento) ──────────── */
 
+/**
+ * O evento como está no servidor agora (sem cache), para Começar/Encerrar mandarem só o que
+ * mudam sobre a versão fresca: outro admin pode ter trocado ganhos, buffs ou mensagem depois
+ * que esta tela abriu, e o PUT leva o evento inteiro.
+ */
+async function freshEvent(id) {
+	const { events } = await load({ fresh: true });
+	const ev = events.find((e) => e.id === id);
+	if (!ev) throw new Error("Esse evento não existe mais (foi apagado em outro lugar).");
+	return ev;
+}
+
 /** Encerrar agora: o fim vira "agora" (PUT); os buffs param na próxima leitura do serviço. */
 function endNowButton(ev, after) {
 	return confirmInline(btn("Encerrar agora", "btn", { "data-key": `fim-${ev.id}` }), {
 		question: "Encerrar agora? Os buffs param na hora.",
 		confirmLabel: "Encerrar",
 		onConfirm: async () => {
+			const cur = await freshEvent(ev.id);
+			if (cur.status === "passado" || cur.endTime <= now()) {
+				toast(`“${cur.name}” já tinha terminado`, { kind: "" });
+				after();
+				return;
+			}
 			await send(
 				"PUT",
-				`${LIST}/${ev.id}`,
-				eventBody(ev, { endTime: Math.max(ev.startTime + 1, now()) })
+				`${LIST}/${cur.id}`,
+				eventBody(cur, { endTime: Math.max(cur.startTime + 1, now()) })
 			);
-			toast(`“${ev.name}” encerrado`, { kind: "ok" });
+			toast(`“${cur.name}” encerrado`, { kind: "ok" });
 			after();
 		}
 	});
@@ -120,15 +138,21 @@ function startNowButton(ev, after) {
 		confirmLabel: "Começar",
 		danger: false,
 		onConfirm: async () => {
-			let message = ev.message || "";
+			const cur = await freshEvent(ev.id);
+			if (cur.startedAt || cur.status === "ativo" || cur.status === "passado") {
+				toast(`“${cur.name}” já tinha começado; nada foi creditado de novo`, { kind: "" });
+				after();
+				return;
+			}
+			let message = cur.message || "";
 			try {
-				const g = await send("POST", GEN, { id: ev.id, save: false });
+				const g = await send("POST", GEN, { id: cur.id, save: false });
 				if (g && typeof g.message === "string" && g.message.trim() === message.trim()) message = "";
 			} catch {
 				/* sem prévia: mantém a mensagem salva */
 			}
-			await send("PUT", `${LIST}/${ev.id}`, eventBody(ev, { startTime: now(), message }));
-			toast(`“${ev.name}” começou: ganhos e aviso a caminho`, { kind: "ok" });
+			await send("PUT", `${LIST}/${cur.id}`, eventBody(cur, { startTime: now(), message }));
+			toast(`“${cur.name}” começou: ganhos e aviso a caminho`, { kind: "ok" });
 			after();
 		}
 	});
