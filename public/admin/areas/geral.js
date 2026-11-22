@@ -20,6 +20,7 @@ import {
 	externalLink,
 	grafanaLink,
 	grafanaMissing,
+	LINKS_UNAVAILABLE,
 	errorNotice,
 	preserveFocus,
 	serviceKind,
@@ -178,7 +179,9 @@ function grafanaNote() {
 	const missing = grafanaMissing();
 	if (missing) {
 		return note(
-			`Os números daqui são o agora. Histórico e tendência ficam no Grafana (defina ${missing} no .env para ligar os atalhos).`
+			missing === LINKS_UNAVAILABLE
+				? "Os números daqui são o agora. Histórico e tendência ficam no Grafana (não deu para carregar os endereços dos atalhos agora; tenta de novo na próxima navegação)."
+				: `Os números daqui são o agora. Histórico e tendência ficam no Grafana (defina ${missing} no .env para ligar os atalhos).`
 		);
 	}
 	const parts = [];

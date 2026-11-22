@@ -779,7 +779,7 @@ export function subnav(items, active, { label = "Seções" } = {}) {
 export function externalLink(href, label, { missing, button = false, quiet = false } = {}) {
 	const cls = button ? `btn${quiet ? " btn-quiet" : ""}` : "ext-link";
 	if (!href) {
-		const hint = missing ? `defina ${missing} no .env` : "sem endereço configurado";
+		const hint = missing ? configHint(missing) : "sem endereço configurado";
 		return h(
 			"span",
 			{ class: `${cls} is-disabled`, "aria-disabled": "true", title: hint },
@@ -1214,22 +1214,51 @@ let linksPromise = null;
 let linksData = null;
 
 /**
+ * Marca de "não deu para ler /api/admin/links" (falha ou ainda sem resposta), no lugar do nome
+ * da variável do .env: o motivo é outro e configHint() diz isso por escrito.
+ */
+export const LINKS_UNAVAILABLE = "LINKS_UNAVAILABLE";
+
+/**
+ * Dica por escrito de um link desabilitado: "defina X no .env", ou, se os endereços não
+ * puderam ser lidos, "não deu para carregar os endereços".
+ * @param {string} missing - nome da variável ou LINKS_UNAVAILABLE
+ */
+export const configHint = (missing) =>
+	missing === LINKS_UNAVAILABLE
+		? "não deu para carregar os endereços"
+		: `defina ${missing} no .env`;
+
+/** A última leitura dos endereços falhou (e nenhuma anterior deu certo). */
+export const linksFailed = () => !!(linksData && linksData.failed);
+
+/**
  * Lê (uma vez por visita) os endereços do Grafana, do admin do Waifuletes e do super-admin
- * do Jardim. Falha → objeto vazio (os itens aparecem desabilitados).
+ * do Jardim. Falha → objeto vazio marcado `failed` (os itens aparecem desabilitados com
+ * "não deu para carregar os endereços"), e a falha não fica guardada: a próxima chamada (o app
+ * chama a cada navegação enquanto falhar) tenta de novo.
  * @returns {Promise<{ grafana: { base: string|null, dashboards: Object, missing: string|null },
  *   panels: Array<{ id: string, title: string, sub: string, kind: string, url: string|null, missing: string|null }> }>}
  */
 export function getLinks() {
 	if (!linksPromise) {
-		linksPromise = api("/api/admin/links")
-			.catch(() => ({
-				grafana: { base: null, dashboards: {}, missing: "ADMIN_GRAFANA_URL" },
-				panels: []
-			}))
+		const p = api("/api/admin/links", { fresh: true })
 			.then((d) => {
 				linksData = d;
 				return d;
+			})
+			.catch(() => {
+				if (linksPromise === p) linksPromise = null;
+				// Uma leitura boa anterior continua valendo; senão, marca a falha.
+				if (!linksData || linksData.failed)
+					linksData = {
+						failed: true,
+						grafana: { base: null, dashboards: {}, missing: LINKS_UNAVAILABLE },
+						panels: []
+					};
+				return linksData;
 			});
+		linksPromise = p;
 	}
 	return linksPromise;
 }
@@ -1252,9 +1281,12 @@ export function grafanaLink(name, params) {
 	return d && d.url ? withParams(d.url, params) : null;
 }
 
-/** Variável que falta para os links do Grafana ("ADMIN_GRAFANA_URL") ou null. */
+/**
+ * Variável que falta para os links do Grafana ("ADMIN_GRAFANA_URL"), LINKS_UNAVAILABLE quando
+ * os endereços não puderam ser lidos, ou null. Mostre com configHint().
+ */
 export const grafanaMissing = () =>
-	linksData && linksData.grafana ? linksData.grafana.missing : "ADMIN_GRAFANA_URL";
+	linksData && linksData.grafana ? linksData.grafana.missing : LINKS_UNAVAILABLE;
 
 /** Itens de "Outros painéis" (depois de getLinks()). */
 export const panelLinks = () => (linksData && linksData.panels) || [];

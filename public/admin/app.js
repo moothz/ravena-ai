@@ -21,6 +21,8 @@ import {
 	themeSwitch,
 	getLinks,
 	panelLinks,
+	configHint,
+	linksFailed,
 	onSessionExpired,
 	poll,
 	focusKey,
@@ -105,7 +107,7 @@ function buildExternalNav() {
 								{
 									class: "nav-item nav-out is-disabled",
 									"aria-disabled": "true",
-									title: `defina ${p.missing} no .env`
+									title: configHint(p.missing)
 								},
 								h("span", { class: "nav-text", text: p.title }),
 								h("span", { class: "nav-meta", text: "sem endereço" })
@@ -315,6 +317,12 @@ async function route() {
 		history.replaceState(null, "", alias);
 		hash = alias;
 	}
+	// Endereços dos outros painéis que falharam: tenta de novo a cada navegação, sem segurar a
+	// tela (as áreas abertas depois já pegam os links).
+	if (linksFailed())
+		getLinks().then(() => {
+			if (!linksFailed()) buildExternalNav();
+		});
 	const parsed = parseHash(hash);
 	const area = byId.get(parsed.areaId);
 	if (!area) {

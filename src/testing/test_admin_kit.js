@@ -188,6 +188,55 @@ async function runTests() {
 	const many = lib.deriveNeeds({ services: { a: "down", b: "down", c: "down", d: "down" } });
 	assert.strictEqual(many.length, 1, "mais de 3 serviços fora viram uma linha");
 	console.log("✓ deriveNeeds e countActionable.");
+
+	await testLinks();
+}
+
+// GET /api/admin/links que falha não vira "defina ADMIN_GRAFANA_URL" nem fica guardado
+async function testLinks() {
+	const core = await import(pathToFileURL(path.join(__dirname, "../../public/admin/core.js")).href);
+	const realFetch = globalThis.fetch;
+	let calls = 0;
+	let fail = true;
+	globalThis.fetch = async () => {
+		calls++;
+		if (fail) return new Response("{}", { status: 502 });
+		return new Response(
+			JSON.stringify({
+				grafana: {
+					base: "https://g",
+					dashboards: { economia: { url: "https://g/e" } },
+					missing: null
+				},
+				panels: []
+			}),
+			{ status: 200, headers: { "Content-Type": "application/json" } }
+		);
+	};
+	try {
+		assert.strictEqual(core.grafanaMissing(), core.LINKS_UNAVAILABLE, "antes de ler: sem endereço");
+		await core.getLinks();
+		assert.ok(core.linksFailed(), "falha marcada");
+		assert.strictEqual(core.grafanaMissing(), core.LINKS_UNAVAILABLE);
+		assert.strictEqual(
+			core.configHint(core.grafanaMissing()),
+			"não deu para carregar os endereços",
+			"falha não vira 'defina ADMIN_GRAFANA_URL'"
+		);
+		assert.strictEqual(core.configHint("ADMIN_GRAFANA_URL"), "defina ADMIN_GRAFANA_URL no .env");
+		fail = false;
+		await core.getLinks();
+		assert.strictEqual(calls, 2, "a falha não fica guardada: a próxima chamada lê de novo");
+		assert.ok(!core.linksFailed());
+		assert.strictEqual(core.grafanaMissing(), null);
+		assert.strictEqual(core.grafanaLink("economia", { dtab: "moeda" }), "https://g/e?dtab=moeda");
+		fail = true;
+		await core.getLinks();
+		assert.strictEqual(calls, 2, "leitura boa fica guardada pela visita");
+	} finally {
+		globalThis.fetch = realFetch;
+	}
+	console.log("✓ getLinks: falha diz 'não deu para carregar' e tenta de novo; sucesso fica.");
 }
 
 runTests()

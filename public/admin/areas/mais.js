@@ -12,6 +12,7 @@ import {
 	themeSwitch,
 	getLinks,
 	panelLinks,
+	configHint,
 	icon
 } from "../core.js";
 import { loadPulse } from "../pulse.js";
@@ -61,7 +62,7 @@ export default {
 				status: pl.sub,
 				external: pl.url,
 				disabled: !pl.url,
-				hint: pl.missing ? `defina ${pl.missing} no .env` : null,
+				hint: pl.missing ? configHint(pl.missing) : null,
 				key: `mais-${pl.id}`
 			})
 		);
