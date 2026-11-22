@@ -79,8 +79,13 @@ function impersonateButton(userId, name) {
 	return btn;
 }
 
-/** Formulário de ajuste: saldo novo ou diferença com sinal; a rota grava o saldo final. */
-function adjustForm(userId, name, current, { onDone, onCancel }) {
+/**
+ * Formulário de ajuste: saldo novo ou diferença com sinal; a rota grava o saldo final.
+ * Antes de gravar o saldo é relido (sem cache): se mudou desde que a ficha abriu, a prévia
+ * passa a usar o saldo novo e o admin confirma de novo (um "+500" nunca vai sobre saldo velho).
+ * @param {() => Promise<number|null>} readBalance - saldo atual sem cache (null: conta sumiu)
+ */
+function adjustForm(userId, name, current, { readBalance, onDone, onCancel }) {
 	const valueField = field({
 		label: "Saldo novo ou diferença (ᚱ)",
 		name: "valor",
@@ -91,11 +96,15 @@ function adjustForm(userId, name, current, { onDone, onCancel }) {
 	});
 	const input = valueField.control || valueField.querySelector("input");
 	const preview = h("p", { class: "bk-preview", "aria-live": "polite" });
+	let readAt = null; // hora da última releitura do saldo (null: o da abertura da ficha)
 	const showPreview = () => {
 		const r = parseAdjust(input.value, current);
 		preview.className = `bk-preview${r.ok ? "" : " bad"}`;
+		const base = readAt
+			? ` · saldo relido às ${readAt.toLocaleTimeString("pt-BR", { timeZone: "America/Sao_Paulo" })}`
+			: "";
 		preview.textContent = r.ok
-			? `${money(current)} ᚱ → ${money(r.target)} ᚱ (${r.diff >= 0 ? "+" : "−"}${money(Math.abs(r.diff))})`
+			? `${money(current)} ᚱ → ${money(r.target)} ᚱ (${r.diff >= 0 ? "+" : "−"}${money(Math.abs(r.diff))})${base}`
 			: r.error;
 	};
 	input.addEventListener("input", showPreview);
@@ -138,12 +147,33 @@ function adjustForm(userId, name, current, { onDone, onCancel }) {
 		cancel.disabled = true;
 		submit.textContent = "Salvando…";
 		try {
+			const fresh = await readBalance();
+			if (fresh === null)
+				throw new Error("conta não encontrada ao reler o saldo; nada foi alterado");
+			readAt = new Date();
+			if (Math.round(fresh * 100) !== Math.round(current * 100)) {
+				const before = current;
+				current = fresh;
+				showPreview();
+				toast(
+					`O saldo mudou de ${money(before)} para ${money(fresh)} ᚱ desde que a ficha abriu. Confira a prévia e confirme de novo.`,
+					{ kind: "error" }
+				);
+				submit.disabled = false;
+				cancel.disabled = false;
+				submit.textContent = "Ajustar saldo";
+				input.focus();
+				return;
+			}
 			const res = await send("POST", "/api/games/bank/admin/user-runas", {
 				userId,
 				runas: r.target
 			});
 			if (!res || !res.ok) throw new Error((res && res.error) || "falha ao salvar o saldo");
-			toast(`Saldo de ${name}: ${money(res.data ? res.data.runas : r.target)} ᚱ`, { kind: "ok" });
+			toast(
+				`Saldo de ${name}: ${money(res.data ? res.data.runas : r.target)} ᚱ (sobre ${money(current)} ᚱ relido agora)`,
+				{ kind: "ok" }
+			);
 			onDone();
 		} catch (err) {
 			toast(`Erro ao salvar: ${err.message}`, { kind: "error" });
@@ -161,8 +191,11 @@ function adjustForm(userId, name, current, { onDone, onCancel }) {
 
 export async function renderJogador(root, ctx, userId) {
 	const enc = encodeURIComponent(userId);
+	const usersUrl = `/api/games/bank/admin/users?page=1&limit=100&q=${enc}`;
+	const findUser = (r) =>
+		((r && r.data && r.data.users) || []).find((u) => sameId(u.userId, userId)) || null;
 	const d = await settle({
-		users: api(`/api/games/bank/admin/users?page=1&limit=100&q=${enc}`),
+		users: api(usersUrl),
 		txs: api(`/api/games/bank/admin/transactions?page=1&limit=50&q=${enc}`)
 	});
 	if (d.usersError) {
@@ -172,10 +205,15 @@ export async function renderJogador(root, ctx, userId) {
 		);
 		return;
 	}
-	const list = (d.users && d.users.data && d.users.data.users) || [];
-	const user = list.find((u) => sameId(u.userId, userId)) || null;
+	// A conta vem de uma busca (LIKE, até 100): se não veio, não dá para saber o saldo real
+	// (pode estar além dos 100 resultados). Nada de saldo 0 nem ajuste nesse caso.
+	const user = findUser(d.users);
 	const name = user && user.name && user.name !== "Sem apelido" ? user.name : formatPhone(userId);
-	const runas = user ? Number(user.runas) || 0 : 0;
+	const runas = user ? Number(user.runas) || 0 : null;
+	const readBalance = async () => {
+		const u = findUser(await api(usersUrl, { fresh: true }));
+		return u ? Number(u.runas) || 0 : null;
+	};
 
 	root.append(crumbs([{ label: "Jogadores", href: "#/banco" }, { label: name }]));
 
@@ -195,13 +233,17 @@ export async function renderJogador(root, ctx, userId) {
 	adjustBtn.addEventListener("click", () => {
 		adjustBtn.hidden = true;
 		adjustSlot.replaceChildren(
-			adjustForm(userId, name, runas, { onDone: () => ctx.refresh(), onCancel: closeAdjust })
+			adjustForm(userId, name, runas, {
+				readBalance,
+				onDone: () => ctx.refresh(),
+				onCancel: closeAdjust
+			})
 		);
 	});
-	if (ctx.params.get("ajustar") === "1") queueMicrotask(() => adjustBtn.click());
+	if (user && ctx.params.get("ajustar") === "1") queueMicrotask(() => adjustBtn.click());
 
 	actions.append(
-		adjustBtn,
+		user ? adjustBtn : null,
 		impersonateButton(userId, name),
 		externalLink(
 			// var-jogador é o palpite da "pessoa" do analytics (sem a tabela de LIDs e do Telegram);
@@ -229,13 +271,15 @@ export async function renderJogador(root, ctx, userId) {
 
 	const info = card({
 		title: name,
-		pill: user ? null : pill("sem conta no banco", "att"),
+		pill: user ? null : pill("conta não encontrada", "att"),
 		actions: h("span", { class: "mono bk-sub", title: `ID: ${userId}`, text: formatPhone(userId) }),
 		body: [
 			h(
 				"div",
 				{ class: "tiles bk-coins" },
-				coinTile({ coin: "Runas", value: money(runas), unit: "ᚱ" }),
+				user
+					? coinTile({ coin: "Runas", value: money(runas), unit: "ᚱ" })
+					: coinTile({ coin: "Runas", missing: "conta não encontrada" }),
 				coinTile({ coin: "Zinthos", missing: "fica no Waifuletes" }),
 				coinTile({ coin: "Petalitas", missing: "fica no Jardim" })
 			),
@@ -255,7 +299,7 @@ export async function renderJogador(root, ctx, userId) {
 			note(
 				user
 					? "Só Runas se ajusta aqui. Zinthos e Petalitas ficam nos serviços de cada jogo: veja em “Ver como o jogador”."
-					: "Este ID ainda não tem conta no banco. Ajustar o saldo abre a conta com o valor escolhido."
+					: "Conta não encontrada: a busca por este ID não trouxe a conta (ela pode não existir ou estar além dos 100 primeiros resultados). Sem o saldo real, o ajuste fica bloqueado; abra o jogador pela lista do Banco."
 			)
 		]
 	});
