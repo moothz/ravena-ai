@@ -25,7 +25,7 @@ WindowManager.register('donations', {
                             Carregando meta recente...
                         </div>
                     </div>
-                    <a href="https://tipa.ai/moothz" target="_blank" class="os-btn" style="background: linear-gradient(180deg, #ff4081 0%, #c2185b 100%); border-color: #ff80ab;">
+                    <a href="/doar" target="_blank" class="os-btn" style="background: linear-gradient(180deg, #ff4081 0%, #c2185b 100%); border-color: #ff80ab;">
                         <i class="fas fa-heart"></i> Fazer Doação (tipa.ai)
                     </a>
                 </div>

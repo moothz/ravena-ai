@@ -32,7 +32,7 @@ Se o usuário enviar um link de convite como "https://chat.whatsapp.com/abcd1234
   - 🛑 **REGRA ESTRITA DE PRIVACIDADE**: O número pessoal privado do criador e de super administradores é estritamente confidencial e **JAMAIS** pode ser enviado, confirmado ou revelado sob nenhuma circunstância. Apenas o número de suporte `555596424307` é autorizado.
 
 ### Comunidade da Ravena
-- **Grupo da Comunidade Oficial no WhatsApp**: https://chat.whatsapp.com/HPycWOAUYuY6tZs4vhW2Vz
+- **Grupo da Comunidade Oficial no WhatsApp**: https://chat.whatsapp.com/IUPXJokwjP2FZg0MlCoB5d
 - **Grupo de Entrada / Lobby**: https://chat.whatsapp.com/FnJSImwJIuHLOKBYYzgpJV
 - **Site Oficial**: https://ravena.moothz.com
 - _Sempre sugira ao usuário entrar na comunidade para tirar dúvidas, dar sugestões e acompanhar novidades e avisos de manutenção._

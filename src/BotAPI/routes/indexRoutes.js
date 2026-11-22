@@ -2,6 +2,7 @@ const path = require("path");
 const fs = require("fs").promises;
 const express = require("express");
 const storageService = require("../../services/StorageService");
+const { getCommunityLinks } = require("../../utils/communityLinks");
 
 /**
  * Registra rotas de páginas web estáticas, interfaces e dashboards da BotAPI
@@ -226,6 +227,7 @@ function registerIndexRoutes(api) {
 				isAdmin,
 				announcements,
 				cemiterio,
+				communityLinks: getCommunityLinks(),
 				bots: api.bots
 					.filter((bot) => (!bot.privado || isAdmin) && !bot.useTelegram && !bot.useDiscord)
 					.map((bot) => {
@@ -525,20 +527,62 @@ function registerIndexRoutes(api) {
 		res.sendFile(filePath);
 	});
 
+	// ── Rotas de Redirecionamento de Redes Sociais e Comunidade ──
+	app.get(["/comunidade", "/community"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.community);
+	});
+
+	app.get(["/grupao", "/interacao"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.grupao);
+	});
+
+	app.get(["/canal", "/canal-avisos", "/avisos"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.channel);
+	});
+
 	// Redireciona para o convite do Discord
 	app.get("/discord", (req, res) => {
-		if (process.env.DISCORD_INVITE_LINK) {
-			return res.redirect(process.env.DISCORD_INVITE_LINK);
-		}
-		res.redirect("/");
+		const links = getCommunityLinks();
+		res.redirect(links.discordBot);
+	});
+
+	app.get(["/discord-server", "/discord-comunidade"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.discordCommunity);
 	});
 
 	// Redireciona para o convite do Telegram
 	app.get("/telegram", (req, res) => {
-		if (process.env.TELEGRAM_INVITE_LINK) {
-			return res.redirect(process.env.TELEGRAM_INVITE_LINK);
-		}
-		res.redirect("/");
+		const links = getCommunityLinks();
+		res.redirect(links.telegramBot);
+	});
+
+	app.get(["/telegram-grupo", "/telegram-comunidade"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.telegramCommunity);
+	});
+
+	app.get(["/criador", "/suporte"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.creator);
+	});
+
+	app.get("/github", (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.github);
+	});
+
+	app.get(["/doar", "/doacao", "/donate"], (req, res) => {
+		const links = getCommunityLinks();
+		res.redirect(links.donation);
+	});
+
+	// API pública com os links de redes/comunidade
+	app.get("/api/community-links", (req, res) => {
+		res.json(getCommunityLinks());
 	});
 
 	// Serve página de comandos públicos
