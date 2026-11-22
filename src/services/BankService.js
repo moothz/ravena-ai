@@ -2219,7 +2219,93 @@ class BankService {
 
 		const now = Date.now();
 		const g = String(tx.game).toLowerCase().trim();
+		const undoneBy = isAdmin ? `admin:${adminUser}` : `user:${cleanUser}`;
 
+		// 0. Trava atômica: marca a transação como desfeita só se ainda não estava. Dois pedidos
+		// simultâneos passam pela leitura acima, mas só um consegue esta linha (changes = 1); o
+		// outro para aqui, antes de reverter qualquer coisa.
+		const claim = await database.dbRun(
+			dbName,
+			`UPDATE bank_transactions SET 
+				status = 'UNDONE', 
+				undone_at = ?, 
+				undone_by = ?, 
+				undo_fee_runas = ?, 
+				undo_final_runas = ? 
+			WHERE id = ? AND (status IS NULL OR status <> 'UNDONE')`,
+			[now, undoneBy, spreadFeeRunas, finalRunas, txId]
+		);
+		if (!claim || claim.changes !== 1) {
+			throw new Error(`A transação #${txId} já foi desfeita anteriormente.`);
+		}
+
+		try {
+			await this._revertUndoEffects(tx, { g, cleanUser, finalRunas, now });
+		} catch (err) {
+			// A reversão falhou (ex.: Waifuletes fora): solta a trava para poder tentar de novo.
+			await database
+				.dbRun(
+					dbName,
+					`UPDATE bank_transactions SET 
+						status = ?, undone_at = NULL, undone_by = NULL, undo_fee_runas = NULL, undo_final_runas = NULL 
+					WHERE id = ? AND status = 'UNDONE' AND undone_at = ?`,
+					[tx.status || "COMPLETED", txId, now]
+				)
+				.catch((e) =>
+					logger.error(`[RavenaBank] Falha ao soltar a trava do desfazer #${txId}: ${e.message}`)
+				);
+			throw err;
+		}
+
+		// 5. Registra transação de auditoria
+		await database.dbRun(
+			dbName,
+			`INSERT INTO bank_transactions 
+			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
+			VALUES (?, 'UNDO_TRADE', ?, ?, ?, ?, ?, ?, ?, 'COMPLETED')`,
+			[
+				cleanUser,
+				tx.game,
+				tx.game_amount,
+				finalRunas,
+				SPREAD_FEE_RATE,
+				spreadFeeRunas,
+				JSON.stringify({
+					originalTxId: tx.id,
+					originalType: tx.type,
+					undoneBy,
+					spreadFeeRunas,
+					finalRunas,
+					timestamp: now
+				}),
+				now
+			]
+		);
+
+		logger.info(
+			`[RavenaBank] Transação #${txId} (${tx.type} ${tx.game}) desfeita com sucesso por ${undoneBy}. Final Runas: ${finalRunas} (spread fee: ${spreadFeeRunas})`
+		);
+
+		const updatedAccount = await this.getAccount(cleanUser);
+		return {
+			transactionId: txId,
+			undone: true,
+			undoneBy,
+			originalType: tx.type,
+			game: tx.game,
+			gameAmount: tx.game_amount,
+			spreadFeeRunas,
+			finalRunas,
+			newBalance: updatedAccount.runas
+		};
+	}
+
+	/**
+	 * Passos 1 a 3 do undoTransaction (ativos no jogo, Runas na conta, cota do dia), já com a
+	 * transação travada como desfeita. Lança Error se algum serviço recusar.
+	 */
+	async _revertUndoEffects(tx, { g, cleanUser, finalRunas, now }) {
+		const txId = tx.id;
 		// 1. Reversão dos ativos nos respectivos jogos
 		if (g === "waifu" || g === "zinthos" || g === "waifus") {
 			const amount = Math.floor(tx.game_amount);
@@ -2419,62 +2505,6 @@ class BankService {
 				}
 			}
 		}
-
-		// 4. Marca a transação original como desfeita
-		const undoneBy = isAdmin ? `admin:${adminUser}` : `user:${cleanUser}`;
-		await database.dbRun(
-			dbName,
-			`UPDATE bank_transactions SET 
-				status = 'UNDONE', 
-				undone_at = ?, 
-				undone_by = ?, 
-				undo_fee_runas = ?, 
-				undo_final_runas = ? 
-			WHERE id = ?`,
-			[now, undoneBy, spreadFeeRunas, finalRunas, txId]
-		);
-
-		// 5. Registra transação de auditoria
-		await database.dbRun(
-			dbName,
-			`INSERT INTO bank_transactions 
-			(user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp, status)
-			VALUES (?, 'UNDO_TRADE', ?, ?, ?, ?, ?, ?, ?, 'COMPLETED')`,
-			[
-				cleanUser,
-				tx.game,
-				tx.game_amount,
-				finalRunas,
-				SPREAD_FEE_RATE,
-				spreadFeeRunas,
-				JSON.stringify({
-					originalTxId: tx.id,
-					originalType: tx.type,
-					undoneBy,
-					spreadFeeRunas,
-					finalRunas,
-					timestamp: now
-				}),
-				now
-			]
-		);
-
-		logger.info(
-			`[RavenaBank] Transação #${txId} (${tx.type} ${tx.game}) desfeita com sucesso por ${undoneBy}. Final Runas: ${finalRunas} (spread fee: ${spreadFeeRunas})`
-		);
-
-		const updatedAccount = await this.getAccount(cleanUser);
-		return {
-			transactionId: txId,
-			undone: true,
-			undoneBy,
-			originalType: tx.type,
-			game: tx.game,
-			gameAmount: tx.game_amount,
-			spreadFeeRunas,
-			finalRunas,
-			newBalance: updatedAccount.runas
-		};
 	}
 
 	/**
