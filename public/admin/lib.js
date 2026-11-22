@@ -105,7 +105,7 @@ export function buildHash(areaId, segs = [], params = null) {
 
 /**
  * Acrescenta parâmetros a uma URL (de painel do Grafana, por exemplo). Valores em lista
- * viram parâmetros repetidos (var-moeda=a&var-moeda=b); null/undefined são ignorados.
+ * viram parâmetros repetidos (var-moedas=a&var-moedas=b); null/undefined são ignorados.
  * @param {string|null} url
  * @param {Object<string, string|number|Array<string|number>>} [params]
  * @returns {string|null}

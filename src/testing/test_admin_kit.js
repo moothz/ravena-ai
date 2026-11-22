@@ -55,10 +55,10 @@ async function runTests() {
 	assert.strictEqual(
 		lib.withParams("https://g.exemplo/d/ravena-economia", {
 			dtab: "moeda",
-			"var-moeda": ["runas", "zinthos"],
+			"var-moedas": ["runas", "zinthos"],
 			nada: null
 		}),
-		"https://g.exemplo/d/ravena-economia?dtab=moeda&var-moeda=runas&var-moeda=zinthos"
+		"https://g.exemplo/d/ravena-economia?dtab=moeda&var-moedas=runas&var-moedas=zinthos"
 	);
 	assert.strictEqual(lib.withParams(null, { a: 1 }), null);
 	console.log("✓ withParams.");

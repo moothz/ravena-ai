@@ -44,6 +44,8 @@ async function runTests() {
 	assert.strictEqual(lib.runasSigned({ type: "BONUS", runas_amount: 10 }), "+10,00");
 	assert.strictEqual(lib.runasSigned({ type: "ADMIN_ADJUST", runas_amount: -200 }), "−200,00");
 	assert.strictEqual(lib.runasSigned({ type: "ADMIN_ADJUST", runas_amount: 500 }), "+500,00");
+	assert.strictEqual(lib.runasSigned({ type: "TRANSFER_IN", runas_amount: 30 }), "+30,00");
+	assert.strictEqual(lib.runasSigned({ type: "TRANSFER_OUT", runas_amount: 30 }), "−30,00");
 	assert.strictEqual(
 		lib.runasSigned({
 			type: "UNDO_TRADE",

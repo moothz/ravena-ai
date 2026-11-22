@@ -44,7 +44,9 @@ const OP_LABELS = {
 	STORE_BUY: "Loja",
 	BONUS: "Bônus",
 	ADMIN_ADJUST: "Ajuste",
-	UNDO_TRADE: "Estorno"
+	UNDO_TRADE: "Estorno",
+	TRANSFER_IN: "Transferência recebida",
+	TRANSFER_OUT: "Transferência enviada"
 };
 
 /** Rótulo da operação (tipo desconhecido aparece como veio). */
@@ -100,11 +102,12 @@ function detailsOf(tx) {
 
 /**
  * Sentido das Runas para o jogador: +1 entra, −1 sai.
- * Venda e bônus entram; ajuste segue o sinal gravado; estorno é o contrário da original.
+ * Venda, bônus e transferência recebida entram; ajuste segue o sinal gravado; estorno é o
+ * contrário da original.
  */
 export function runasDirection(tx) {
 	const t = tx && tx.type;
-	if (t === "DEPOSIT" || t === "BONUS") return 1;
+	if (t === "DEPOSIT" || t === "BONUS" || t === "TRANSFER_IN") return 1;
 	if (t === "ADMIN_ADJUST") return Number(tx.runas_amount) < 0 ? -1 : 1;
 	if (t === "UNDO_TRADE") return detailsOf(tx).originalType === "DEPOSIT" ? -1 : 1;
 	return -1;
