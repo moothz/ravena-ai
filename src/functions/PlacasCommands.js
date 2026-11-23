@@ -826,5 +826,6 @@ module.exports = {
 	commands,
 	formatarRetornoPlaca,
 	consultarFipeHistory,
-	fetchVehicleInfo
+	fetchVehicleInfo,
+	validarPlaca
 };
