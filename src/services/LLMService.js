@@ -1536,12 +1536,19 @@ class LLMService {
 				toolCalling,
 				contextLength: config.contextLength,
 				maxTokens: config.maxTokens ?? config.max_tokens,
+				maxImages: config.maxImages !== undefined ? Number(config.maxImages) : 4,
 				method: async (options) => {
 					// Clona para evitar mutar o objeto options compartilhado entre tentativas
 					const completionOptions = { ...options };
 
 					// Aplica valores da configuração respeitando se options já definiu
 					if (config.model && !completionOptions.model) completionOptions.model = config.model;
+					if (config.maxImages !== undefined && completionOptions.maxImages === undefined) {
+						completionOptions.maxImages = Number(config.maxImages);
+					}
+					if (completionOptions.maxImages === undefined) {
+						completionOptions.maxImages = 4;
+					}
 					if (config.temperature !== undefined && completionOptions.temperature === undefined) {
 						completionOptions.temperature = config.temperature;
 					}
@@ -2373,6 +2380,28 @@ class LLMService {
 	}
 
 	/**
+	 * Distribui uniformemente uma lista de imagens quando a quantidade excede maxCount.
+	 * @param {Array<string>} images - Array de strings de imagem (base64 ou URL)
+	 * @param {number} [maxCount=4] - Quantidade máxima permitida
+	 * @returns {Array<string>}
+	 */
+	_sampleImages(images, maxCount = 4) {
+		if (!Array.isArray(images) || images.length <= maxCount || maxCount <= 0) {
+			return images;
+		}
+		if (maxCount === 1) {
+			return [images[0]];
+		}
+		const sampled = [];
+		const step = (images.length - 1) / (maxCount - 1);
+		for (let i = 0; i < maxCount; i++) {
+			const index = Math.round(i * step);
+			sampled.push(images[index]);
+		}
+		return sampled;
+	}
+
+	/**
 	 * Envia uma solicitação de completion para API compatível com OpenAI (OpenAI, LM Studio, DeepSeek, etc.)
 	 * @param {Object} options - Opções de solicitação
 	 * @param {string} options.prompt - O texto do prompt
@@ -2418,7 +2447,13 @@ class LLMService {
 			// Monta o conteúdo do user message (texto simples ou array com imagens para vision)
 			let userContent;
 			if (hasImages) {
-				const imagesToProcess = options.images ? options.images : [options.image];
+				let imagesToProcess = options.images ? options.images : [options.image];
+				if (options.ignoreVideo) {
+					imagesToProcess = [imagesToProcess[0]];
+				} else {
+					const maxImages = options.maxImages !== undefined ? Number(options.maxImages) : 4;
+					imagesToProcess = this._sampleImages(imagesToProcess, maxImages);
+				}
 				userContent = [{ type: "text", text: options.prompt || "" }];
 				for (const img of imagesToProcess) {
 					let base64;
@@ -2785,7 +2820,13 @@ class LLMService {
 			// Monta o conteúdo do user message (texto simples ou array com imagens para vision)
 			let userContent;
 			if (hasImages) {
-				const imagesToProcess = options.images ? options.images : [options.image];
+				let imagesToProcess = options.images ? options.images : [options.image];
+				if (options.ignoreVideo) {
+					imagesToProcess = [imagesToProcess[0]];
+				} else {
+					const maxImages = options.maxImages !== undefined ? Number(options.maxImages) : 4;
+					imagesToProcess = this._sampleImages(imagesToProcess, maxImages);
+				}
 				userContent = [{ type: "text", text: options.prompt || "" }];
 				for (const img of imagesToProcess) {
 					if (img.startsWith("data:image")) {
@@ -3286,6 +3327,9 @@ class LLMService {
 
 				if (options.ignoreVideo) {
 					imagesToProcess = [imagesToProcess[0]];
+				} else {
+					const maxImages = options.maxImages !== undefined ? Number(options.maxImages) : 4;
+					imagesToProcess = this._sampleImages(imagesToProcess, maxImages);
 				}
 
 				for (const img of imagesToProcess) {

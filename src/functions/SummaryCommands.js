@@ -137,8 +137,8 @@ async function analyzeVideo(message, bot = null) {
 
 		await fs.writeFile(videoPath, Buffer.from(media.data, "base64"));
 
-		// Extrai frames usando a função utilitária (12 frames para equilibrar contexto e tokens)
-		const framePaths = await extractFrames(videoPath, tempDir, 12);
+		// Extrai frames usando a função utilitária (4 frames para respeitar o limite multimodal dos provedores de visão como vLLM/Qwen)
+		const framePaths = await extractFrames(videoPath, tempDir, 4);
 
 		// Lê os frames
 		const frames = [];
