@@ -299,6 +299,107 @@ input:checked + .slider-round:before {
     transform: translateX(22px);
 }
 
+/* Switch e Cards de Categorias de Comandos Silenciadas */
+.switch-category-mute .slider-round {
+    background-color: var(--success-color);
+    border-color: var(--success-color);
+}
+
+.switch-category-mute input:checked + .slider-round {
+    background-color: var(--danger-color);
+    border-color: var(--danger-color);
+}
+
+#muted-categories-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 10px;
+}
+
+.cmd-category-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.65rem 0.85rem;
+    border-radius: var(--radius-sm);
+    background: rgba(0, 168, 132, 0.08);
+    border: 1px solid rgba(0, 168, 132, 0.35);
+    transition: all 0.25s ease;
+    cursor: pointer;
+    user-select: none;
+    gap: 8px;
+}
+
+.cmd-category-card:hover {
+    background: rgba(0, 168, 132, 0.14);
+    border-color: rgba(0, 168, 132, 0.6);
+}
+
+.cmd-category-card.is-muted {
+    background: rgba(229, 62, 62, 0.12);
+    border-color: var(--danger-color);
+}
+
+.cmd-category-card.is-muted:hover {
+    background: rgba(229, 62, 62, 0.16);
+    border-color: rgba(229, 62, 62, 0.7);
+}
+
+.cmd-category-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+}
+
+.cmd-category-icon {
+    font-size: 0.88rem;
+    width: 18px;
+    text-align: center;
+    flex-shrink: 0;
+    transition: color 0.2s ease;
+}
+
+.cmd-category-card:not(.is-muted) .cmd-category-icon {
+    color: var(--success-light);
+}
+
+.cmd-category-card.is-muted .cmd-category-icon {
+    color: var(--danger-color);
+}
+
+.cmd-category-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text-highlight);
+    text-transform: capitalize;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.cmd-category-card.is-muted .cmd-category-name {
+    text-decoration: line-through;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+@media (max-width: 480px) {
+    #muted-categories-list {
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    .cmd-category-card {
+        padding: 0.5rem 0.65rem;
+    }
+}
+
+@media (max-width: 360px) {
+    #muted-categories-list {
+        grid-template-columns: 1fr;
+    }
+}
+
 /* Loading & Error States */
 #loading-container, #error-container {
     text-align: center;

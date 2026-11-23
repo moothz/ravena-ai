@@ -880,25 +880,57 @@ document.addEventListener('DOMContentLoaded', () => {
             mutedList.innerHTML = '';
             const muted = groupData.mutedCategories || [];
             categories.forEach(cat => {
-                const div = document.createElement('div');
-                div.className = 'checkbox-group toggle-row-compact';
-                div.innerHTML = `
-                    <span class="toggle-label">${cat}</span>
-                    <label class="switch-toggle">
-                        <input type="checkbox" id="mute-cat-${cat}" ${muted.includes(cat) ? 'checked' : ''}>
+                const isMuted = muted.some(c => String(c).toLowerCase() === cat.toLowerCase());
+                const card = document.createElement('div');
+                card.className = `cmd-category-card ${isMuted ? 'is-muted' : ''}`;
+                card.setAttribute('role', 'checkbox');
+                card.setAttribute('aria-checked', isMuted ? 'true' : 'false');
+                card.title = isMuted ? 'Categoria silenciada (clique para liberar)' : 'Categoria liberada (clique para silenciar)';
+
+                card.innerHTML = `
+                    <div class="cmd-category-info">
+                        <span class="cmd-category-icon">
+                            <i class="fas ${isMuted ? 'fa-volume-xmark' : 'fa-check'}"></i>
+                        </span>
+                        <span class="cmd-category-name">${cat}</span>
+                    </div>
+                    <label class="switch-toggle switch-category-mute" onclick="event.stopPropagation()">
+                        <input type="checkbox" id="mute-cat-${cat}" ${isMuted ? 'checked' : ''} aria-label="Silenciar categoria ${cat}">
                         <span class="slider-round"></span>
                     </label>
                 `;
-                div.querySelector('input').addEventListener('change', (e) => {
-                    if(e.target.checked) {
-                        if(!groupData.mutedCategories) groupData.mutedCategories = [];
-                        if(!groupData.mutedCategories.includes(cat)) groupData.mutedCategories.push(cat);
+
+                const checkbox = card.querySelector('input');
+                checkbox.addEventListener('change', (e) => {
+                    const shouldMute = e.target.checked;
+                    if (!groupData.mutedCategories) groupData.mutedCategories = [];
+                    groupData.mutedCategories = groupData.mutedCategories.filter(c => String(c).toLowerCase() !== cat.toLowerCase());
+                    if (shouldMute) {
+                        groupData.mutedCategories.push(cat);
+                    }
+                    if (shouldMute) {
+                        card.classList.add('is-muted');
+                        card.setAttribute('aria-checked', 'true');
+                        card.title = 'Categoria silenciada (clique para liberar)';
+                        const icon = card.querySelector('.cmd-category-icon i');
+                        if (icon) icon.className = 'fas fa-volume-xmark';
                     } else {
-                        if(groupData.mutedCategories) groupData.mutedCategories = groupData.mutedCategories.filter(c => c !== cat);
+                        card.classList.remove('is-muted');
+                        card.setAttribute('aria-checked', 'false');
+                        card.title = 'Categoria liberada (clique para silenciar)';
+                        const icon = card.querySelector('.cmd-category-icon i');
+                        if (icon) icon.className = 'fas fa-check';
                     }
                     setDirty(true);
                 });
-                mutedList.appendChild(div);
+
+                card.addEventListener('click', (e) => {
+                    if (e.target.closest('.switch-toggle')) return;
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                });
+
+                mutedList.appendChild(card);
             });
         }
 
