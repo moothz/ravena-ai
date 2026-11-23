@@ -12,6 +12,7 @@ const CacheManager = require("../services/CacheManager");
 const telemetry = require("../telemetry");
 const { execFile } = require("child_process");
 const PhoneUtils = require("../utils/PhoneUtils");
+const { validarPlaca } = require("../functions/PlacasCommands");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
@@ -305,6 +306,39 @@ class SuperAdmin {
 			"analisa-report": {
 				method: "analisaReport",
 				description: "Alias de analisaReport"
+			},
+			setplaca: {
+				method: "setPlaca",
+				description:
+					"Define ou edita os dados de uma placa: !sa-setplaca <placa> <texto> ou citando mensagem"
+			},
+			setPlaca: {
+				method: "setPlaca",
+				description: "Alias de setplaca"
+			},
+			editplaca: {
+				method: "setPlaca",
+				description: "Alias de setplaca"
+			},
+			editPlaca: {
+				method: "setPlaca",
+				description: "Alias de setplaca"
+			},
+			getplaca: {
+				method: "getPlaca",
+				description: "Consulta dados salvos de uma placa no cache: !sa-getplaca <placa>"
+			},
+			getPlaca: {
+				method: "getPlaca",
+				description: "Alias de getplaca"
+			},
+			delplaca: {
+				method: "delPlaca",
+				description: "Remove uma placa do cache local: !sa-delplaca <placa>"
+			},
+			delPlaca: {
+				method: "delPlaca",
+				description: "Alias de delplaca"
 			}
 		};
 
@@ -7222,6 +7256,267 @@ Retorne no formato JSON rigoroso:
 			return new ReturnMessage({
 				chatId,
 				content: "❌ Erro ao gerar lista de comandos ComuAdmin."
+			});
+		}
+	}
+
+	/**
+	 * Define ou edita manualmente os dados de uma placa no cache local
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Objeto da mensagem recebida
+	 * @param {Array<string>} args - Argumentos do comando
+	 */
+	async setPlaca(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "not_super_admin" });
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						"ℹ️ *Uso do comando !sa-setplaca:*\n\n" +
+						"1. Passando o texto direto:\n" +
+						"`!sa-setplaca <placa> <mensagem>`\n\n" +
+						"2. Citando/respondendo uma mensagem com o texto:\n" +
+						"`!sa-setplaca <placa>` (respondendo à mensagem desejada)\n\n" +
+						"Opcional: `--react=🏎️` para alterar o emoji da reação (padrão: 🚘)."
+				});
+			}
+
+			const placaInput = args[0];
+			const { valid, placa } = validarPlaca(placaInput);
+			if (!valid) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_plate" });
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Placa inválida: "${placaInput}". O formato deve ser ABC1234 ou ABC1D23.`
+				});
+			}
+
+			let reactEmoji = "🚘";
+			const textParts = [];
+
+			for (let i = 1; i < args.length; i++) {
+				const arg = args[i];
+				if (arg.startsWith("--react=")) {
+					reactEmoji = arg.replace("--react=", "").trim() || "🚘";
+				} else {
+					textParts.push(arg);
+				}
+			}
+
+			let textoFinal = textParts.join(" ").trim();
+
+			// Se não forneceu texto nos argumentos, tenta obter de mensagem citada
+			if (!textoFinal) {
+				const hasQuoted =
+					message.hasQuotedMsg || typeof message.origin?.getQuotedMessage === "function";
+				if (hasQuoted && message.origin?.getQuotedMessage) {
+					const quotedMsg = await message.origin.getQuotedMessage().catch(() => null);
+					textoFinal = (quotedMsg?.body || quotedMsg?.content || quotedMsg?.text || "").trim();
+				}
+			}
+
+			if (!textoFinal) {
+				return new ReturnMessage({
+					chatId,
+					content:
+						`❌ Nenhuma mensagem informada para a placa *${placa.toUpperCase()}*.\n\n` +
+						"Envie o texto junto ao comando ou execute o comando citando a mensagem que contém os dados da placa."
+				});
+			}
+
+			const now = Date.now();
+			const cacheEntry = {
+				timestamp: now,
+				data: {
+					msg: textoFinal,
+					react: reactEmoji
+				},
+				fipe_updated: true,
+				fipe_updated_ts: now
+			};
+
+			const jsonStr = JSON.stringify(cacheEntry);
+
+			await this.database.dbRun(
+				"placas",
+				"INSERT OR REPLACE INTO placas (placa, json_data) VALUES (?, ?)",
+				[`${placa}_false`, jsonStr]
+			);
+			await this.database.dbRun(
+				"placas",
+				"INSERT OR REPLACE INTO placas (placa, json_data) VALUES (?, ?)",
+				[`${placa}_true`, jsonStr]
+			);
+
+			telemetry.setAttrs({
+				"ravena.superadmin.placa.action": "set",
+				"app.outcome": "ok"
+			});
+
+			return new ReturnMessage({
+				chatId,
+				content:
+					`✅ Placa *${placa.toUpperCase()}* salva com sucesso no cache local!\n\n` +
+					`⚡ Reação: ${reactEmoji}\n` +
+					`📋 *Prévia da resposta:*\n\n${textoFinal}`,
+				options: {
+					quotedMessageId: message.origin?.id?._serialized,
+					goReply: message.origin
+				}
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando setPlaca:", error);
+			telemetry.recordError(error);
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Erro ao salvar os dados da placa no cache."
+			});
+		}
+	}
+
+	/**
+	 * Consulta os dados de uma placa gravados no cache local
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Objeto da mensagem recebida
+	 * @param {Array<string>} args - Argumentos do comando
+	 */
+	async getPlaca(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "not_super_admin" });
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "ℹ️ Uso: `!sa-getplaca <placa>`"
+				});
+			}
+
+			const placaInput = args[0];
+			const { valid, placa } = validarPlaca(placaInput);
+			if (!valid) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_plate" });
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Placa inválida: "${placaInput}". O formato deve ser ABC1234 ou ABC1D23.`
+				});
+			}
+
+			const row = await this.database.dbGet(
+				"placas",
+				"SELECT json_data FROM placas WHERE placa = ? OR placa = ?",
+				[`${placa}_false`, `${placa}_true`]
+			);
+
+			if (!row || !row.json_data) {
+				telemetry.setAttrs({
+					"ravena.superadmin.placa.action": "get",
+					"app.outcome": "ok"
+				});
+				return new ReturnMessage({
+					chatId,
+					content: `ℹ️ Placa *${placa.toUpperCase()}* não encontrada no cache local.`
+				});
+			}
+
+			const parsed = JSON.parse(row.json_data);
+			const dataGravada = parsed.timestamp
+				? new Date(parsed.timestamp).toLocaleString("pt-BR")
+				: "Desconhecida";
+
+			telemetry.setAttrs({
+				"ravena.superadmin.placa.action": "get",
+				"app.outcome": "ok"
+			});
+
+			return new ReturnMessage({
+				chatId,
+				content:
+					`🚗 *Dados em Cache: ${placa.toUpperCase()}*\n\n` +
+					`📅 *Data do cache:* ${dataGravada}\n` +
+					`⚡ *Reação:* ${parsed.data?.react || "🚘"}\n` +
+					`🔄 *FIPE atualizada:* ${parsed.fipe_updated ? "Sim" : "Não"}\n\n` +
+					`💬 *Mensagem configurada:*\n${parsed.data?.msg || "(vazio)"}`
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando getPlaca:", error);
+			telemetry.recordError(error);
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Erro ao consultar a placa no cache."
+			});
+		}
+	}
+
+	/**
+	 * Remove os dados de uma placa do cache local
+	 * @param {WhatsAppBot} bot - Instância do bot
+	 * @param {Object} message - Objeto da mensagem recebida
+	 * @param {Array<string>} args - Argumentos do comando
+	 */
+	async delPlaca(bot, message, args) {
+		const chatId = message.group ?? message.author;
+		try {
+			if (!message.isSystem && !this.isSuperAdmin(message.author)) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "not_super_admin" });
+				return new ReturnMessage({
+					chatId,
+					content: "⛔ Apenas super administradores podem usar este comando."
+				});
+			}
+
+			if (args.length === 0) {
+				return new ReturnMessage({
+					chatId,
+					content: "ℹ️ Uso: `!sa-delplaca <placa>`"
+				});
+			}
+
+			const placaInput = args[0];
+			const { valid, placa } = validarPlaca(placaInput);
+			if (!valid) {
+				telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "invalid_plate" });
+				return new ReturnMessage({
+					chatId,
+					content: `❌ Placa inválida: "${placaInput}". O formato deve ser ABC1234 ou ABC1D23.`
+				});
+			}
+
+			await this.database.dbRun("placas", "DELETE FROM placas WHERE placa IN (?, ?)", [
+				`${placa}_false`,
+				`${placa}_true`
+			]);
+
+			telemetry.setAttrs({
+				"ravena.superadmin.placa.action": "del",
+				"app.outcome": "ok"
+			});
+
+			return new ReturnMessage({
+				chatId,
+				content: `🗑️ Placa *${placa.toUpperCase()}* removida do cache local com sucesso. A próxima consulta via \`!placa\` buscará na API novamente.`
+			});
+		} catch (error) {
+			this.logger.error("Erro no comando delPlaca:", error);
+			telemetry.recordError(error);
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Erro ao remover a placa do cache."
 			});
 		}
 	}
