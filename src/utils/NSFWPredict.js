@@ -913,7 +913,8 @@ CRITICAL RULES:
 				`${groupPrefix}Extraindo frames do vídeo para análise NSFW via LLM: ${videoPath}${userSuffix}`
 			);
 
-			const framePaths = await extractFrames(videoPath, undefined, 6);
+			// Extrai até 4 frames para respeitar limite de visão do LLM (vLLM/Qwen)
+			const framePaths = await extractFrames(videoPath, undefined, 4);
 			if (framePaths.length > 0) {
 				tempDir = path.dirname(framePaths[0]);
 			}

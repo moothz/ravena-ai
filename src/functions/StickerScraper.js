@@ -1456,8 +1456,8 @@ async function checkStickerNSFW(buffer, stickerId, extraContext = {}) {
 			return { isNSFW: true, tags: [] };
 		}
 
-		// 3. Etapa 2: Moderação Secundária (NSFWPredict) se for considerado SFW na Etapa 1
-		const frames = await module.exports.extractFramesForAnalysis(buffer, 6);
+		// 3. Etapa 2: Moderação Secundária (NSFWPredict) se for considerado SFW na Etapa 1 (até 4 frames para LLM)
+		const frames = await module.exports.extractFramesForAnalysis(buffer, 4);
 		const result = await nsfwPredict.detectNSFW(frames, {
 			isSticker: true,
 			type: "sticker",

@@ -981,7 +981,8 @@ async function handleMediaRequest(
 			tempPathsToRemove.push(videoPath);
 			tempPathsToRemove.push(tempDir);
 
-			const framePaths = await extractFrames(videoPath, tempDir, 75);
+			// Extrai até 4 frames para respeitar o limite multimodal dos provedores de visão (ex.: vLLM/Qwen)
+			const framePaths = await extractFrames(videoPath, tempDir, 4);
 			const frames = [];
 			for (const filePath of framePaths) {
 				const data = await fs.readFile(filePath, "base64");

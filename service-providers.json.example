@@ -11,6 +11,7 @@
 			"top_p": 0.95,
 			"ignoreVideo": false,
 			"textOnly": false,
+			"maxImages": 4,
 			"timeout_multiplier": 1
 		},
 		{
