@@ -293,7 +293,7 @@ class BotAPI {
 	 *    - GET  /api/stream                        -> SSE: Stream de eventos e status de serviços
 	 *    - GET  /restart/:botId                    -> Reinicialização do bot (Basic Auth)
 	 *    - GET  /logout/:botId                     -> Desconectar sessão do WhatsApp (Basic Auth)
-	 *    - GET  /recreate/:botId                   -> Recriar instância na WhatsGoAPI (Basic Auth)
+	 *    - GET  /recreate/:botId                   -> Recriar instância na WhatsGoAPI (Basic Auth); ?onlyIfMissing=1 só cria, nunca apaga
 	 *    - POST /passkey/respond/:botId            -> Responder desafio de passkey
 	 *    - POST /passkey/confirm/:botId            -> Confirmar pareamento de passkey
 	 *    - GET  /api/bot-stats                     -> Estatísticas e métricas de todos os bots

@@ -1,6 +1,48 @@
 const path = require("path");
 const fs = require("fs").promises;
 const { spawn } = require("child_process");
+const telemetry = require("../../telemetry");
+
+const REFUSALS = {
+	no_instance: {
+		instanceExists: false,
+		message: "Atualmente nenhuma instância criada, use o botão criar para iniciar"
+	},
+	instance_exists: {
+		instanceExists: true,
+		message: "A instância já existe na WhatsGoAPI. Nada foi criado nem apagado."
+	},
+	instance_unknown: {
+		instanceExists: null,
+		message:
+			"Não foi possível confirmar se a instância existe na WhatsGoAPI. Nada foi criado nem apagado."
+	}
+};
+
+function refuse(res, reason) {
+	telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": reason });
+	return res.status(409).json({ status: "error", ...REFUSALS[reason] });
+}
+
+async function goInstanceExists(bot) {
+	try {
+		const { data } = await bot.apiClient.get("/instance/all", {}, true);
+		if (!Array.isArray(data)) return null;
+		if (data.some((instance) => instance.name === bot.instanceName)) return true;
+	} catch {
+		return null;
+	}
+	try {
+		await bot.apiClient.get("/instance/status");
+		return true;
+	} catch (err) {
+		return err.status === 401 ? false : null;
+	}
+}
+
+function postponePendingCleanup(bot) {
+	if (bot._disconnectTimer) bot._renewInstanceCleanup();
+}
 
 /**
  * Registra rotas de gerenciamento de instâncias, bots e QR codes da BotAPI
@@ -9,7 +51,7 @@ const { spawn } = require("child_process");
  * Rotas registradas:
  * - GET  /restart/:botId             - Reinicia um bot específico
  * - GET  /logout/:botId              - Desconecta a sessão de um bot
- * - GET  /recreate/:botId            - Recria a instância na WhatsGoAPI
+ * - GET  /recreate/:botId            - Recria a instância na WhatsGoAPI (?onlyIfMissing=1 só cria, nunca apaga)
  * - GET  /reconnect/:botId           - Tenta reconectar sessão existente da instância
  * - POST /passkey/respond/:botId     - Envia resposta de passkey
  * - POST /passkey/confirm/:botId     - Confirma pareamento de passkey
@@ -144,12 +186,26 @@ function registerInstancesRoutes(api) {
 				.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
 		}
 		try {
+			if (req.query.onlyIfMissing) {
+				postponePendingCleanup(bot);
+				const instanceExists = await goInstanceExists(bot);
+				if (instanceExists) return refuse(res, "instance_exists");
+				if (instanceExists === null) return refuse(res, "instance_unknown");
+				api.logger.info(`[API] Creating missing instance for bot '${botId}'`);
+				await bot.createInstance();
+				await bot
+					.instanceAdvSettings()
+					.catch((e) => api.logger.error(`[API] Error setting up new instance '${botId}':`, e));
+				return res.json({ status: "ok", message: "Instância criada." });
+			}
 			api.logger.info(`[API] Executing recreate for bot '${botId}'`);
 			const result = await bot.recreateInstance();
 			res.json({ status: "ok", message: "Recreation process finished.", details: result });
 		} catch (e) {
 			api.logger.error(`[API] Error during recreate for bot '${botId}':`, e);
-			res.status(500).json({ status: "error", message: e.message, details: e.stack });
+			res
+				.status(500)
+				.json({ status: "error", message: e.data?.error || e.message, details: e.stack });
 		}
 	});
 
@@ -163,6 +219,8 @@ function registerInstancesRoutes(api) {
 				.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
 		}
 		try {
+			postponePendingCleanup(bot);
+			if ((await goInstanceExists(bot)) === false) return refuse(res, "no_instance");
 			api.logger.info(`[API] Executing tryReconnect for bot '${botId}'`);
 			if (typeof bot.tryReconnect === "function") {
 				const result = await bot.tryReconnect();
@@ -301,13 +359,7 @@ function registerInstancesRoutes(api) {
 		}
 		try {
 			const instanceStatus = await bot._checkInstanceStatusAndConnect(true, false);
-			let instanceExists = false;
-			try {
-				const goInstance = await bot.getGoInstance(bot.instanceName);
-				instanceExists = !!goInstance;
-			} catch {
-				instanceExists = false;
-			}
+			const instanceExists = await goInstanceExists(bot);
 			res.json({ ...instanceStatus, instanceExists, connected: Boolean(bot.isConnected) });
 		} catch (e) {
 			api.logger.error("Error checking qrcode status:", e);
@@ -324,14 +376,10 @@ function registerInstancesRoutes(api) {
 			return res.status(404).json({ status: "error", message: `Bot '${botId}' não encontrado` });
 		}
 		try {
+			postponePendingCleanup(bot);
+			const instanceExists = await goInstanceExists(bot);
+			if (instanceExists === false) return refuse(res, "no_instance");
 			const instanceStatus = await bot._checkInstanceStatusAndConnect(true, true);
-			let instanceExists = false;
-			try {
-				const goInstance = await bot.getGoInstance(bot.instanceName);
-				instanceExists = !!goInstance;
-			} catch {
-				instanceExists = false;
-			}
 			res.json({ ...instanceStatus, instanceExists, connected: Boolean(bot.isConnected) });
 		} catch (e) {
 			api.logger.error("Error initiating connect for bot:", e);
@@ -414,13 +462,8 @@ function registerInstancesRoutes(api) {
 		const authRaw = Buffer.from(`${user}:${pass}`).toString("base64");
 		const isConnected = bot.isConnected;
 
-		let instanceExists = false;
-		try {
-			const instanceInfo = await bot.getGoInstance(bot.instanceName);
-			instanceExists = !!instanceInfo;
-		} catch {
-			instanceExists = false;
-		}
+		const instanceExists = await goInstanceExists(bot);
+		const noInstance = instanceExists === false;
 
 		const htmlResponse = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -526,7 +569,7 @@ function registerInstancesRoutes(api) {
       ${
 				isConnected
 					? '<span class="status-badge connected"><span class="dot"></span> Conectado</span>'
-					: !instanceExists
+					: noInstance
 						? '<span class="status-badge no-instance"><span class="dot"></span> Sem Instância</span>'
 						: '<span class="status-badge disconnected"><span class="dot"></span> Desconectado</span>'
 			}
@@ -534,7 +577,13 @@ function registerInstancesRoutes(api) {
     ${
 			isConnected
 				? ""
-				: `
+				: noInstance
+					? `
+    <div class="info-row">
+      <span>ℹ️</span>
+      <div>${REFUSALS.no_instance.message}</div>
+    </div>`
+					: `
     <div class="info-row">
       <span>ℹ️</span>
       <div>
@@ -553,9 +602,13 @@ function registerInstancesRoutes(api) {
       </div>
     </div>`
 		}
-    <div class="help-box">
+    ${
+			noInstance
+				? ""
+				: `<div class="help-box">
       <div>&bull; <strong>Tentar Reconectar:</strong> Tente isto antes de recriar, principalmente quando o bot ficar muitas horas offline.</div>
-    </div>
+    </div>`
+		}
     <div id="status-msg"></div>
     <div class="btn-row">
       ${
@@ -565,7 +618,11 @@ function registerInstancesRoutes(api) {
       <button class="btn-primary" onclick="tryReconnect()">Tentar Reconectar</button>
       <button class="btn-warning" onclick="recreateBot()">Recriar</button>
       `
-					: `
+					: noInstance
+						? `
+      <button class="btn-primary" onclick="createBot()">Criar</button>
+      `
+						: `
       <button class="btn-primary" onclick="tryReconnect()">Tentar Reconectar</button>
       <button class="btn-warning" onclick="recreateBot()">Recriar</button>
       <button class="btn-danger" onclick="logoutBot()">Desconectar</button>
@@ -579,6 +636,7 @@ function registerInstancesRoutes(api) {
     const authQuery = "?auth=Basic " + "${authRaw}";
     let isConnected = ${isConnected};
     let instanceExists = ${instanceExists};
+    let acting = false;
     const statusBox = document.getElementById('status-msg');
 
     function applyConnectData(d) {
@@ -601,17 +659,20 @@ function registerInstancesRoutes(api) {
         try {
           const d = JSON.parse(e.data);
           if (d.type === 'qr_update') { applyConnectData(d); }
-          else if (d.type === 'connected') { window.location.reload(); }
+          else if (d.type === 'connected' || d.type === 'instance_deleted') { window.location.reload(); }
         } catch(err){}
       };
       es.onerror = function() { setTimeout(startSSE, 5000); es.close(); };
     }
 
     async function checkStatus() {
+      if (acting) return;
       try {
         const r = await fetch('/qrcode-status/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
-        if ((d.connected && !isConnected) || (!d.connected && isConnected)) {
+        if (acting) return;
+        const existsChanged = typeof d.instanceExists === 'boolean' && d.instanceExists !== instanceExists;
+        if ((d.connected && !isConnected) || (!d.connected && isConnected) || existsChanged) {
           window.location.reload();
         }
       } catch(e){}
@@ -634,7 +695,7 @@ function registerInstancesRoutes(api) {
       try {
         const r = await fetch('/qrcode-initconnect/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
-        if (d.connected || (d.extra && d.extra.ok)) {
+        if (d.connected || (d.extra && d.extra.ok) || d.instanceExists === false) {
           window.location.reload();
           return;
         }
@@ -649,6 +710,7 @@ function registerInstancesRoutes(api) {
       try {
         const r = await fetch('/reconnect/' + botId + authQuery, { credentials: 'same-origin' });
         const d = await r.json();
+        if (d.instanceExists === false) { window.location.reload(); return; }
         if (d.status === 'ok') {
           if (msg) msg.textContent = 'Comando de reconexão enviado. Verificando status...';
           setTimeout(async () => {
@@ -663,8 +725,32 @@ function registerInstancesRoutes(api) {
       }
     }
 
+    async function createBot() {
+      if (acting) return;
+      acting = true;
+      statusBox.textContent = 'Criando instância na WhatsGoAPI...';
+      try {
+        const r = await fetch('/recreate/' + botId + authQuery + '&onlyIfMissing=1', { credentials: 'same-origin' });
+        const d = await r.json();
+        if (d.status === 'ok') {
+          statusBox.textContent = 'Instância criada com sucesso! Atualizando página...';
+        } else if (d.instanceExists !== undefined) {
+          statusBox.textContent = d.message;
+        } else {
+          acting = false;
+          statusBox.textContent = 'Erro ao criar: ' + (d.message || 'Erro desconhecido');
+          return;
+        }
+        setTimeout(() => window.location.reload(), 1500);
+      } catch(e) {
+        acting = false;
+        statusBox.textContent = 'Erro de rede: ' + e.message;
+      }
+    }
+
     async function recreateBot() {
       if (!confirm('Deseja realmente apagar e recriar esta instância? Esta ação apagará a instância atual e criará uma nova.')) return;
+      acting = true;
       const msg = document.getElementById('status-msg');
       if (msg) msg.textContent = 'Recriando instância na WhatsGoAPI...';
       try {
@@ -674,9 +760,11 @@ function registerInstancesRoutes(api) {
           if (msg) msg.textContent = 'Instância recriada com sucesso! Atualizando página...';
           setTimeout(() => window.location.reload(), 1500);
         } else {
+          acting = false;
           if (msg) msg.textContent = 'Erro ao recriar: ' + (d.message || 'Erro desconhecido');
         }
       } catch(e) {
+        acting = false;
         if (msg) msg.textContent = 'Erro de rede: ' + e.message;
       }
     }
@@ -698,12 +786,12 @@ function registerInstancesRoutes(api) {
         setInterval(checkStatus, 5000);
         return;
       }
+      setInterval(checkStatus, 4000);
       if (!instanceExists) {
-        if (statusBox) statusBox.textContent = 'Instância não existe na WhatsGoAPI. Clique em "Tentar Reconectar" ou "Recriar".';
+        if (instanceExists === null) statusBox.textContent = 'Não foi possível consultar a instância na WhatsGoAPI. Tentando de novo...';
         return;
       }
       startSSE();
-      setInterval(checkStatus, 4000);
       forceConnect();
     })();
   </script>
