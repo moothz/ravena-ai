@@ -6,6 +6,7 @@ const fs = require("fs");
 
 const TelegramClient = require("./services/TelegramClient");
 const TelegramCallbackManager = require("./services/TelegramCallbackManager");
+const TelegramPollingBackoff = require("./services/TelegramPollingBackoff");
 const CacheManager = require("./services/CacheManager");
 const ReturnMessage = require("./models/ReturnMessage");
 const ReactionsHandler = require("./ReactionsHandler");
@@ -103,6 +104,12 @@ class WhatsAppBotTelegram {
 		}
 
 		this.apiClient = new TelegramClient(this.telegramBotToken, this.logger);
+		this.pollingBackoff = new TelegramPollingBackoff({
+			loop: "bot",
+			logger: this.logger,
+			token: this.telegramBotToken,
+			tokenSource: `telegramBotToken do bot ${this.id} em bots.json`
+		});
 		this.database = Database.getInstance();
 		this.isConnected = false; // Será true após o webhook ser configurado
 		this.botInfo = null;
@@ -159,6 +166,7 @@ class WhatsAppBotTelegram {
 
 		try {
 			this.botInfo = await this.apiClient.getMe();
+			this.pollingBackoff.succeed();
 			this.client.info.wid._serialized = this.botInfo.id;
 			this.logger.info(`Bot ID: ${this.botInfo.id}, Username: @${this.botInfo.username}`);
 
@@ -211,9 +219,17 @@ class WhatsAppBotTelegram {
 
 			await this.registerCommands();
 		} catch (error) {
-			this.logger.error(`Error during Telegram bot initialization:`, error.stack);
+			const tokenRejected = TelegramPollingBackoff.isTokenRejected(error);
+			if (!tokenRejected) {
+				this.pollingBackoff.interruptRejections();
+				this.logger.error(
+					`Error during Telegram bot initialization:`,
+					this.pollingBackoff.redact(error.stack)
+				);
+			}
 			this._onInstanceDisconnected("INITIALIZATION_FAILURE");
 			this.isPolling = false;
+			if (tokenRejected && this.pollingBackoff.fail(error) === null) return this;
 			setTimeout(() => this.initialize(), 30000);
 		}
 
@@ -256,6 +272,7 @@ class WhatsAppBotTelegram {
 			while (this.isPolling) {
 				try {
 					const updates = await this.apiClient.getUpdates(offset + 1, 100, 30);
+					this.pollingBackoff.succeed();
 					if (updates.length > 0) {
 						this.logger.debug(`Received ${updates.length} updates via polling.`);
 						for (const update of updates) {
@@ -268,12 +285,15 @@ class WhatsAppBotTelegram {
 						this._onInstanceConnected();
 					}
 				} catch (error) {
-					this.logger.error(`Error during polling for bot ${this.id}: ${error.message}`);
 					if (this.isConnected) {
 						this._onInstanceDisconnected("POLLING_ERROR");
 					}
-					// Avoid busy-looping on critical errors by waiting before retrying
-					await sleep(5000);
+					const retryMs = this.pollingBackoff.fail(error);
+					if (retryMs === null) {
+						this.isPolling = false;
+					} else {
+						await sleep(retryMs);
+					}
 				}
 			}
 			this.logger.info(`[${this.id}] Polling loop stopped.`);
