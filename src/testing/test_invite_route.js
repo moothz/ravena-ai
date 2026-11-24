@@ -3,6 +3,7 @@
 
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
+delete process.env.GRUPO_INVITES_TELEGRAM;
 
 const assert = require("assert");
 const express = require("express");
