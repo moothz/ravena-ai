@@ -1741,7 +1741,8 @@ async function main() {
 			const IGNORED = {
 				WAIFULETES_URL: "endereço do serviço",
 				WAIFULETES_KEY: "segredo de acesso",
-				SESSION_TTL_MS: "duração da sessão web do banco; não mexe em moeda"
+				SESSION_TTL_MS: "duração da sessão web do banco; não mexe em moeda",
+				TX_GAME_GLOBS: "filtro de jogo das transações do admin; não mexe em moeda"
 			};
 			const src = fs.readFileSync(path.join(__dirname, "../services/BankService.js"), "utf8");
 			assert.match(src, /require\("\.\/economyConstants"\)/);

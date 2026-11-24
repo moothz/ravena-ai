@@ -1,9 +1,3 @@
-// src/testing/test_bank_tx_game_filter.js
-// Filtro de jogo das transações do RavenaBank (/admin e banco-admin antigo): cada opção das telas
-// precisa trazer todas as transações do jogo que anuncia. Os valores de bank_transactions são
-// lidos do código que grava; valor novo sem jogo definido aqui falha e pede uma decisão.
-// Roda num SQLite temporário (o Database do bot é trocado por um falso) e passa pela rota real.
-
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
@@ -67,26 +61,27 @@ const SRC = path.join(__dirname, "..");
 const PUBLIC = path.join(__dirname, "../../public");
 const USER = "5511999990001";
 
-// Jogo de cada valor gravado em bank_transactions.game (null: não é de jogo nenhum).
-const GAME_OF = {
-	pesca: "pesca", // venda de peixes
-	fishing: "pesca", // compra de iscas
-	fishing_cap_baits: "pesca", // excedente do teto convertido em Runas
+const NO_GAME = null;
+const DEFAULT_CREDIT_SOURCE = "bonus";
+const OVERFLOW_BUFF_TYPES = ["inventory_slot", "max_baits"];
+const GAME_BY_STORED_VALUE = {
+	pesca: "pesca",
+	fishing: "pesca",
+	fishing_cap_baits: "pesca",
 	fishing_cap_baits_fazenda: "pesca",
 	fishing_cap_extra_baits: "pesca",
 	fishing_cap_inventory_slot: "pesca",
 	fishing_cap_max_baits: "pesca",
 	waifu: "waifu",
 	jardim: "jardim",
-	slots: "slots", // compra de moedas
-	slots_prize: "slots", // prêmio do !slots
-	admin: null,
-	bonus: null,
-	donor_bonus: null,
-	market: null
+	slots: "slots",
+	slots_prize: "slots",
+	admin: NO_GAME,
+	bonus: NO_GAME,
+	donor_bonus: NO_GAME,
+	market: NO_GAME
 };
 
-/** Texto de cada chamada fn(...) do código, com parênteses balanceados. */
 function callsTo(code, fn) {
 	const out = [];
 	for (const m of code.matchAll(new RegExp(`\\b${fn}\\(`, "g"))) {
@@ -102,7 +97,6 @@ function callsTo(code, fn) {
 	return out;
 }
 
-/** Pares type/game que o código grava: INSERT com literal e créditos com origem (BONUS). */
 function writtenByCode() {
 	const pairs = new Map();
 	const add = (type, game) => pairs.set(`${type}:${game}`, { type, game });
@@ -119,22 +113,20 @@ function writtenByCode() {
 			if (!call.includes("recordTransaction: true")) continue;
 			for (const m of call.matchAll(/source: "(\w+)"/g)) add("BONUS", m[1]);
 		}
-		// Teto da pesca: a origem passa por addBuff/addBaits até creditOverflowRunas.
 		for (const call of [...callsTo(code, "addBaits"), ...callsTo(code, "addBuff")])
 			for (const m of call.matchAll(/source: "(\w+)"/g)) add("BONUS", m[1]);
 		for (const call of callsTo(code, "creditOverflowRunas")) {
 			for (const m of call.matchAll(/"(fishing_cap_\w+)"/g)) add("BONUS", m[1]);
 			if (call.includes("`fishing_cap_${buff.type}`"))
-				for (const t of ["inventory_slot", "max_baits"]) add("BONUS", `fishing_cap_${t}`);
+				for (const t of OVERFLOW_BUFF_TYPES) add("BONUS", `fishing_cap_${t}`);
 		}
 	}
-	add("BONUS", "bonus"); // creditRunas sem origem
+	add("BONUS", DEFAULT_CREDIT_SOURCE);
 	for (const { type, game } of [...pairs.values()])
 		if (["DEPOSIT", "WITHDRAW", "STORE_BUY"].includes(type)) add("UNDO_TRADE", game);
 	return [...pairs.values()];
 }
 
-/** Opções do filtro de jogo da tela antiga (HTML estático). */
 function legacyOptions() {
 	const html = fs.readFileSync(path.join(PUBLIC, "banco-admin.html"), "utf8");
 	const select = /<select id="tx-filter-game"[\s\S]*?<\/select>/.exec(html)[0];
@@ -146,7 +138,11 @@ async function runTests() {
 	const written = writtenByCode();
 	const games = [...new Set(written.map((w) => w.game))].sort();
 	console.log(`Valores de game gravados pelo código: ${games.join(", ")}`);
-	assert.deepStrictEqual(games, Object.keys(GAME_OF).sort(), "valor gravado sem jogo definido");
+	assert.deepStrictEqual(
+		games,
+		Object.keys(GAME_BY_STORED_VALUE).sort(),
+		"valor gravado sem jogo definido"
+	);
 
 	const now = Date.now();
 	for (const { type, game } of written) {
@@ -204,7 +200,7 @@ async function runTests() {
 		const reached = new Set();
 		for (const option of options.filter((o) => o !== "ALL")) {
 			const got = pairsOf(await fetchTx(query(option)));
-			const want = pairsOf(written.filter((w) => GAME_OF[w.game] === option));
+			const want = pairsOf(written.filter((w) => GAME_BY_STORED_VALUE[w.game] === option));
 			got.forEach((p) => reached.add(p));
 			const missing = want.filter((p) => !got.includes(p));
 			const extra = got.filter((p) => !want.includes(p));
@@ -213,26 +209,26 @@ async function runTests() {
 			if (missing.length) failures.push(`${screen}, ${option}: faltam ${missing.join(", ")}`);
 			if (extra.length) failures.push(`${screen}, ${option}: sobram ${extra.join(", ")}`);
 		}
-		const lost = written.filter((w) => GAME_OF[w.game] && !reached.has(`${w.type}:${w.game}`));
+		const lost = written.filter(
+			(w) => GAME_BY_STORED_VALUE[w.game] !== NO_GAME && !reached.has(`${w.type}:${w.game}`)
+		);
 		if (lost.length)
 			failures.push(
 				`${screen}: nenhuma opção alcança ${[...new Set(lost.map((w) => w.game))].join(", ")}`
 			);
 	}
 
-	// Com a operação, o jogo separa iscas de peixes e prêmio de moedas; o jogador continua valendo.
-	const narrow = async (label, query, want) => {
+	const expectPairs = async (label, query, want) => {
 		const got = pairsOf(await fetchTx(new URLSearchParams({ limit: 100, ...query })));
 		if (JSON.stringify(got) !== JSON.stringify(want))
 			failures.push(`${label}: esperado [${want}], veio [${got}]`);
 	};
-	await narrow("iscas compradas", { game: "pesca", type: "STORE_BUY" }, ["STORE_BUY:fishing"]);
-	await narrow("prêmio de slots", { game: "slots", type: "BONUS" }, ["BONUS:slots_prize"]);
-	await narrow("outro jogador", { game: "slots", q: "5511999990002" }, []);
-	await narrow("desfeitas", { game: "pesca", status: "UNDONE" }, []);
-	// Valor avulso (fora das telas) continua exato, sem curinga.
-	await narrow("valor exato", { game: "slots_prize" }, ["BONUS:slots_prize"]);
-	await narrow("curinga não vale", { game: "fish*" }, []);
+	await expectPairs("iscas compradas", { game: "pesca", type: "STORE_BUY" }, ["STORE_BUY:fishing"]);
+	await expectPairs("prêmio de slots", { game: "slots", type: "BONUS" }, ["BONUS:slots_prize"]);
+	await expectPairs("outro jogador", { game: "slots", q: "5511999990002" }, []);
+	await expectPairs("desfeitas", { game: "pesca", status: "UNDONE" }, []);
+	await expectPairs("valor exato fora das opções", { game: "slots_prize" }, ["BONUS:slots_prize"]);
+	await expectPairs("curinga do usuário não vale", { game: "fish*" }, []);
 
 	server.close();
 	assert.ok(!failures.length, `\n- ${failures.join("\n- ")}`);

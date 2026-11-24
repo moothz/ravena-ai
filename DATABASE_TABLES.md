@@ -684,7 +684,7 @@ Histórico de transações de câmbio (depósitos e saques).
 | `id` | INTEGER PK | Auto-incremento |
 | `user_id` | TEXT | JID ou número do usuário |
 | `type` | TEXT | 'DEPOSIT' ou 'WITHDRAW' |
-| `game` | TEXT | 'pesca', 'waifu', 'jardim', 'slots', 'fishing' (iscas) ou 'market'; em `BONUS` e ajuste, a origem: 'slots_prize', 'fishing_cap_*', 'donor_bonus', 'bonus', 'admin'. O filtro do admin junta 'fishing*' em Pesca e 'slots_prize' em Slots (`TX_GAME_PATTERNS`) |
+| `game` | TEXT | 'pesca', 'waifu', 'jardim', 'slots', 'fishing' (iscas) ou 'market'; em `BONUS` e ajuste, a origem: 'slots_prize', 'fishing_cap_*', 'donor_bonus', 'bonus', 'admin'. O filtro do admin junta 'fishing*' em Pesca e 'slots_prize' em Slots (`TX_GAME_GLOBS`) |
 | `game_amount` | REAL | Quantidade do recurso do jogo envolvida |
 | `runas_amount` | REAL | Quantidade de Runas movimentadas |
 | `spread_rate` | REAL | Taxa percentual de spread aplicada (0.03 a 0.10) |
