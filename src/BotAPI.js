@@ -572,21 +572,7 @@ class BotAPI {
 			});
 		}
 
-		let allGroups = [];
-		try {
-			allGroups = await this.database.getGroups();
-		} catch (e) {
-			this.logger.warn("Erro ao buscar grupos para runtime status:", e);
-		}
-
-		const groupsCountMap = {};
-		if (Array.isArray(allGroups)) {
-			allGroups.forEach((g) => {
-				if (g && g.botId) {
-					groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
-				}
-			});
-		}
+		const knownGroups = this.database.getGroupIdsByBot();
 
 		const botGroupPromises = this.bots.map(async (bot) => {
 			if (bot.isConnected && typeof bot.listGroups === "function") {
@@ -602,7 +588,7 @@ class BotAPI {
 					// Fallback para o banco
 				}
 			}
-			return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
+			return { botId: bot.id, count: knownGroups[bot.id]?.length ?? 0 };
 		});
 
 		const resolvedGroupCounts = await Promise.all(botGroupPromises);
@@ -628,10 +614,7 @@ class BotAPI {
 					avg: avgResponseTime,
 					max: maxResponseTime
 				},
-				groupsCount:
-					finalGroupsCountMap[bot.id] !== undefined
-						? finalGroupsCountMap[bot.id]
-						: groupsCountMap[bot.id] || 0
+				groupsCount: finalGroupsCountMap[bot.id]
 			});
 		});
 

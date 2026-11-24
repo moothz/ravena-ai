@@ -20,6 +20,24 @@ const PendingJoinMapper = require("../mappers/PendingJoinMapper");
 const SoftBlockMapper = require("../mappers/SoftBlockMapper");
 const LoadReportMapper = require("../mappers/LoadReportMapper");
 const PhoneUtils = require("../../PhoneUtils");
+const telemetry = require("../../../telemetry");
+
+const BUSY_PAUSE_MS = 60_000;
+
+const BOT_LIST_OR_NULL = `CASE WHEN json_valid(groups.bots_in_group)
+	THEN CASE json_type(groups.bots_in_group) WHEN 'array' THEN groups.bots_in_group END
+	END`;
+
+const ADD_BOT_TO_GROUP = `UPDATE groups
+	SET bots_in_group = json_insert(COALESCE(${BOT_LIST_OR_NULL}, '[]'), '$[#]', @botId)
+	WHERE id = @groupId
+		AND NOT EXISTS (SELECT 1 FROM json_each(${BOT_LIST_OR_NULL}) WHERE value = @botId)`;
+
+const REMOVE_BOT_FROM_GROUP = `UPDATE groups
+	SET bots_in_group = (
+		SELECT json_group_array(value) FROM json_each(${BOT_LIST_OR_NULL}) WHERE value <> @botId
+	)
+	WHERE id = @groupId`;
 
 class CoreRepository {
 	/**
@@ -35,6 +53,8 @@ class CoreRepository {
 		this.CMD_DB = "custom_commands";
 		/** load_reports.db — dedicated file for bot load reports */
 		this.REPORTS_DB = "load_reports";
+
+		this.botPresencePausedUntil = 0;
 
 		this._initSchemas();
 	}
@@ -85,6 +105,7 @@ class CoreRepository {
 				minecraft_server TEXT,
 				members TEXT,
 				admins TEXT,
+				bots_in_group TEXT,
 				created_at INTEGER,
 				updated_at INTEGER,
 				json_data TEXT
@@ -520,6 +541,52 @@ class CoreRepository {
 			this.logger.error("Error in updateGroupInteract:", error);
 			return false;
 		}
+	}
+
+	setBotInGroup(groupId, botId, present) {
+		if (present && Date.now() < this.botPresencePausedUntil) return false;
+		try {
+			const known = this.mappers.get(
+				this.DB,
+				`SELECT 1 FROM groups, json_each(${BOT_LIST_OR_NULL}) AS bot WHERE groups.id = ? AND bot.value = ?`,
+				[groupId, botId]
+			);
+			if (Boolean(known) === present) return false;
+
+			return telemetry.withSpan(
+				"group bots_in_group.update",
+				{
+					attributes: {
+						"ravena.chat.id": telemetry.chatIdAttr(groupId),
+						"ravena.bot.id": botId,
+						"ravena.group.bot_present": present
+					}
+				},
+				() =>
+					this.mappers.run(this.DB, present ? ADD_BOT_TO_GROUP : REMOVE_BOT_FROM_GROUP, {
+						groupId,
+						botId
+					}).changes > 0
+			);
+		} catch (error) {
+			if (error.code === "SQLITE_BUSY") this.botPresencePausedUntil = Date.now() + BUSY_PAUSE_MS;
+			this.logger.error("Error in setBotInGroup:", error);
+			return false;
+		}
+	}
+
+	getGroupIdsByBot() {
+		const byBot = {};
+		try {
+			const rows = this.mappers.all(
+				this.DB,
+				`SELECT groups.id AS groupId, bot.value AS botId FROM groups, json_each(${BOT_LIST_OR_NULL}) AS bot`
+			);
+			for (const { groupId, botId } of rows) (byBot[botId] ??= []).push(groupId);
+		} catch (error) {
+			this.logger.error("Error in getGroupIdsByBot:", error);
+		}
+		return byBot;
 	}
 
 	// ===========================================================================

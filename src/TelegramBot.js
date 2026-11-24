@@ -1500,6 +1500,8 @@ class WhatsAppBotTelegram {
 				isBotJoining: true
 			};
 			this._handleGroupParticipantsUpdate(groupUpdateData);
+		} else if (newStatus === "left" || newStatus === "kicked") {
+			this.database.setBotInGroup(`${chatId}`, this.id, false);
 		}
 	}
 
