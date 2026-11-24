@@ -139,7 +139,10 @@ async function testFonts(base, html) {
 			);
 		}
 	}
-	for (const { url } of faces) {
+	for (const { family, min, max, url } of faces) {
+		const prefix = family.toLowerCase().replaceAll(" ", "-");
+		const name = min === max ? `${prefix}-${min}-` : `${prefix}-`;
+		assert.ok(path.posix.basename(url).startsWith(name), `${family} ${min}: arquivo ${url}`);
 		const res = await fetch(new URL(url, base));
 		assert.strictEqual(res.status, 200, `${url} servido pela Ravena`);
 		assert.strictEqual(res.headers.get("content-type"), "font/woff2", `${url}: tipo`);
@@ -147,10 +150,33 @@ async function testFonts(base, html) {
 		assert.strictEqual(data.toString("latin1", 0, 4), "wOF2", `${url}: assinatura woff2`);
 		assert.strictEqual(data.readUInt32BE(8), data.length, `${url}: arquivo inteiro`);
 	}
+	const files = faces.map((f) => f.url);
+	assert.strictEqual(
+		new Set(faces.filter((f) => f.min === f.max).map((f) => f.url)).size,
+		faces.filter((f) => f.min === f.max).length,
+		"cada peso fixo e intervalo tem o próprio arquivo"
+	);
+	const onDisk = fs.readdirSync(path.join(ADMIN_DIR, "fonts"));
+	assert.deepStrictEqual(
+		[...new Set(files.map((f) => path.posix.basename(f)))].sort(),
+		onDisk.filter((f) => f.endsWith(".woff2")).sort(),
+		"arquivos de fonte iguais aos usados no CSS"
+	);
+	for (const family of Object.keys(expected)) {
+		const license = path.join(ADMIN_DIR, "fonts", `OFL-${family.replaceAll(" ", "-")}.txt`);
+		assert.ok(
+			fs.existsSync(license) && /SIL OPEN FONT LICENSE/i.test(fs.readFileSync(license, "utf8")),
+			`licença da ${family}`
+		);
+	}
 	console.log("✓ Figtree e IBM Plex Mono servidas pela Ravena, nos pesos que o painel usa.");
 }
 
 async function testTheme(base, html) {
+	const themeTag = tagsOf(html, "script").find((a) =>
+		attrOf(a, "src")?.startsWith("/admin/theme.js")
+	);
+	if (themeTag) assert.ok(!/\b(defer|async)\b/.test(themeTag), "tema antes da tela");
 	let code = "";
 	for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)) {
 		if (attrOf(m[1], "type") === "module") continue;
