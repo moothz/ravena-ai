@@ -37,7 +37,6 @@ const clock = {
 	}
 };
 
-// O tempo do código da aplicação é virtual; os timers das dependências (axios, request) seguem reais.
 global.setTimeout = (fn, ms = 0, ...args) => {
 	const caller = new Error().stack.split("\n")[2] || "";
 	if (caller.includes("node_modules")) return realSetTimeout(fn, ms, ...args);
