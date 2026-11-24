@@ -1400,10 +1400,12 @@ ${textToAnalyze}`;
 				try {
 					slotsData = await this.database.dbGet(
 						"slots",
-						"SELECT coins, total_bets, total_wins FROM slots_users WHERE user_id = ?",
+						"SELECT coins, total_plays AS total_bets, total_wins FROM slots_users WHERE user_id = ?",
 						[userPhone]
 					);
-				} catch (e) {}
+				} catch (e) {
+					this.logger.warn(`Erro ao consultar slots no User360: ${e.message}`);
+				}
 
 				try {
 					const donor = await this.database.getDonorByNumber(userPhone);
