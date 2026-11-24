@@ -79,7 +79,7 @@ let botApi;
 let baseUrl;
 const auth = `Basic ${Buffer.from("admin:senha-teste").toString("base64")}`;
 
-async function novoCenario() {
+async function botQueNuncaConectou() {
 	const { estado, url } = await criarWhatsgoFalsa();
 	const bot = new WhatsAppBotGo({
 		id: "rav-teste",
@@ -90,8 +90,13 @@ async function novoCenario() {
 	});
 	botApi.bots.splice(0, botApi.bots.length, bot);
 	const webhook = (event) => bot._handleWebhook({ body: { event, data: {} } }, { sendStatus() {} });
-	await webhook("Connected");
 	estado.sessao = { Connected: false, LoggedIn: false };
+	return { estado, webhook };
+}
+
+async function novoCenario() {
+	const { estado, webhook } = await botQueNuncaConectou();
+	await webhook("Connected");
 	await webhook("LoggedOut");
 	return { estado, webhook };
 }
@@ -193,6 +198,14 @@ const cenarios = {
 		await passar(20);
 		conferirApagadas(estado, 0);
 		await fecharDeNovo();
+	},
+	"abrir e fechar a tela de um bot que nunca conectou neste processo não apaga": async () => {
+		const { estado } = await botQueNuncaConectou();
+		const fechar = await abrirTela();
+		await iniciarPareamento();
+		await fechar();
+		await passar(40);
+		conferirApagadas(estado, 0);
 	},
 	"abrir e fechar a tela não apaga uma sessão autenticada": async () => {
 		const { estado } = await novoCenario();
