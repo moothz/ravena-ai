@@ -5,9 +5,9 @@
  * Tentar reconectar, Recriar e Desconectar. Mesmas rotas e o mesmo comportamento da página
  * antiga.
  *
- * Cuidado com o stream: quando o último cliente do /qrcode-stream fecha e a instância está
- * desconectada há mais de 15 min, o servidor a apaga NA HORA (instancesRoutes.js, req "close").
- * Por isso "Atualizar" e trocar de aba dentro da mesma instância não fecham o EventSource: ele
+ * Enquanto há cliente no /qrcode-stream, o servidor adia a limpeza da instância desconectada e sem
+ * sessão; quando um cliente sai, a contagem de 15 min recomeça (WhatsAppBotGo.js).
+ * "Atualizar" e trocar de aba dentro da mesma instância não fecham o EventSource: ele
  * fica guardado (parked) e a próxima tela de pareamento da mesma instância o reaproveita. Só
  * sair da instância (outra instância, outra área, fechar a aba) fecha o stream.
  * A credencial é o cookie do painel (as rotas :botId aceitam a sessão do admin); nada de ?auth=.
@@ -235,7 +235,7 @@ export async function renderPareamento(root, ctx, bot) {
 				{ class: "notice", role: "note" },
 				lamp("attention"),
 				h("span", {
-					text: "Desconectada por mais de 15 minutos, a instância é apagada automaticamente. Enquanto esta ficha está aberta o servidor espera; ao sair dela (outra instância, outra área ou fechar a aba) com a instância desconectada há mais de 15 minutos, ela é apagada na hora e será preciso recriar e parear de novo. Atualizar e trocar de aba dentro desta instância não contam."
+					text: "Desconectada e sem sessão por mais de 15 minutos, a instância é apagada automaticamente. Enquanto esta ficha está aberta o servidor espera; ao sair dela, a contagem de 15 minutos recomeça."
 				})
 			)
 		);

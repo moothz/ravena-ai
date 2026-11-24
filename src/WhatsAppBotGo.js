@@ -10,6 +10,7 @@ const path = require("path");
 const fs = require("fs");
 const os = require("os");
 
+const telemetry = require("./telemetry");
 const WhatsgoClient = require("./services/WhatsgoClient");
 const CacheManager = require("./services/CacheManager");
 const ReturnMessage = require("./models/ReturnMessage");
@@ -226,8 +227,8 @@ class WhatsAppBotGo {
 		this.startupTime = 0;
 
 		// Controle de desconexão
-		this.disconnectedAt = null;
 		this._disconnectTimer = null;
+		this._hasDisconnected = false;
 
 		// SSE clients para streaming de QR code/pairing code na página /qrcode/:botId
 		this.qrSseClients = [];
@@ -2146,6 +2147,7 @@ class WhatsAppBotGo {
 	}
 
 	async _checkInstanceStatusAndConnect(isRetry = false, forceConnect = false) {
+		if (forceConnect) this._renewInstanceCleanup();
 		try {
 			let response;
 			try {
@@ -2394,7 +2396,7 @@ class WhatsAppBotGo {
 			clearTimeout(this._disconnectTimer);
 			this._disconnectTimer = null;
 		}
-		this.disconnectedAt = null;
+		this._hasDisconnected = false;
 		this.isConnected = true;
 
 		if (this.streamSystem) {
@@ -2420,12 +2422,16 @@ class WhatsAppBotGo {
 		this.isConnected = false;
 		this._hasEmittedConnected = false;
 		if (!wasConnected && reason !== "INITIALIZING") return;
-		this.disconnectedAt = Date.now();
+		this._hasDisconnected = true;
 		this.logger.info(`[${this.id}] Disconnected from WhatsApp. Reason: ${reason}`);
 		if (this.eventHandler && typeof this.eventHandler.onDisconnected === "function") {
 			this.eventHandler.onDisconnected(this, reason);
 		}
 
+		this._scheduleInstanceCleanup();
+	}
+
+	_scheduleInstanceCleanup() {
 		// Limpar timer anterior se existir
 		if (this._disconnectTimer) {
 			clearTimeout(this._disconnectTimer);
@@ -2434,36 +2440,77 @@ class WhatsAppBotGo {
 
 		// Após 15 minutos desconectado, verificar se ainda está deslogado antes de apagar a instância
 		const DISCONNECT_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutos
-		this._disconnectTimer = setTimeout(async () => {
-			try {
-				this._disconnectTimer = null;
-				const statusRes = await this.apiClient.get(`/instance/status`).catch(() => null);
-				if (statusRes?.data?.Connected && statusRes?.data?.LoggedIn) {
-					this.logger.info(
-						`[${this.id}] Instância já está conectada na WhatsGoAPI no disparo do timer. Sincronizando estado.`
-					);
-					this._onInstanceConnected();
-					return;
-				}
-				if (statusRes?.data?.LoggedIn) {
-					this.logger.info(
-						`[${this.id}] 15 minutos desconectado, mas sessão segue autenticada (LoggedIn=true). Tentando reconectar em vez de apagar...`
-					);
-					await this.tryReconnect();
-					return;
-				}
-				this.logger.info(
-					`[${this.id}] 15 minutos desconectado e sem sessão ativa. Apagando instância...`
-				);
-				await this.deleteInstance();
-				this.connectDataCache = null;
-				this.logger.info(`[${this.id}] Instância apagada após timeout de desconexão.`);
-				// Notificar clientes SSE
-				this.broadcastQRUpdate({ type: "instance_deleted", botId: this.id });
-			} catch (err) {
-				this.logger.error(`[${this.id}] Erro ao processar timeout de desconexão:`, err);
+		this._disconnectTimer = setTimeout(
+			() =>
+				telemetry.withSpan(
+					"whatsgo instance.cleanup",
+					{ root: true, attributes: { "ravena.bot.id": this.id } },
+					(span) => this._cleanupDisconnectedInstance(span)
+				),
+			DISCONNECT_TIMEOUT_MS
+		);
+	}
+
+	_renewInstanceCleanup() {
+		if (this._hasDisconnected && !this.isConnected) this._scheduleInstanceCleanup();
+	}
+
+	async _cleanupDisconnectedInstance(span) {
+		const setAction = (action) =>
+			telemetry.setAttrs({ "ravena.instance.cleanup.action": action }, span);
+		this._scheduleInstanceCleanup();
+		const retryTimer = this._disconnectTimer;
+		const cancelRetry = () => {
+			if (this._disconnectTimer !== retryTimer) return;
+			clearTimeout(retryTimer);
+			this._disconnectTimer = null;
+		};
+		try {
+			const statusRes = await this.apiClient.get(`/instance/status`).catch(() => null);
+			const screenOpen = this.qrSseClients.some((res) => !res.destroyed);
+			if (screenOpen || this._disconnectTimer !== retryTimer) {
+				setAction("postponed");
+				return;
 			}
-		}, DISCONNECT_TIMEOUT_MS);
+			if (!statusRes?.data) {
+				if (await this.getGoInstance(this.instanceName)) {
+					setAction("unavailable");
+					return;
+				}
+				cancelRetry();
+				setAction("absent");
+				return;
+			}
+			if (statusRes.data.Connected && statusRes.data.LoggedIn) {
+				this.logger.info(
+					`[${this.id}] Instância já está conectada na WhatsGoAPI no disparo do timer. Sincronizando estado.`
+				);
+				this._onInstanceConnected();
+				setAction("synced");
+				return;
+			}
+			if (statusRes.data.LoggedIn) {
+				this.logger.info(
+					`[${this.id}] 15 minutos desconectado, mas sessão segue autenticada (LoggedIn=true). Tentando reconectar em vez de apagar...`
+				);
+				await this.tryReconnect();
+				setAction("reconnected");
+				return;
+			}
+			this.logger.info(
+				`[${this.id}] 15 minutos desconectado e sem sessão ativa. Apagando instância...`
+			);
+			await this.deleteInstance();
+			cancelRetry();
+			setAction("deleted");
+			this.connectDataCache = null;
+			this.logger.info(`[${this.id}] Instância apagada após timeout de desconexão.`);
+			// Notificar clientes SSE
+			this.broadcastQRUpdate({ type: "instance_deleted", botId: this.id });
+		} catch (err) {
+			telemetry.recordError(span, err instanceof Error ? err : new Error(err.message));
+			this.logger.error(`[${this.id}] Erro ao processar timeout de desconexão:`, err);
+		}
 	}
 
 	/**
@@ -2492,6 +2539,7 @@ class WhatsAppBotGo {
 	 */
 	removeQRSseClient(res) {
 		this.qrSseClients = this.qrSseClients.filter((c) => c !== res);
+		this._renewInstanceCleanup();
 	}
 
 	async _handleWebhook(req, res) {
