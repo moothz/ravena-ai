@@ -778,6 +778,174 @@ async function processMediaToSquare(mediaBuffer, mimeType, cropType) {
 }
 
 /**
+ * Garante que a mídia do sticker citado esteja em WebP para envio como sound sticker.
+ * Preserva WebP já pronto (estático ou animado) e converte PNG/JPEG vindo do webhook.
+ * @param {Object} stickerMsg - Mensagem de sticker citada
+ * @returns {Promise<Object>} - Objeto MessageMedia pronto para envio
+ */
+async function prepareStickerMediaForAudioFusion(stickerMsg) {
+	const stickerMedia = await stickerMsg.downloadMedia();
+	if (!stickerMedia || (!stickerMedia.data && !stickerMedia.url)) {
+		throw new Error("Não foi possível baixar a figurinha citada pelo áudio");
+	}
+	const mime = String(stickerMedia.mimetype || "").toLowerCase();
+	if (mime.includes("webp") || (!stickerMedia.data && stickerMedia.url)) {
+		return {
+			mimetype: stickerMedia.mimetype || "image/webp",
+			data: stickerMedia.data,
+			url: stickerMedia.url,
+			filename: stickerMedia.filename || `sticker-${Date.now()}.webp`,
+			isMessageMedia: true
+		};
+	}
+
+	const webpBuffer = await makeSquareMedia(stickerMedia, stickerMedia.mimetype, "transparent");
+	return {
+		mimetype: "image/webp",
+		data: webpBuffer.toString("base64"),
+		filename: `sticker-${Date.now()}.webp`,
+		isMessageMedia: true
+	};
+}
+
+/**
+ * Funde uma figurinha (citada pelo áudio) com um áudio para gerar um sticker com som.
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+ */
+async function createAudioStickerFromAudioAndSticker({
+	bot,
+	message,
+	args,
+	group,
+	chatId,
+	audioMsg,
+	quotedStickerMsg,
+	cropType
+}) {
+	return await telemetry.withSpan(
+		"sticker sound.fuse",
+		{ attributes: { "ravena.sticker.crop_type": cropType } },
+		async (span) => {
+			const parentType = String(quotedStickerMsg?.type || "").toLowerCase();
+			if (!quotedStickerMsg || parentType !== "sticker") {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "audio_without_quoted_sticker"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Para criar uma figurinha com som, responda a uma figurinha com um áudio e depois responda ao áudio com !s."
+				});
+			}
+
+			const audioMedia = await audioMsg.downloadMedia();
+			if (!audioMedia || (!audioMedia.data && !audioMedia.url)) {
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Não consegui baixar o áudio marcado (a mídia expirou ou ficou indisponível)."
+				});
+			}
+
+			let stickerMedia;
+			try {
+				stickerMedia = await prepareStickerMediaForAudioFusion(quotedStickerMsg);
+			} catch (dlErr) {
+				logger.warn(`[createAudioStickerFromAudioAndSticker] ${dlErr.message}`);
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content:
+						"❌ Não consegui baixar a figurinha marcada pelo áudio (a mídia expirou ou ficou indisponível)."
+				});
+			}
+
+			const stickerName = args.length > 0 ? args.join(" ") : group ? group.name : "sticker";
+
+			cmdUsage.logFixedCommandUsage({
+				timestamp: Date.now(),
+				command: "sticker",
+				user: message.author,
+				groupId: chatId,
+				args: args.join(" "),
+				info: {
+					cropType,
+					mimeType: audioMedia.mimetype || "audio/ogg",
+					hasAudio: true
+				}
+			});
+
+			telemetry.setAttrs({
+				"ravena.sticker.has_audio": true,
+				"ravena.sticker.crop_type": cropType
+			});
+			span?.setAttribute("ravena.sticker.audio_mime", String(audioMedia.mimetype || "audio/ogg"));
+
+			return [
+				new ReturnMessage({
+					chatId,
+					content: stickerMedia,
+					options: {
+						sendMediaAsSticker: true,
+						stickerAudio: {
+							data: audioMedia.data,
+							url: audioMedia.url,
+							mimetype: audioMedia.mimetype || "audio/ogg; codecs=opus",
+							filename: audioMedia.filename || `sticker-audio-${Date.now()}.ogg`
+						},
+						stickerAuthor: bot?.nomeExibir || "ravena",
+						stickerName,
+						quotedMessageId: message.origin.id._serialized
+					}
+				})
+			];
+		}
+	);
+}
+
+/**
+ * Se a figurinha extraída possuir áudio embutido, anexa também o áudio original na resposta.
+ */
+async function appendAudioStickerExtraction({ chatId, message, quotedMsg, visualReturnMessage }) {
+	const hasEmbeddedAudio = Boolean(
+		quotedMsg?.content?.audioMessage || quotedMsg?.content?._mediaDetails?.audioMessage
+	);
+	if (!hasEmbeddedAudio || typeof quotedMsg.downloadStickerAudio !== "function") {
+		return visualReturnMessage;
+	}
+
+	const audioMedia = await quotedMsg.downloadStickerAudio().catch((err) => {
+		logger.warn(`[appendAudioStickerExtraction] Falha ao baixar áudio do sticker: ${err.message}`);
+		return null;
+	});
+	if (!audioMedia || (!audioMedia.data && !audioMedia.url)) {
+		return visualReturnMessage;
+	}
+
+	telemetry.setAttrs({ "ravena.sticker.extracted_audio": true });
+
+	const audioReturnMessage = new ReturnMessage({
+		chatId,
+		content: {
+			mimetype: audioMedia.mimetype || "audio/ogg; codecs=opus",
+			data: audioMedia.data,
+			url: audioMedia.url,
+			filename: audioMedia.filename || "sticker-audio.ogg",
+			isMessageMedia: true
+		},
+		options: {
+			sendMediaAsSticker: false,
+			quotedMessageId: message.origin.id._serialized,
+			goReply: message.origin
+		}
+	});
+
+	return [visualReturnMessage, audioReturnMessage];
+}
+
+/**
  * Cria um sticker quadrado a partir de uma mídia, aplicando diferentes tipos de corte
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
@@ -788,13 +956,32 @@ async function processMediaToSquare(mediaBuffer, mimeType, cropType) {
  */
 async function squareStickerCommand(bot, message, args, group, cropType) {
 	const chatId = message.group ?? message.author;
+	telemetry.setAttrs({
+		"ravena.sticker.crop_type": cropType,
+		"ravena.sticker.has_audio": false
+	});
 	// logger.debug(`Executando comando sticker quadrado (${cropType}) para ${chatId}`);
 
 	try {
 		let mediaBuffer, mimeType, quotedMessageId;
 
 		// Extrair mídia e informações necessárias da mensagem direta ou citada
-		if (message.type === "image" || message.type === "video" || message.type === "gif") {
+		if (message.type === "audio") {
+			const quotedStickerMsg =
+				typeof message.origin?.getQuotedMessage === "function"
+					? await message.origin.getQuotedMessage().catch(() => null)
+					: null;
+			return await createAudioStickerFromAudioAndSticker({
+				bot,
+				message,
+				args,
+				group,
+				chatId,
+				audioMsg: message,
+				quotedStickerMsg,
+				cropType
+			});
+		} else if (message.type === "image" || message.type === "video" || message.type === "gif") {
 			// Mídia na mensagem atual
 			// logger.debug(`Processando mídia da mensagem atual: ${message.type}`);
 
@@ -899,15 +1086,20 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 							await fs.unlink(inputPath).catch(() => {});
 							await fs.unlink(outputPath).catch(() => {});
 
-							return new ReturnMessage({
+							return await appendAudioStickerExtraction({
 								chatId,
-								content: mp4Media,
-								options: {
-									sendMediaAsSticker: false,
-									caption: "Sticker Animation",
-									quotedMessageId: message.origin.id._serialized,
-									goReply: message.origin
-								}
+								message,
+								quotedMsg,
+								visualReturnMessage: new ReturnMessage({
+									chatId,
+									content: mp4Media,
+									options: {
+										sendMediaAsSticker: false,
+										caption: "Sticker Animation",
+										quotedMessageId: message.origin.id._serialized,
+										goReply: message.origin
+									}
+								})
 							});
 						} else if (metadata.hasAlpha) {
 							// WebP Transparente -> PNG (Documento)
@@ -919,15 +1111,20 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 								isMessageMedia: true
 							};
 
-							return new ReturnMessage({
+							return await appendAudioStickerExtraction({
 								chatId,
-								content: pngMedia,
-								options: {
-									sendMediaAsDocument: true,
-									caption: "Sticker Transparente",
-									quotedMessageId: message.origin.id._serialized,
-									goReply: message.origin
-								}
+								message,
+								quotedMsg,
+								visualReturnMessage: new ReturnMessage({
+									chatId,
+									content: pngMedia,
+									options: {
+										sendMediaAsDocument: true,
+										caption: "Sticker Transparente",
+										quotedMessageId: message.origin.id._serialized,
+										goReply: message.origin
+									}
+								})
 							});
 						}
 					} catch (error) {
@@ -936,16 +1133,36 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 					}
 				}
 
-				// Retorna a mídia original (não como sticker)
-				return new ReturnMessage({
+				// Retorna a mídia original (não como sticker) e, se houver, o áudio embutido
+				return await appendAudioStickerExtraction({
 					chatId,
-					content: stickerMedia,
-					options: {
-						sendMediaAsSticker: false,
-						caption: "Sticker Media",
-						quotedMessageId: message.origin.id._serialized,
-						goReply: message.origin
-					}
+					message,
+					quotedMsg,
+					visualReturnMessage: new ReturnMessage({
+						chatId,
+						content: stickerMedia,
+						options: {
+							sendMediaAsSticker: false,
+							caption: "Sticker Media",
+							quotedMessageId: message.origin.id._serialized,
+							goReply: message.origin
+						}
+					})
+				});
+			} else if (mediaType === "audio") {
+				const quotedStickerMsg =
+					typeof quotedMsg.origin?.getQuotedMessage === "function"
+						? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+						: null;
+				return await createAudioStickerFromAudioAndSticker({
+					bot,
+					message,
+					args,
+					group,
+					chatId,
+					audioMsg: quotedMsg,
+					quotedStickerMsg,
+					cropType
 				});
 			} else if (["image", "video", "gif"].includes(mediaType)) {
 				const media = await quotedMsg.downloadMedia();
@@ -1528,15 +1745,16 @@ const commands = [
 ];
 
 const helper = {
-	about: "Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)",
+	about:
+		"Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers), incluindo stickers com som",
 	implementation:
-		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s) e crop por IA",
-	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp",
+		"Processa imagens, vídeos e áudios com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s), crop por IA, criação de figurinhas com som ([figurinha] -> [áudio] -> !s) e extração das mídias originais de figurinhas com som",
+	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp,som,audio",
 	cmds: [
 		{
 			cmd: "!sticker",
-			desc: "Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp",
-			usage: ["!sticker (com imagem ou em resposta)", "!s"],
+			desc: "Converte uma imagem, vídeo ou GIF em figurinha (ou responda a uma figurinha com áudio e dê !s no áudio para fazer sticker com som)",
+			usage: ["!sticker (com imagem ou em resposta)", "!s", "[figurinha] -> [áudio] -> !s"],
 			category: "stickers"
 		},
 		{

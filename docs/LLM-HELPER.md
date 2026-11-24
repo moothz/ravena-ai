@@ -1294,16 +1294,16 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `Stickers.js`
-**Sobre:** Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)
+**Sobre:** Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers), incluindo stickers com som
 
-**Tags:** `sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp`
+**Tags:** `sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp,som,audio`
 
-**Detalhes Técnicos:** Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s) e crop por IA
+**Detalhes Técnicos:** Processa imagens, vídeos e áudios com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s), crop por IA, criação de figurinhas com som ([figurinha] -> [áudio] -> !s) e extração das mídias originais de figurinhas com som
 
 #### Comandos:
-- **`!sticker`**: Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp
+- **`!sticker`**: Converte uma imagem, vídeo ou GIF em figurinha (ou responda a uma figurinha com áudio e dê !s no áudio para fazer sticker com som)
   - *Categoria:* stickers
-  - *Uso/Exemplos:* `!sticker (com imagem ou em resposta)`, `!s`
+  - *Uso/Exemplos:* `!sticker (com imagem ou em resposta)`, `!s`, `[figurinha] -> [áudio] -> !s`
 - **`!shq`**: Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais
   - *Categoria:* stickers
   - *Uso/Exemplos:* `!shq (com imagem/vídeo ou em resposta)`, `!stickerhq`

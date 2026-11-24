@@ -2953,6 +2953,10 @@ class WhatsAppBotGo {
 				curr = curr.documentWithCaptionMessage.message;
 			} else if (curr.associatedChildMessage?.message) {
 				curr = curr.associatedChildMessage.message;
+			} else if (curr.lottieStickerMessage?.message) {
+				curr = curr.lottieStickerMessage.message;
+			} else if (curr.audioStickerMessage?.message) {
+				curr = curr.audioStickerMessage.message;
 			} else {
 				break;
 			}
@@ -2971,6 +2975,38 @@ class WhatsAppBotGo {
 		return { unwrapped: curr, isViewOnce };
 	}
 
+	_extractGoContextInfo(messageContent) {
+		if (!messageContent || typeof messageContent !== "object") return null;
+		return (
+			messageContent.extendedTextMessage?.contextInfo ||
+			messageContent.imageMessage?.contextInfo ||
+			messageContent.videoMessage?.contextInfo ||
+			messageContent.audioMessage?.contextInfo ||
+			messageContent.stickerMessage?.contextInfo ||
+			messageContent.documentMessage?.contextInfo ||
+			null
+		);
+	}
+
+	async _downloadStickerAudioFromMessage(audioMessage, messageId = null) {
+		if (!audioMessage) return null;
+		try {
+			const downloaded = await this._downloadMediaFromWhatsgo({ audioMessage }, messageId);
+			if (downloaded) {
+				return {
+					mimetype: downloaded.mimetype || audioMessage.mimetype || "audio/ogg; codecs=opus",
+					url: downloaded.url,
+					data: downloaded.base64,
+					filename: downloaded.filename || "sticker-audio.ogg",
+					isMessageMedia: true
+				};
+			}
+		} catch (e) {
+			this.logger.error(`[downloadStickerAudio] Falha no download do áudio do sticker:`, e);
+		}
+		return null;
+	}
+
 	formatQuotedMessageFromContext(contextInfo, chatId, fromMe = false) {
 		if (!contextInfo?.quotedMessage) return null;
 		const { unwrapped: quotedContent, isViewOnce: quotedIsViewOnce } = this._unwrapGoMessageContent(
@@ -2982,6 +3018,8 @@ class WhatsAppBotGo {
 		const participant = contextInfo.participant;
 		const author = this._normalizeId(participant || chatId);
 		const isGroup = chatId.includes("@g.us");
+		const nestedContextInfo = this._extractGoContextInfo(quotedContent);
+		const nestedQuotedId = nestedContextInfo?.stanzaID || null;
 
 		let type = "unknown";
 		let content = null;
@@ -3027,6 +3065,7 @@ class WhatsAppBotGo {
 			mediaInfo = {
 				mimetype: quotedContent.stickerMessage.mimetype,
 				url: quotedContent.stickerMessage.url,
+				audioMessage: quotedContent.stickerMessage.audioMessage || null,
 				_mediaDetails: quotedContent.stickerMessage
 			};
 			content = mediaInfo;
@@ -3061,8 +3100,11 @@ class WhatsAppBotGo {
 			isViewOnce: quotedIsViewOnce,
 			mentions: contextInfo.mentionedJID || [],
 			quotedParticipant: participant,
-			hasQuotedMsg: false,
+			hasQuotedMsg: Boolean(nestedQuotedId || nestedContextInfo?.quotedMessage),
+			quotedMessageId: nestedQuotedId,
 			isQuoted: true,
+			downloadStickerAudio: async () =>
+				await this._downloadStickerAudioFromMessage(mediaInfo?.audioMessage, stanzaId),
 			downloadMedia: async (downloadOptions = {}) => {
 				if (
 					!this._isViewOnceDownloadAllowed(
@@ -3109,6 +3151,16 @@ class WhatsAppBotGo {
 			author,
 			from: formattedQuoted.from,
 			isViewOnce: quotedIsViewOnce,
+			getQuotedMessage: async () => {
+				if (nestedQuotedId) {
+					const cached = await this.recoverMsgFromCache(nestedQuotedId);
+					if (cached) return cached;
+				}
+				if (nestedContextInfo?.quotedMessage) {
+					return this.formatQuotedMessageFromContext(nestedContextInfo, chatId, false);
+				}
+				return null;
+			},
 			react: (emoji) => this.sendReaction(chatId, stanzaId, emoji),
 			delete: async () =>
 				this.deleteMessageByKey({
@@ -3175,19 +3227,10 @@ class WhatsAppBotGo {
 			}
 
 			// Context Info (Reply/Mentions)
-			let contextInfo = null;
-			if (messageContent.extendedTextMessage)
-				contextInfo = messageContent.extendedTextMessage.contextInfo;
-			else if (messageContent.imageMessage) contextInfo = messageContent.imageMessage.contextInfo;
-			else if (messageContent.videoMessage) contextInfo = messageContent.videoMessage.contextInfo;
-			else if (messageContent.audioMessage) contextInfo = messageContent.audioMessage.contextInfo;
-			else if (messageContent.stickerMessage)
-				contextInfo = messageContent.stickerMessage.contextInfo;
-			else if (messageContent.documentMessage)
-				contextInfo = messageContent.documentMessage.contextInfo;
+			const contextInfo = this._extractGoContextInfo(messageContent);
 
 			const mentions = contextInfo?.mentionedJID ?? [];
-			const quotedMessageId = contextInfo?.quotedMessage ? contextInfo.stanzaID : null;
+			const quotedMessageId = contextInfo?.stanzaID || null;
 			const quotedParticipant = contextInfo?.participant;
 
 			//this.logger.debug(`[formatMessageFromGo] `, {goMessageData, contextInfo, quotedMessageId});
@@ -3244,6 +3287,7 @@ class WhatsAppBotGo {
 				mediaInfo = {
 					mimetype: messageContent.stickerMessage.mimetype,
 					url: messageContent.stickerMessage.url,
+					audioMessage: messageContent.stickerMessage.audioMessage || null,
 					_mediaDetails: messageContent.stickerMessage
 				};
 				content = mediaInfo;
@@ -3381,6 +3425,8 @@ class WhatsAppBotGo {
 						fromMe,
 						participant: senderAlt
 					}),
+				downloadStickerAudio: async () =>
+					await this._downloadStickerAudioFromMessage(mediaInfo?.audioMessage, id),
 				downloadMedia: async (downloadOptions = {}) => {
 					// Em reações, quem pede é quem reagiu (originReaction é anexado pelo ReactionsHandler)
 					const reaction = formattedMessage.originReaction;
@@ -4092,6 +4138,33 @@ class WhatsAppBotGo {
 					payload.sticker_name = options.stickerName || payload.sticker_author;
 					if (Array.isArray(options.stickerCategories) && options.stickerCategories.length > 0) {
 						payload.emojis = options.stickerCategories;
+					}
+
+					if (options.stickerAudio) {
+						const audioInput = options.stickerAudio;
+						let audioUrl =
+							typeof audioInput === "string" && audioInput.startsWith("http")
+								? audioInput
+								: audioInput?.url;
+						const rawAudioData =
+							typeof audioInput === "string" && !audioInput.startsWith("http")
+								? audioInput
+								: audioInput?.data;
+						if (!audioUrl && rawAudioData) {
+							const cleanAudioData = rawAudioData.replace(/^data:[^;]+;base64,/, "");
+							const audioMime = audioInput?.mimetype || "audio/ogg";
+							const audioFilename = audioInput?.filename || "sticker-audio.ogg";
+							const uploadedAudio = await this.createMediaFromBase64(
+								cleanAudioData,
+								audioMime,
+								audioFilename
+							);
+							audioUrl = uploadedAudio.url;
+						}
+						if (audioUrl) {
+							endpoint = "/send/sticker/audio";
+							payload.audio = audioUrl;
+						}
 					}
 				} else {
 					endpoint = "/send/media";
