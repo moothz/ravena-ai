@@ -207,6 +207,19 @@ const cenarios = {
 		await passar(40);
 		conferirApagadas(estado, 0);
 	},
+	"queda já resolvida não faz a tela agendar a limpeza de sessão que a whatsgoapi não carregou":
+		async () => {
+			const { estado, webhook } = await novoCenario();
+			estado.sessao = { Connected: true, LoggedIn: true };
+			await webhook("Connected");
+			estado.sessao = { Connected: false, LoggedIn: false };
+			await iniciarPareamento();
+			const fechar = await abrirTela();
+			await iniciarPareamento();
+			await fechar();
+			await passar(40);
+			conferirApagadas(estado, 0);
+		},
 	"abrir e fechar a tela não apaga uma sessão autenticada": async () => {
 		const { estado } = await novoCenario();
 		estado.sessao = { Connected: false, LoggedIn: true };
