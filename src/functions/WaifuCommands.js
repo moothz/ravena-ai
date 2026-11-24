@@ -1164,6 +1164,17 @@ function getCharacterWebUrl(characterIdOrChar) {
 }
 
 /**
+ * Trunca texto em no máximo `max` caracteres para legendas compactas de roll
+ * @param {string} str
+ * @param {number} [max=20]
+ * @returns {string}
+ */
+function truncateRollText(str, max = 20) {
+	if (!str || typeof str !== "string") return "";
+	return str.length > max ? str.substring(0, max) : str;
+}
+
+/**
  * Escapa caracteres especiais para inserção segura em XML / SVG
  * @param {string} str
  * @returns {string}
@@ -2322,7 +2333,7 @@ function makeRollHandler(genderFilter) {
 				const exclusiveMs = available ? getExclusiveClaimWindowMs(rarity) : 0;
 				const isSpecialRarity = exclusiveMs > 0;
 
-				let text = `🎲 *${character.name}* — _${character.series}_\n`;
+				let text = `🎲 *${truncateRollText(character.name, 20)}* — _${truncateRollText(character.series, 20)}_\n`;
 				if (firstRollData?.marketNotification) {
 					text += `${firstRollData.marketNotification}\n`;
 				}
@@ -2412,9 +2423,9 @@ function makeRollHandler(genderFilter) {
 
 					if (isSpecialRarity) {
 						const exclSecs = Math.round(exclusiveMs / 1000);
-						text += `🔒 *EXCLUSIVO!* ${rollerMention} tem ${exclSecs}s de exclusividade para casar! Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`).\n⏳ Após ${exclSecs}s, ficará livre para qualquer jogador casar (janela total de 300s).`;
+						text += `🔒 *EXCLUSIVO!* ${rollerMention} (${exclSecs}s 🔐)\n💍 Reaja com 💍 ou use \`!mu-casar\` em até 300s para casar!`;
 					} else {
-						text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`) em até 300s para casar!`;
+						text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` em até 300s para casar!`;
 					}
 				} else if (isOwner) {
 					if (isMythic) {
@@ -2790,7 +2801,7 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""} (🎉 Casado com você sem cooldown!)\n`;
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)} (🎉 Casado com você sem cooldown!)\n`;
 				});
 				text += "\n";
 			}
@@ -2802,14 +2813,14 @@ function makeRollHandler(genderFilter) {
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					if (s.isMythic) {
-						text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""} (🔮 Criação Mítica — Vínculo Sagrado)\n`;
+						text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)} (🔮 Criação Mítica — Vínculo Sagrado)\n`;
 					} else {
 						const keysCount = s.keyProgress?.currentKeys || 1;
 						const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
 						const soulmateTag = isSoulmateNow
 							? " (💖 SOULMATE ALCANÇADO! 10/10)"
 							: ` (🔑 Chaves: ${keysCount}/10)`;
-						text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
+						text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${soulmateTag}\n`;
 						if (isSoulmateNow) {
 							notifySoulmateAchievement(
 								bot,
@@ -2842,9 +2853,8 @@ function makeRollHandler(genderFilter) {
 						s.exclusiveUntil && s.exclusiveUntil > now
 							? Math.ceil((s.exclusiveUntil - now) / 1000)
 							: 0;
-					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
-					text += `> !mu-casar ${s.characterId}\n`;
+					const exclTag = exclSecs > 0 ? ` (${exclSecs}s 🔐)` : "";
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${exclTag}\n`;
 					const wishSlotWebUrl = getCharacterWebUrl(s.numericId || s.characterId);
 					if (wishSlotWebUrl) {
 						text += `> ${wishSlotWebUrl}\n`;
@@ -2863,9 +2873,8 @@ function makeRollHandler(genderFilter) {
 						s.exclusiveUntil && s.exclusiveUntil > now
 							? Math.ceil((s.exclusiveUntil - now) / 1000)
 							: 0;
-					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
-					text += `> !mu-casar ${s.characterId}\n`;
+					const exclTag = exclSecs > 0 ? ` (${exclSecs}s 🔐)` : "";
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${exclTag}\n`;
 					const singleSlotWebUrl = getCharacterWebUrl(s.numericId || s.characterId);
 					if (singleSlotWebUrl) {
 						text += `> ${singleSlotWebUrl}\n`;
@@ -2875,7 +2884,7 @@ function makeRollHandler(genderFilter) {
 			}
 
 			if (hasFreeSlots) {
-				text += `*Para Casar*: Reagir com o emoji do número, responder a mensagem com !mu-c # (número do personagem) ou usar !mu-casar <nome>\n\n`;
+				text += `*Para Casar*: Reagir com o emoji do número ou responder com !mu-c # (número do personagem)\n\n`;
 			}
 
 			if (casadosSlots.length > 0) {
@@ -2886,7 +2895,7 @@ function makeRollHandler(genderFilter) {
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const ownerInfo = s.owner?.name ? ` (${s.owner.name})` : "";
 					const mythicTag = s.isMythic ? " 🔮 [Mítico]" : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${ownerInfo}${mythicTag}\n`;
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${ownerInfo}${mythicTag}\n`;
 				});
 				text += "\n";
 			}
@@ -6573,7 +6582,7 @@ function detectRarityFromRollLine(rawLine) {
  */
 function extractCharacterIdFromWebLink(rawLine) {
 	if (!rawLine) return null;
-	const match = rawLine.match(/\/character\/([^/\s"'<>|]+)/i);
+	const match = rawLine.match(/\/(?:character|c)\/([^/\s"'<>|]+)/i);
 	if (!match || !match[1]) return null;
 	try {
 		return decodeURIComponent(match[1]);
@@ -6627,7 +6636,7 @@ function extractMultiRollSlotsFromText(text) {
 		/🎲\s*Waifuletes!\s*\*?\d+\*?\s*rolls:/i.test(text) ||
 		(text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/gi) || []).length > 1 ||
 		(text.match(/[1-9](?:️⃣|\uFE0F?\u20E3)/g) || []).length > 1 ||
-		(text.match(/\/character\//gi) || []).length > 1;
+		(text.match(/\/(?:character|c)\//gi) || []).length > 1;
 
 	if (!isMulti) return [];
 
@@ -11377,6 +11386,7 @@ module.exports = {
 	isUserActiveInGroup,
 	escapeXml,
 	getCharacterWebUrl,
+	truncateRollText,
 	resolveWaifuImageUrl,
 	generateSingleRollPlaceholderBuffer,
 	infoCriacaoMitico,
