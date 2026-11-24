@@ -368,13 +368,15 @@ function registerInstancesRoutes(api) {
 			}
 		}, 20000);
 
-		bot.addQRSseClient(res);
-
-		req.on("close", () => {
+		const onClose = () => {
 			clearInterval(heartbeat);
 			bot.removeQRSseClient(res);
 			api.logger.info(`[QR SSE] Cliente desconectou de ${botId}`);
-		});
+		};
+		if (res.destroyed) return onClose();
+
+		bot.addQRSseClient(res);
+		res.on("close", onClose);
 	});
 
 	// Página interativa de QR Code e Pairing Code

@@ -2449,21 +2449,36 @@ class WhatsAppBotGo {
 	}
 
 	_renewInstanceCleanup() {
-		if (this._disconnectTimer) this._scheduleInstanceCleanup();
+		if (!this.isConnected) this._scheduleInstanceCleanup();
 	}
 
 	async _cleanupDisconnectedInstance(span) {
 		const setAction = (action) =>
 			telemetry.setAttrs({ "ravena.instance.cleanup.action": action }, span);
-		try {
+		this._scheduleInstanceCleanup();
+		const retryTimer = this._disconnectTimer;
+		const cancelRetry = () => {
+			if (this._disconnectTimer !== retryTimer) return;
+			clearTimeout(retryTimer);
 			this._disconnectTimer = null;
-			if (this.qrSseClients.length > 0) {
-				this._scheduleInstanceCleanup();
+		};
+		try {
+			const statusRes = await this.apiClient.get(`/instance/status`).catch(() => null);
+			const screenOpen = this.qrSseClients.some((res) => !res.destroyed);
+			if (screenOpen || this._disconnectTimer !== retryTimer) {
 				setAction("postponed");
 				return;
 			}
-			const statusRes = await this.apiClient.get(`/instance/status`).catch(() => null);
-			if (statusRes?.data?.Connected && statusRes?.data?.LoggedIn) {
+			if (!statusRes?.data) {
+				if (await this.getGoInstance(this.instanceName)) {
+					setAction("unavailable");
+					return;
+				}
+				cancelRetry();
+				setAction("absent");
+				return;
+			}
+			if (statusRes.data.Connected && statusRes.data.LoggedIn) {
 				this.logger.info(
 					`[${this.id}] Instância já está conectada na WhatsGoAPI no disparo do timer. Sincronizando estado.`
 				);
@@ -2471,7 +2486,7 @@ class WhatsAppBotGo {
 				setAction("synced");
 				return;
 			}
-			if (statusRes?.data?.LoggedIn) {
+			if (statusRes.data.LoggedIn) {
 				this.logger.info(
 					`[${this.id}] 15 minutos desconectado, mas sessão segue autenticada (LoggedIn=true). Tentando reconectar em vez de apagar...`
 				);
@@ -2483,13 +2498,14 @@ class WhatsAppBotGo {
 				`[${this.id}] 15 minutos desconectado e sem sessão ativa. Apagando instância...`
 			);
 			await this.deleteInstance();
+			cancelRetry();
 			setAction("deleted");
 			this.connectDataCache = null;
 			this.logger.info(`[${this.id}] Instância apagada após timeout de desconexão.`);
 			// Notificar clientes SSE
 			this.broadcastQRUpdate({ type: "instance_deleted", botId: this.id });
 		} catch (err) {
-			telemetry.recordError(span, err);
+			telemetry.recordError(span, err instanceof Error ? err : new Error(err.message));
 			this.logger.error(`[${this.id}] Erro ao processar timeout de desconexão:`, err);
 		}
 	}
