@@ -91,7 +91,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     // Toast Notifications
-    function showToast(message, type = "info", duration = 4000) {
+    function showToast(content, type = "info", duration = 4000) {
         const container = document.getElementById("bank-toast-container");
         if (!container) return;
 
@@ -105,9 +105,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
         toast.innerHTML = `
             <i class="fas ${icon} toast-icon"></i>
-            <div style="flex: 1; word-break: break-word;">${message}</div>
+            <div class="toast-body" style="flex: 1; word-break: break-word;"></div>
             <button type="button" class="toast-close">&times;</button>
         `;
+
+        toast.querySelector(".toast-body").append(...[].concat(content));
 
         const closeBtn = toast.querySelector(".toast-close");
         const remove = () => {
@@ -435,7 +437,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 throw new Error(json.error || "Não foi possível gerar sessão de acesso");
             }
 
-            showToast(`Acesso concedido para <strong>${escapeHtml(userName)}</strong>! Abrindo em nova aba...`, "success");
+            const nameEl = document.createElement("strong");
+            nameEl.textContent = userName;
+            showToast(["Acesso concedido para ", nameEl, "! Abrindo em nova aba..."], "success");
 
             // Abre a interface logada transparente como aquele usuário em nova aba
             window.open(json.redirectUrl, "_blank");
