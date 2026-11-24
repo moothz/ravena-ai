@@ -1,5 +1,6 @@
 const axios = require("axios");
 const Logger = require("../utils/Logger");
+const TelegramPollingBackoff = require("./TelegramPollingBackoff");
 
 /**
  * Serviço centralizado para envio e moderação de notificações administrativas via Telegram
@@ -223,7 +224,9 @@ class TelegramNotificationService {
 			const response = await axios.post(url, { drop_pending_updates: false }, { timeout: 10000 });
 			return !!(response.data && response.data.ok);
 		} catch (error) {
-			this.logger.error(`[deleteWebhook] Falha ao deletar webhook: ${error.message}`);
+			if (!TelegramPollingBackoff.isTokenRejected(error)) {
+				this.logger.error(`[deleteWebhook] Falha ao deletar webhook: ${error.message}`);
+			}
 			return false;
 		}
 	}
@@ -783,6 +786,12 @@ class TelegramNotificationService {
 
 		if (this.isPolling) return;
 		this.isPolling = true;
+		this.pollBackoff = new TelegramPollingBackoff({
+			loop: "notifications",
+			logger: this.logger,
+			token,
+			tokenSource: "NOTIFICATIONS_TELEGRAM_BOT_TOKEN / HEALTH_CHECK_TELEGRAM_BOT_TOKEN no .env"
+		});
 		this.logger.info("[startPolling] Iniciando long-polling para moderação via Telegram...");
 
 		// Remove qualquer webhook residual para liberar o long-polling
@@ -822,6 +831,7 @@ class TelegramNotificationService {
 		}
 
 		this.isFetchingUpdates = true;
+		let nextPollMs = 1500;
 		try {
 			const url = `https://api.telegram.org/bot${token}/getUpdates`;
 			const response = await axios.post(
@@ -833,6 +843,7 @@ class TelegramNotificationService {
 				},
 				{ timeout: 30000 }
 			);
+			this.pollBackoff.succeed();
 
 			if (response.data && response.data.ok && Array.isArray(response.data.result)) {
 				for (const update of response.data.result) {
@@ -845,25 +856,19 @@ class TelegramNotificationService {
 				}
 			}
 		} catch (error) {
-			if (error.response?.status === 409) {
-				const desc = error.response?.data?.description || "";
-				if (desc.includes("webhook is active")) {
-					this.logger.warn(`[_poll] Conflito 409 (webhook ativo). Deletando webhook...`);
-					await this.deleteWebhook().catch(() => {});
-				} else {
-					this.logger.warn(
-						`[_poll] Conflito 409 na busca de atualizações: ${desc || error.message}`
-					);
-				}
-			} else if (error.code !== "ECONNABORTED" && !error.message?.includes("timeout")) {
-				this.logger.warn(`[_poll] Erro na busca de atualizações: ${error.message}`);
+			nextPollMs = this.pollBackoff.fail(error);
+			if (error.response?.data?.description?.includes("webhook is active")) {
+				await this.deleteWebhook();
 			}
 		} finally {
 			this.isFetchingUpdates = false;
 		}
 
+		if (nextPollMs === null) {
+			this.isPolling = false;
+		}
 		if (this.isPolling) {
-			this.pollTimer = setTimeout(() => this._poll(), 1500);
+			this.pollTimer = setTimeout(() => this._poll(), nextPollMs);
 		}
 	}
 }

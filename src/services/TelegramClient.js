@@ -61,15 +61,7 @@ class TelegramClient {
 	 * @returns {Promise<Array<object>>}
 	 */
 	async getUpdates(offset, limit, timeout) {
-		// The getUpdates method in the library doesn't throw on HTTP errors,
-		// but it might on network errors. We'll wrap it just in case.
-		try {
-			return await this.bot.getUpdates({ offset, limit, timeout });
-		} catch (error) {
-			this.logger.error(`Failed to get updates: ${error.message}`);
-			// Re-throw to be handled by the polling loop in TelegramBot.js
-			throw error;
-		}
+		return this.bot.getUpdates({ offset, limit, timeout });
 	}
 
 	/**
