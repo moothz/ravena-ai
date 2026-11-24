@@ -178,6 +178,9 @@ class WhatsAppBotTelegram {
 
 					const webhookPath = "/webhook/telegram/:token";
 					this.webhookApp.post(webhookPath, this._handleWebhook.bind(this));
+					this.webhookApp.use((err, req, res, next) =>
+						err instanceof URIError ? res.sendStatus(400) : next(err)
+					);
 
 					await new Promise((resolve, reject) => {
 						this.webhookServer = this.webhookApp
