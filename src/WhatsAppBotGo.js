@@ -2396,6 +2396,7 @@ class WhatsAppBotGo {
 			clearTimeout(this._disconnectTimer);
 			this._disconnectTimer = null;
 		}
+		this._hasDisconnected = false;
 		this.isConnected = true;
 
 		if (this.streamSystem) {
