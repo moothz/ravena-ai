@@ -857,7 +857,7 @@ class TelegramNotificationService {
 			}
 		} catch (error) {
 			nextPollMs = this.pollBackoff.fail(error);
-			if (error.response?.data?.description?.includes("webhook is active")) {
+			if (String(error.response?.data?.description).includes("webhook is active")) {
 				await this.deleteWebhook();
 			}
 		} finally {

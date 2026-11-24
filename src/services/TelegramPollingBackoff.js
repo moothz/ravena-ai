@@ -2,7 +2,8 @@ const telemetry = require("../telemetry");
 
 const BASE_DELAY_MS = 2000;
 const MAX_DELAY_MS = 60000;
-const MAX_CONSECUTIVE_REJECTIONS = 3;
+const MAX_TIMER_MS = 2 ** 31 - 1;
+const MAX_REJECTED_MS = 60000;
 
 const FAILURE_LABELS = {
 	conflict: "conflito com outra instância ou webhook",
@@ -33,7 +34,7 @@ function classifyFailure(error) {
 			: status
 				? `HTTP ${status}`
 				: error.message,
-		retryAfterMs: isTelegramReply ? (body.parameters?.retry_after ?? 0) * 1000 : 0
+		retryAfterMs: isTelegramReply ? Number(body.parameters?.retry_after) * 1000 || 0 : 0
 	};
 }
 
@@ -57,19 +58,21 @@ class TelegramPollingBackoff {
 	fail(error) {
 		const failure = classifyFailure(error);
 		this.attempts++;
-		this.rejections = failure.kind === "token_rejected" ? this.rejections + 1 : 0;
+		const now = Date.now();
+		this.rejectedSince = failure.kind === "token_rejected" ? (this.rejectedSince ?? now) : null;
+		const rejectedMs = now - (this.rejectedSince ?? now);
 
-		if (this.rejections >= MAX_CONSECUTIVE_REJECTIONS) {
+		if (rejectedMs >= MAX_REJECTED_MS) {
 			this._report("stopped", failure, () =>
 				this.logger.error(
-					`[polling] O Telegram recusou o token (${this.redact(failure.detail)}) em ${this.rejections} tentativas seguidas. Conexão parada até reiniciar a ravena. Confira ${this.tokenSource}.`
+					`[polling] O Telegram recusou o token (${this.redact(failure.detail)}) por ${Math.round(rejectedMs / 1000)} s seguidos. Conexão parada até reiniciar a ravena. Confira ${this.tokenSource}.`
 				)
 			);
 			return null;
 		}
 
 		const backoffMs = Math.min(BASE_DELAY_MS * 2 ** (this.attempts - 1), MAX_DELAY_MS);
-		const delayMs = Math.max(backoffMs, failure.retryAfterMs);
+		const delayMs = Math.min(Math.max(backoffMs, failure.retryAfterMs), MAX_TIMER_MS);
 
 		const isSilent = failure.kind === "token_rejected" || failure.kind === "timeout";
 		if (!isSilent && failure.kind !== this.reportedFailure?.kind) {
@@ -92,7 +95,7 @@ class TelegramPollingBackoff {
 			);
 		}
 		this.attempts = 0;
-		this.rejections = 0;
+		this.rejectedSince = null;
 		this.reportedFailure = null;
 	}
 
