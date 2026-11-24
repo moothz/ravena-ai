@@ -29,8 +29,8 @@ export const TX_GAMES = [
 	{ value: "ALL", label: "Todos os jogos" },
 	{ value: "waifu", label: "Waifus (Zinthos)" },
 	{ value: "jardim", label: "Jardim (Petalitas)" },
-	{ value: "pesca", label: "Pesca (peixes)" },
-	{ value: "slots", label: "Slots (moedas)" }
+	{ value: "pesca", label: "Pesca (peixes e iscas)" },
+	{ value: "slots", label: "Slots (moedas e prêmios)" }
 ];
 export const TX_STATUS = [
 	{ value: "ALL", label: "Todos os status" },

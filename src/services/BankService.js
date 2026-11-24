@@ -48,6 +48,13 @@ const {
 // Duração da sessão web (3 dias em milissegundos)
 const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
+// Filtro de jogo das transações do admin: padrões GLOB de bank_transactions.game de cada opção que
+// junta mais de um valor gravado. Os demais valores são comparados por igualdade.
+const TX_GAME_PATTERNS = {
+	pesca: ["pesca", "fishing*"], // peixes, iscas (fishing) e excedente do teto (fishing_cap_*)
+	slots: ["slots", "slots_prize"] // moedas da loja e prêmio do !slots
+};
+
 function parseBankAmount(input) {
 	if (typeof input === "number") return input;
 	if (!input) return 0;
@@ -2636,8 +2643,15 @@ class BankService {
 		}
 
 		if (game && String(game).trim() && game !== "ALL") {
-			whereClauses.push("game = ?");
-			params.push(String(game).trim().toLowerCase());
+			const gameKey = String(game).trim().toLowerCase();
+			const patterns = Object.hasOwn(TX_GAME_PATTERNS, gameKey) ? TX_GAME_PATTERNS[gameKey] : null;
+			if (patterns) {
+				whereClauses.push(`(${patterns.map(() => "game GLOB ?").join(" OR ")})`);
+				params.push(...patterns);
+			} else {
+				whereClauses.push("game = ?");
+				params.push(gameKey);
+			}
 		}
 
 		if (status && String(status).trim() && status !== "ALL") {
