@@ -90,8 +90,8 @@ document.addEventListener("DOMContentLoaded", () => {
         return phone;
     }
 
-    // Toast Notifications. message: texto ou lista de textos e elementos; texto nunca vira HTML.
-    function showToast(message, type = "info", duration = 4000) {
+    // Toast Notifications
+    function showToast(content, type = "info", duration = 4000) {
         const container = document.getElementById("bank-toast-container");
         if (!container) return;
 
@@ -109,7 +109,7 @@ document.addEventListener("DOMContentLoaded", () => {
             <button type="button" class="toast-close">&times;</button>
         `;
 
-        toast.querySelector(".toast-body").append(...[].concat(message));
+        toast.querySelector(".toast-body").append(...[].concat(content));
 
         const closeBtn = toast.querySelector(".toast-close");
         const remove = () => {

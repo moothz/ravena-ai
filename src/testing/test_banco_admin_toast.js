@@ -1,9 +1,3 @@
-// src/testing/test_banco_admin_toast.js
-// Toasts da tela do banco-admin (public/banco-admin.js, servida em /banco/admin?legado=1): o texto
-// que vem do servidor ou do jogador aparece como texto e nunca vira elemento da página. Carrega o
-// HTML e o script de verdade num DOM mínimo sobre o cheerio (parse5, o mesmo algoritmo de parsing
-// do navegador), provoca cada erro pela tela e olha o toast que o admin veria.
-
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -53,8 +47,7 @@ const OK = {
 	"/api/economy/admin/schedule": { ok: true }
 };
 
-/** Só o que a tela usa do DOM; as consultas e o innerHTML são do cheerio. */
-function createDocument(html) {
+function createCheerioDocument(html) {
 	const $ = cheerio.load(html);
 	const known = new WeakMap();
 	const wrap = (node) => {
@@ -165,11 +158,10 @@ const settle = async () => {
 	for (let i = 0; i < 10; i++) await new Promise((r) => setImmediate(r));
 };
 
-/** Abre a tela com as respostas OK trocadas por `responses` e espera a primeira carga. */
-async function openPage(responses = {}) {
-	const document = createDocument(HTML);
+async function openPage(overrides = {}) {
+	const document = createCheerioDocument(HTML);
 	const timers = [];
-	const api = { ...OK, ...responses };
+	const api = { ...OK, ...overrides };
 	vm.runInNewContext(SCRIPT, {
 		document,
 		window: { open() {}, location: { reload() {} } },
@@ -180,10 +172,10 @@ async function openPage(responses = {}) {
 		clearTimeout() {},
 		URLSearchParams,
 		fetch: async (url) => {
-			const body = api[url.split("?")[0]];
-			assert.ok(body, `rota sem resposta no teste: ${url}`);
-			// As rotas do banco avisam em `error`; as da economia, em `message` com status de erro
-			return { ok: !body.message, status: body.message ? 400 : 200, json: async () => body };
+			const response = api[url.split("?")[0]];
+			assert.ok(response, `rota sem resposta no teste: ${url}`);
+			const { httpStatus = 200, ...body } = response;
+			return { ok: httpStatus < 400, status: httpStatus, json: async () => body };
 		}
 	});
 	for (const fn of document.listeners.DOMContentLoaded) fn();
@@ -198,8 +190,7 @@ async function openPage(responses = {}) {
 const FAIL = { ok: false, error: PAYLOAD };
 const visibleText = (el) => el.textContent.replace(/\s+/g, " ").trim();
 
-/** O único toast da tela: mostra `text` ao pé da letra e só tem os elementos do próprio toast. */
-function assertToast(page, kind, text, tags = []) {
+function assertOnlyToast(page, kind, text, tags = []) {
 	const toasts = page.toasts();
 	assert.strictEqual(toasts.length, 1, `esperado 1 toast, veio ${toasts.length}`);
 	const [toast] = toasts;
@@ -225,7 +216,7 @@ const CASES = [
 		"erro ao carregar usuários",
 		async () => {
 			const page = await openPage({ [`${API}/users`]: FAIL });
-			assertToast(page, "error", `Erro ao carregar usuários: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Erro ao carregar usuários: ${PAYLOAD}`);
 		}
 	],
 	[
@@ -233,7 +224,7 @@ const CASES = [
 		async () => {
 			const page = await openPage({ [`${API}/user-runas`]: FAIL });
 			await saveRunas(page);
-			assertToast(page, "error", `Erro ao salvar: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Erro ao salvar: ${PAYLOAD}`);
 		}
 	],
 	[
@@ -241,7 +232,7 @@ const CASES = [
 		async () => {
 			const page = await openPage({ [`${API}/impersonate`]: FAIL });
 			await page.$(".btn-impersonate").click();
-			assertToast(page, "error", `Falha ao acessar como usuário: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Falha ao acessar como usuário: ${PAYLOAD}`);
 		}
 	],
 	[
@@ -249,7 +240,7 @@ const CASES = [
 		async () => {
 			const page = await openPage({ [`${API}/config`]: FAIL });
 			await openTab(page, "config");
-			assertToast(page, "error", `Falha ao obter dados macroeconômicos: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Falha ao obter dados macroeconômicos: ${PAYLOAD}`);
 		}
 	],
 	[
@@ -257,15 +248,17 @@ const CASES = [
 		async () => {
 			const page = await openPage({ [`${API}/recalculate-rates`]: FAIL });
 			await page.$("#btn-recalculate-rates").click();
-			assertToast(page, "error", `Erro ao recalcular cotações: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Erro ao recalcular cotações: ${PAYLOAD}`);
 		}
 	],
 	[
 		"erro numa ação da carga da economia",
 		async () => {
-			const page = await openPage({ "/api/economy/admin/schedule": { message: PAYLOAD } });
+			const page = await openPage({
+				"/api/economy/admin/schedule": { httpStatus: 400, message: PAYLOAD }
+			});
 			await page.$("#econ-btn-schedule").click();
-			assertToast(page, "error", PAYLOAD);
+			assertOnlyToast(page, "error", PAYLOAD);
 		}
 	],
 	[
@@ -273,7 +266,7 @@ const CASES = [
 		async () => {
 			const page = await openPage({ [`${API}/transactions`]: FAIL });
 			await openTab(page, "transactions");
-			assertToast(page, "error", `Erro ao carregar transações: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Erro ao carregar transações: ${PAYLOAD}`);
 		}
 	],
 	[
@@ -283,7 +276,7 @@ const CASES = [
 			await openTab(page, "transactions");
 			await page.$(".btn-admin-undo").click();
 			await page.$("#btn-admin-modal-confirm").click();
-			assertToast(page, "error", `Erro ao desfazer transação: ${PAYLOAD}`);
+			assertOnlyToast(page, "error", `Erro ao desfazer transação: ${PAYLOAD}`);
 		}
 	],
 	[
@@ -295,7 +288,7 @@ const CASES = [
 			};
 			const page = await openPage({ [`${API}/users`]: { ok: true, data: users } });
 			await page.$(".btn-copy-id").click();
-			assertToast(page, "success", `ID ${PAYLOAD} copiado para a área de transferência!`);
+			assertOnlyToast(page, "success", `ID ${PAYLOAD} copiado para a área de transferência!`);
 		}
 	],
 	[
@@ -303,7 +296,7 @@ const CASES = [
 		async () => {
 			const page = await openPage();
 			await page.$(".btn-impersonate").click();
-			const toast = assertToast(
+			const toast = assertOnlyToast(
 				page,
 				"success",
 				`Acesso concedido para ${PAYLOAD}! Abrindo em nova aba...`,
@@ -317,17 +310,17 @@ const CASES = [
 		async () => {
 			const bad = await openPage();
 			await saveRunas(bad, "-1");
-			assertToast(bad, "warning", "O saldo deve ser um número válido maior ou igual a zero.");
+			assertOnlyToast(bad, "warning", "O saldo deve ser um número válido maior ou igual a zero.");
 			const good = await openPage();
 			await saveRunas(good);
-			assertToast(good, "success", "Saldo de Runas atualizado: 100,00 ᚱ");
+			assertOnlyToast(good, "success", "Saldo de Runas atualizado: 100,00 ᚱ");
 		}
 	],
 	[
 		"o botão × fecha o toast",
 		async () => {
 			const page = await openPage({ [`${API}/users`]: { ok: false, error: "fora do ar" } });
-			const toast = assertToast(page, "error", "Erro ao carregar usuários: fora do ar");
+			const toast = assertOnlyToast(page, "error", "Erro ao carregar usuários: fora do ar");
 			await toast.querySelector(".toast-close").click();
 			page.runTimers();
 			assert.strictEqual(page.toasts().length, 0);
