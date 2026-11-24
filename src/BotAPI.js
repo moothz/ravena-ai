@@ -82,6 +82,12 @@ const { registerAdminRoutes } = require("./BotAPI/routes/adminRoutes");
  * - src/BotAPI/routes/adminRoutes.js: Apoio do painel /admin (links dos outros painéis)
  */
 class BotAPI {
+	static instance = null;
+
+	static getInstance() {
+		return BotAPI.instance || null;
+	}
+
 	/**
 	 * Cria um novo servidor API
 	 * @param {Object} options - Opções de configuração
@@ -90,6 +96,7 @@ class BotAPI {
 	 * @param {Object} [options.eventHandler] - Instância do EventHandler
 	 */
 	constructor(options = {}) {
+		BotAPI.instance = this;
 		this.port = options.port ?? process.env.API_PORT ?? 5000;
 		this.bots = options.bots ?? [];
 		this.eventHandler = options.eventHandler ?? false;

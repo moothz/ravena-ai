@@ -53,6 +53,7 @@ const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const RaffleMonitor = require("./services/RaffleMonitor");
 const ReturnMessage = require("./models/ReturnMessage");
 const SillyInteractionHandler = require("./SillyInteractionHandler");
+const BotBanManager = require("./utils/BotBanManager");
 const EventEmitter = require("events");
 const { buildRegex } = require("./utils/RegexFilterValidator");
 const storageService = require("./services/StorageService");
@@ -366,6 +367,12 @@ class EventHandler extends EventEmitter {
 	 * @param {Object} message - A mensagem formatada
 	 */
 	onMessage(bot, message) {
+		if (bot && bot.banido) {
+			bot.banido = false;
+			BotBanManager.unmarkBotBanned(bot).catch((err) => {
+				this.logger.error(`[${bot.id}] Erro ao desmarcar status de banido em onMessage:`, err);
+			});
+		}
 		this.emit("activity", { type: "message", botId: bot.id });
 		// Processa mensagem sem aguardar para evitar bloquear a thread de eventos.
 		// Span raiz de negócio (no-op se o OpenTelemetry estiver desligado). Comandos disparados
@@ -393,6 +400,12 @@ class EventHandler extends EventEmitter {
 	 * @param {Object} reaction - A reação formatada
 	 */
 	onReaction(bot, reaction) {
+		if (bot && bot.banido) {
+			bot.banido = false;
+			BotBanManager.unmarkBotBanned(bot).catch((err) => {
+				this.logger.error(`[${bot.id}] Erro ao desmarcar status de banido em onReaction:`, err);
+			});
+		}
 		this.emit("activity", { type: "reaction", botId: bot.id });
 		// Processa reação sem aguardar
 		this.rankingMessages.processReaction(reaction).catch((error) => {

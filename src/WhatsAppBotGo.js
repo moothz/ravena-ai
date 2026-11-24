@@ -33,6 +33,7 @@ const storageService = require("./services/StorageService");
 const SenderDropMonitor = require("./services/SenderDropMonitor");
 const PvSafetyService = require("./services/PvSafetyService");
 const MessageThrottler = require("./services/MessageThrottler");
+const BotBanManager = require("./utils/BotBanManager");
 
 // Utils
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -2519,6 +2520,12 @@ class WhatsAppBotGo {
 				case "SendMessage": {
 					if (!this.isConnected) this._onInstanceConnected();
 					this.lastMessageReceived = Date.now();
+					if (payload.event === "Message" && this.banido) {
+						this.banido = false;
+						BotBanManager.unmarkBotBanned(this).catch((err) => {
+							this.logger.error(`[${this.id}] Erro ao desmarcar status de banido:`, err);
+						});
+					}
 					const msgData = payload.data;
 
 					if (msgData) {
