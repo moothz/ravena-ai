@@ -7,21 +7,7 @@
 		<title>Ravena Admin</title>
 		<link rel="icon" href="/favicon-32x32.png" type="image/png" />
 		<!-- Aplica o tema antes da primeira pintura: ?theme= (validado) ou o salvo no navegador. -->
-		<script>
-			(function () {
-				var ok = { light: 1, dark: 1 };
-				var t = null;
-				try {
-					t = new URLSearchParams(location.search).get("theme");
-				} catch (e) {}
-				if (!ok[t]) {
-					try {
-						t = localStorage.getItem("ravena-admin-theme");
-					} catch (e) {}
-				}
-				if (ok[t]) document.documentElement.dataset.theme = t;
-			})();
-		</script>
+		<script src="/admin/theme.js"></script>
 		<link rel="stylesheet" href="/admin/fonts.css" />
 		<link rel="stylesheet" href="/admin/tokens.css?v=1" />
 		<link rel="stylesheet" href="/admin/admin.css?v=3" />

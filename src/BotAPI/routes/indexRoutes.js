@@ -3,6 +3,7 @@ const fs = require("fs").promises;
 const express = require("express");
 const storageService = require("../../services/StorageService");
 const { getCommunityLinks } = require("../../utils/communityLinks");
+const { ADMIN_CSP } = require("../middleware/security");
 
 /**
  * Registra rotas de páginas web estáticas, interfaces e dashboards da BotAPI
@@ -289,6 +290,7 @@ function registerIndexRoutes(api) {
 			}
 		}
 		res.setHeader("Cache-Control", "no-cache");
+		res.setHeader("Content-Security-Policy", ADMIN_CSP);
 		try {
 			const rawHtml = await fs.readFile(ADMIN_VIEW, "utf-8");
 			const [vTokens, vCss, vJs] = await Promise.all([
