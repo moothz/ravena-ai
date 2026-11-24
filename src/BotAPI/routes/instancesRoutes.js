@@ -742,6 +742,8 @@ function registerInstancesRoutes(api) {
 				api.logger.warn("Erro ao obter mapa de status de runtime:", statusErr);
 			}
 
+			const knownGroups = api.database.getGroupIdsByBot();
+
 			const enrichedBots = data.map((botConfig) => {
 				const liveBot = api.bots.find(
 					(b) =>
@@ -759,7 +761,7 @@ function registerInstancesRoutes(api) {
 								connected: false,
 								msgsHr: 0,
 								responseTime: { avg: 0, max: 0 },
-								groupsCount: 0,
+								groupsCount: knownGroups[botConfig.nome]?.length ?? 0,
 								lastMessageReceived: null
 							};
 
@@ -783,7 +785,7 @@ function registerInstancesRoutes(api) {
 						connected: Boolean(liveBot.isConnected),
 						msgsHr: 0,
 						responseTime: { avg: 0, max: 0 },
-						groupsCount: 0,
+						groupsCount: knownGroups[liveBot.id]?.length ?? 0,
 						lastMessageReceived: liveBot.lastMessageReceived ?? null
 					};
 					enrichedBots.push({

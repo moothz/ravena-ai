@@ -8,7 +8,8 @@ const {
 	ActionRowBuilder,
 	ButtonBuilder,
 	ButtonStyle,
-	Events
+	Events,
+	GatewayDispatchEvents
 } = require("discord.js");
 const axios = require("axios");
 const mime = require("mime-types");
@@ -211,6 +212,7 @@ class DiscordBot {
 		this.discordClient.on(Events.InteractionCreate, this._handleInteraction.bind(this));
 		this.discordClient.on("guildCreate", this._handleGroupJoin.bind(this));
 		this.discordClient.on("guildDelete", this._handleGroupLeave.bind(this));
+		this.discordClient.on(Events.Raw, this._forgetChannelsOfLeftGuild.bind(this));
 		this.discordClient.on("guildMemberAdd", this._handleParticipantUpdate.bind(this));
 
 		this.discordClient.on("error", (error) => {
@@ -342,6 +344,14 @@ class DiscordBot {
 				}
 			};
 			this.eventHandler.onGroupLeave(this, mockGroupNotification);
+		}
+	}
+
+	_forgetChannelsOfLeftGuild({ t: event, d: data }) {
+		if (event !== GatewayDispatchEvents.GuildDelete || data.unavailable) return;
+		const guild = this.discordClient.guilds.cache.get(data.id);
+		for (const channelId of guild?.channels.cache.keys() ?? []) {
+			this.database.setBotInGroup(channelId, this.id, false);
 		}
 	}
 
