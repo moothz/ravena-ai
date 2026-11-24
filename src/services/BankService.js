@@ -48,6 +48,11 @@ const {
 // Duração da sessão web (3 dias em milissegundos)
 const SESSION_TTL_MS = 3 * 24 * 60 * 60 * 1000;
 
+const TX_GAME_GLOBS = {
+	pesca: ["pesca", "fishing*"],
+	slots: ["slots", "slots_prize"]
+};
+
 function parseBankAmount(input) {
 	if (typeof input === "number") return input;
 	if (!input) return 0;
@@ -2636,8 +2641,15 @@ class BankService {
 		}
 
 		if (game && String(game).trim() && game !== "ALL") {
-			whereClauses.push("game = ?");
-			params.push(String(game).trim().toLowerCase());
+			const gameKey = String(game).trim().toLowerCase();
+			const globs = Object.hasOwn(TX_GAME_GLOBS, gameKey) ? TX_GAME_GLOBS[gameKey] : null;
+			if (globs) {
+				whereClauses.push(`(${globs.map(() => "game GLOB ?").join(" OR ")})`);
+				params.push(...globs);
+			} else {
+				whereClauses.push("game = ?");
+				params.push(gameKey);
+			}
 		}
 
 		if (status && String(status).trim() && status !== "ALL") {
