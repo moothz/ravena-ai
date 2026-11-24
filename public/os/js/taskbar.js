@@ -531,12 +531,20 @@ const Taskbar = {
             const safeId = Formatters.escapeHtml(bot.id);
             const displayName = Formatters.escapeHtml(bot.nomeExibir || bot.id);
 
+            let flags = '';
+            if (bot.semPV || bot.ignorePV) {
+                flags += '<span class="badge-sem-pv" style="color: #ff4d4d; font-weight: bold; margin-left: 4px; font-size: 10px;">- sem PV!</span>';
+            }
+            if (bot.semConvites || bot.ignoreInvites) {
+                flags += '<span class="badge-sem-convites" style="color: #ff9800; font-weight: bold; margin-left: 4px; font-size: 10px;">- sem convites</span>';
+            }
+
             html += `
                 <div class="submenu-item" style="flex-direction: column; align-items: flex-start; gap: 4px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; width: 100%;">
                         <span style="display: flex; align-items: center; gap: 4px; font-weight: 600;">
                             <span class="service-status-dot ${statusDot}"></span>
-                            ${icon} ${displayName}
+                            ${icon} ${displayName} ${flags}
                         </span>
                     </div>
                     <div style="display: flex; gap: 6px; margin-left: 14px; margin-top: 2px;">

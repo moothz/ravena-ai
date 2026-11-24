@@ -173,6 +173,17 @@ WindowManager.register('status', {
         wb.cleanup = cleanup;
     },
 
+    renderBotFlags(bot) {
+        let flags = '';
+        if (bot.semPV || bot.ignorePV) {
+            flags += '<span class="badge-sem-pv" style="color: #ff4d4d; font-weight: bold; margin-left: 4px; font-size: 11px;">- sem PV!</span>';
+        }
+        if (bot.semConvites || bot.ignoreInvites) {
+            flags += '<span class="badge-sem-convites" style="color: #ff9800; font-weight: bold; margin-left: 4px; font-size: 11px;">- sem convites</span>';
+        }
+        return flags;
+    },
+
     renderDriveItem(bot) {
         const isOffline = !bot.connected || bot.banido;
         const isBanned = !!bot.banido;
@@ -254,7 +265,8 @@ WindowManager.register('status', {
                 <div class="drive-info">
                     <div class="drive-name">
                         <span class="status-dot ${statusDotClass}"></span>
-                        <span>${esc(bot.nomeExibir || bot.id)}</span>
+                        <span class="drive-name-text">${esc(bot.nomeExibir || bot.id)}</span>
+                        <span class="drive-flags">${this.renderBotFlags(bot)}</span>
                         ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ''}
                     </div>
                     <div class="drive-bar">
@@ -306,12 +318,20 @@ WindowManager.register('status', {
 
             const fillEl = el.querySelector('.drive-bar-fill');
             const textEl = el.querySelector('.drive-bar-text');
-            const nameEl = el.querySelector('.drive-name span:not(.status-dot)');
+            const nameEl = el.querySelector('.drive-name-text') || el.querySelector('.drive-name span:not(.status-dot)');
 
             if (nameEl) {
                 const displayName = bot.nomeExibir || bot.id;
                 if (nameEl.textContent !== displayName) {
                     nameEl.textContent = displayName;
+                }
+            }
+
+            const flagsEl = el.querySelector('.drive-flags');
+            if (flagsEl) {
+                const newFlags = this.renderBotFlags(bot);
+                if (flagsEl.innerHTML !== newFlags) {
+                    flagsEl.innerHTML = newFlags;
                 }
             }
 

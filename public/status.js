@@ -295,6 +295,17 @@ document.addEventListener("DOMContentLoaded", () => {
 		};
 	}
 
+	function renderBotFlags(bot) {
+		let flags = "";
+		if (bot.semPV || bot.ignorePV) {
+			flags += '<span class="badge-sem-pv" style="color: #ff4d4d; font-weight: bold; margin-left: 4px; font-size: 11px;">- sem PV!</span>';
+		}
+		if (bot.semConvites || bot.ignoreInvites) {
+			flags += '<span class="badge-sem-convites" style="color: #ff9800; font-weight: bold; margin-left: 4px; font-size: 11px;">- sem convites</span>';
+		}
+		return flags;
+	}
+
 	function renderDriveItem(bot) {
 		const view = computeBotView(bot);
 		const phone = bot.phoneNumber || "";
@@ -317,7 +328,8 @@ document.addEventListener("DOMContentLoaded", () => {
                 <div class="drive-info">
                     <div class="drive-name">
                         <span class="status-dot ${view.statusDotClass}"></span>
-                        <span>${displayName}</span>
+                        <span class="drive-name-text">${displayName}</span>
+                        <span class="drive-flags">${renderBotFlags(bot)}</span>
                         ${bot.privado ? '<i class="fas fa-lock" style="font-size: 10px; color: #ff9800; margin-left: 4px;" title="Privada"></i>' : ""}
                     </div>
                     <div class="drive-bar">
@@ -348,12 +360,20 @@ document.addEventListener("DOMContentLoaded", () => {
 			const dotEl = el.querySelector(".status-dot");
 			const fillEl = el.querySelector(".drive-bar-fill");
 			const textEl = el.querySelector(".drive-bar-text");
-			const nameEl = el.querySelector(".drive-name span:not(.status-dot)");
+			const nameEl = el.querySelector(".drive-name-text") || el.querySelector(".drive-name span:not(.status-dot)");
 
 			if (nameEl) {
 				const displayName = bot.nomeExibir || bot.id;
 				if (nameEl.textContent !== displayName) {
 					nameEl.textContent = displayName;
+				}
+			}
+
+			const flagsEl = el.querySelector(".drive-flags");
+			if (flagsEl) {
+				const newFlags = renderBotFlags(bot);
+				if (flagsEl.innerHTML !== newFlags) {
+					flagsEl.innerHTML = newFlags;
 				}
 			}
 
@@ -670,7 +690,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		activeModalBotId = String(bot.id);
 		const safeId = escapeHtml(bot.id);
 		const displayName = escapeHtml(bot.nomeExibir || bot.id);
-		modalTitle.innerHTML = `<i class="fas fa-info-circle"></i> Detalhes: ${displayName}`;
+		modalTitle.innerHTML = `<i class="fas fa-info-circle"></i> Detalhes: ${displayName} ${renderBotFlags(bot)}`;
 
 		const phoneNumber = bot.phoneNumber ? formatPhoneNumber(bot.phoneNumber) : "Não informado";
 		const cleanPhone = bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : "";

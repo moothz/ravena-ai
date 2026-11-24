@@ -645,7 +645,7 @@ function renderBotCard(botContainer, data, bot){
                     <a href="${whatsappUrl}" target="_blank" title="Abrir chat no WhatsApp">
                         <img src="whatsapp.png" alt="WhatsApp" class="whatsapp-icon">
                     </a>` : ''}
-                    <div class="bot-name">${bot.id}</div>
+                    <div class="bot-name">${bot.id}${bot.semPV || bot.ignorePV ? ' <span style="color: #ff4d4d; font-weight: bold; font-size: 11px;">- sem PV!</span>' : ''}${bot.semConvites || bot.ignoreInvites ? ' <span style="color: #ff9800; font-weight: bold; font-size: 11px;">- sem convites</span>' : ''}</div>
                 </div>
                 <div class="status-dot ${statusClass}" id="status-${bot.id}" title="${statusDesc}"></div>
             </div>

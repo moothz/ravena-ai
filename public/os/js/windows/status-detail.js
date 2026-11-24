@@ -68,6 +68,14 @@ WindowManager.register('status-detail', {
             `;
         }
 
+        let flags = '';
+        if (bot.semPV || bot.ignorePV) {
+            flags += '<span class="badge-sem-pv" style="color: #ff4d4d; font-weight: bold; margin-left: 6px; font-size: 13px;">- sem PV!</span>';
+        }
+        if (bot.semConvites || bot.ignoreInvites) {
+            flags += '<span class="badge-sem-convites" style="color: #ff9800; font-weight: bold; margin-left: 6px; font-size: 13px;">- sem convites</span>';
+        }
+
         body.innerHTML = `
             <div class="bot-detail-view">
                 <div class="bot-detail-header">
@@ -76,7 +84,7 @@ WindowManager.register('status-detail', {
                          onerror="this.onerror=null;this.src='/android-chrome-192x192.png';" 
                          alt="${safeId}">
                     <div class="bot-detail-title">
-                        <h2>${displayName}</h2>
+                        <h2>${displayName} ${flags}</h2>
                         <p>${typeBadge} &nbsp;|&nbsp; ${statusText}</p>
                     </div>
                 </div>

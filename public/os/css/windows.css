@@ -363,6 +363,33 @@
     white-space: nowrap;
 }
 
+.drive-name-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.drive-flags {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.badge-sem-pv {
+    color: var(--status-red, #ff4d4d);
+    font-weight: 700;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.badge-sem-convites {
+    color: #ff9800;
+    font-weight: 700;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
 .status-dot {
     width: 9px;
     height: 9px;
