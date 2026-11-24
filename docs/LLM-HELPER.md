@@ -1296,9 +1296,9 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ### 📁 Módulo: `Stickers.js`
 **Sobre:** Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)
 
-**Tags:** `sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,midia,recorte,whatsapp`
+**Tags:** `sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp`
 
-**Detalhes Técnicos:** Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS) e crop por IA
+**Detalhes Técnicos:** Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s) e crop por IA
 
 #### Comandos:
 - **`!sticker`**: Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp
@@ -1307,6 +1307,12 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 - **`!shq`**: Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais
   - *Categoria:* stickers
   - *Uso/Exemplos:* `!shq (com imagem/vídeo ou em resposta)`, `!stickerhq`
+- **`!slongo`**: Cria figurinha de vídeo longa (até 60s), reduzindo FPS e resolução se necessário para respeitar o limite do WhatsApp
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!slongo (com vídeo/GIF ou em resposta)`, `!stickerlongo`
+- **`!slongohq`**: Cria figurinha de vídeo longa (até 60s) com alta qualidade e proporções originais como no !shq
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!slongohq (com vídeo/GIF ou em resposta)`, `!stickerlongohq`
 - **`!sqi`**: Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA
   - *Categoria:* stickers
   - *Uso/Exemplos:* `!sqi (com imagem ou em resposta)`

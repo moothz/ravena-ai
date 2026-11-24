@@ -9,6 +9,7 @@ const ffmpeg = require("fluent-ffmpeg");
 
 const CmdUsage = require("../utils/CmdUsage");
 const LLMService = require("../services/LLMService");
+const telemetry = require("../telemetry");
 
 const logger = new Logger("sticker-commands");
 const database = Database.getInstance();
@@ -46,15 +47,19 @@ async function cleanupTempFiles() {
 	}
 }
 
-// Padrões recomendados do WhatsApp para figurinhas (stickers)
+// Padrões recomendados do WhatsApp/whatsmeow para figurinhas (stickers)
 const WHATSAPP_STICKER = {
 	MAX_SIZE: 512, // Dimensão padrão do WhatsApp: 512x512 pixels
 	MAX_DURATION: 15, // Duração máxima padrão de até 15s
+	// whatsmeow não impõe corte de duração no protobuf StickerMessage, mas clientes WhatsApp
+	// exigem < 500 KB por sticker; 60s é o teto prático antes de degradar FPS/resolução demais.
+	MAX_LONG_DURATION: 60,
 	FPS: 8, // 8 FPS
-	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança (< 500 KB) do WhatsApp
+	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança (< 500 KB) do WhatsApp (margem p/ metadados EXIF)
 	STATIC_QUALITY: 80, // Qualidade WebP para imagens estáticas
 	ANIMATED_QUALITY: 28, // Qualidade inicial para 15s a 8 FPS
-	COMPRESSION_LEVEL: 6 // Nível de compressão máximo da libwebp (0-6)
+	COMPRESSION_LEVEL: 6, // Nível de compressão máximo da libwebp (0-6)
+	LONG_COMPRESSION_LEVEL: 4 // Equilíbrio velocidade/compressão em vídeos longos
 };
 
 // Perfis sequenciais de fallback para figurinhas animadas (interrompe assim que tamanho <= 490 KB)
@@ -73,6 +78,231 @@ const ANIMATED_HQ_PROFILES = [
 	{ duration: 5, fps: 22, qv: 18, desc: "5s @ 22fps (q:18)" },
 	{ duration: 4.5, fps: 22, qv: 14, desc: "4.5s @ 22fps (q:14)" }
 ];
+
+// Tabela de perfis longos (!slongo e !slongohq): preservam duração até MAX_LONG_DURATION,
+// reduzindo resolução, FPS e q:v antes de recorrer a cortes de duração como último recurso.
+const LONG_PROFILE_TIERS = {
+	long: [
+		{
+			maxUpTo: 22,
+			fps: 8,
+			maxSize: 512,
+			qv: 26,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: 38,
+			fps: 8,
+			maxSize: 384,
+			qv: 20,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: Infinity,
+			fps: 6,
+			maxSize: 320,
+			qv: 18,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: Infinity,
+			fps: 5,
+			maxSize: 256,
+			qv: 16,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: Infinity,
+			fps: 4,
+			maxSize: 256,
+			qv: 14,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{ maxUpTo: Infinity, fps: 3, maxSize: 192, qv: 10, compressionLevel: 5 }
+	],
+	longhq: [
+		{
+			maxUpTo: 18,
+			fps: 22,
+			maxSize: 512,
+			qv: 24,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: 26,
+			fps: 15,
+			maxSize: 512,
+			qv: 20,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: 35,
+			fps: 14,
+			maxSize: 384,
+			qv: 18,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{ maxUpTo: 50, fps: 12, maxSize: 320, qv: 16, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 10, maxSize: 256, qv: 14, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 8, maxSize: 224, qv: 12, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 6, maxSize: 200, qv: 10, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 5, maxSize: 192, qv: 10, compressionLevel: 5 }
+	]
+};
+
+/**
+ * Converte duração numérica ou no formato HH:MM:SS(.ms) retornada pelo ffprobe para segundos.
+ * @param {string|number|undefined|null} rawValue
+ * @returns {number|null}
+ */
+function parseFfprobeDuration(rawValue) {
+	if (typeof rawValue === "number") {
+		return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : null;
+	}
+	if (typeof rawValue !== "string") {
+		return null;
+	}
+	const trimmed = rawValue.trim();
+	if (!trimmed || trimmed === "N/A") {
+		return null;
+	}
+	if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+		const numeric = parseFloat(trimmed);
+		return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+	}
+	const hmsMatch = trimmed.match(/^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
+	if (hmsMatch) {
+		const seconds = Number(hmsMatch[1]) * 3600 + Number(hmsMatch[2]) * 60 + parseFloat(hmsMatch[3]);
+		return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+	}
+	return null;
+}
+
+/**
+ * Obtém a duração de um arquivo de mídia em segundos via ffprobe, priorizando a trilha de vídeo.
+ * @param {string} inputPath
+ * @returns {Promise<number|null>}
+ */
+function getMediaDuration(inputPath) {
+	return new Promise((resolve) => {
+		ffmpeg.ffprobe(inputPath, (err, metadata) => {
+			if (err || !metadata) {
+				return resolve(null);
+			}
+			const streams = Array.isArray(metadata.streams) ? metadata.streams : [];
+			const videoDuration = streams
+				.filter((s) => s.codec_type === "video")
+				.map((s) => parseFfprobeDuration(s.duration) ?? parseFfprobeDuration(s.tags?.DURATION))
+				.find((d) => d !== null);
+			if (videoDuration !== undefined) {
+				return resolve(videoDuration);
+			}
+
+			const formatDuration = parseFfprobeDuration(metadata.format?.duration);
+			if (formatDuration !== null) {
+				return resolve(formatDuration);
+			}
+
+			const anyStreamDuration = streams
+				.map((s) => parseFfprobeDuration(s.duration) ?? parseFfprobeDuration(s.tags?.DURATION))
+				.find((d) => d !== null);
+			return resolve(anyStreamDuration ?? null);
+		});
+	});
+}
+
+/**
+ * Monta perfis adaptativos para vídeos longos (!slongo / !slongohq) limitados a MAX_LONG_DURATION.
+ * @param {"long"|"longhq"} mode
+ * @param {number|null} mediaDuration
+ * @returns {Array<Object>}
+ */
+function buildLongAnimatedProfiles(mode, mediaDuration) {
+	const hasValidDuration =
+		typeof mediaDuration === "number" && Number.isFinite(mediaDuration) && mediaDuration > 0;
+	const targetDuration = hasValidDuration
+		? Number(Math.max(1, Math.min(mediaDuration, WHATSAPP_STICKER.MAX_LONG_DURATION)).toFixed(2))
+		: WHATSAPP_STICKER.MAX_LONG_DURATION;
+	// Sem duração conhecida (ex.: WebM sem metadados), inicia dos perfis mais altos porque -t 60 encerra no EOS
+	const tierCheckDuration = hasValidDuration ? targetDuration : 1;
+	const tiers = LONG_PROFILE_TIERS[mode] || LONG_PROFILE_TIERS.long;
+
+	const selected = tiers
+		.filter((t) => tierCheckDuration <= t.maxUpTo)
+		.map((t) => ({
+			duration: targetDuration,
+			fps: t.fps,
+			maxSize: t.maxSize,
+			qv: t.qv,
+			compressionLevel: t.compressionLevel,
+			desc: `${targetDuration}s @ ${t.fps}fps (${t.maxSize}px, q:${t.qv})`
+		}));
+
+	// Garante fallbacks de corte de duração apenas como último recurso para entropia extrema
+	const trimDur1 = Number(Math.min(targetDuration, 35).toFixed(2));
+	const trimDur2 = Number(Math.min(targetDuration, 20).toFixed(2));
+	const trimDur3 = Number(Math.min(targetDuration, 10).toFixed(2));
+	const trimFps = mode === "longhq" ? 6 : 4;
+	selected.push(
+		{
+			duration: trimDur1,
+			fps: trimFps,
+			maxSize: 224,
+			qv: 12,
+			compressionLevel: 5,
+			desc: `${trimDur1}s @ ${trimFps}fps fallback (224px, q:12)`
+		},
+		{
+			duration: trimDur2,
+			fps: trimFps,
+			maxSize: 192,
+			qv: 10,
+			compressionLevel: WHATSAPP_STICKER.COMPRESSION_LEVEL,
+			desc: `${trimDur2}s @ ${trimFps}fps mínimo (192px, q:10)`
+		},
+		{
+			duration: trimDur3,
+			fps: 3,
+			maxSize: 160,
+			qv: 8,
+			compressionLevel: 6,
+			desc: `${trimDur3}s @ 3fps compacto extremo (160px, q:8)`
+		}
+	);
+
+	return selected;
+}
+
+/**
+ * Monta o filtro FFmpeg para conversão animada conforme cropType, resolução e FPS.
+ * @param {string} cropType
+ * @param {number} size
+ * @param {number} fps
+ * @returns {string}
+ */
+function buildAnimatedVideoFilter(cropType, size, fps) {
+	const percentage = parseFloat(cropType);
+	if (!isNaN(percentage)) {
+		return `fps=${fps},crop=min(iw\\,ih):min(iw\\,ih):clip((iw*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,iw-min(iw\\,ih)):clip((ih*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,ih-min(iw\\,ih)),scale=${size}:${size},format=yuva420p`;
+	}
+	if (cropType === "center") {
+		return `fps=${fps},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2,scale=${size}:${size},format=yuva420p`;
+	}
+	if (cropType === "top") {
+		return `fps=${fps},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:0,scale=${size}:${size},format=yuva420p`;
+	}
+	if (cropType === "bottom") {
+		return `fps=${fps},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:ih-min(iw\\,ih),scale=${size}:${size},format=yuva420p`;
+	}
+	if (cropType === "stretch") {
+		return `fps=${fps},scale=${size}:${size},format=yuva420p`;
+	}
+	if (cropType === "hq" || cropType === "longhq") {
+		return `fps=${fps},scale=${size}:${size}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
+	}
+	// Padrão ("transparent" e "long"): ajusta dentro de size x size com bordas 100% transparentes
+	return `fps=${fps},scale=${size}:${size}:force_original_aspect_ratio=decrease,format=yuva420p,pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
+}
 
 // Semáforo de concorrência: limita FFmpegs paralelos para evitar contenção de CPU
 // Quando todos os slots estão ocupados, novas requisições aguardam na fila
@@ -130,113 +360,136 @@ async function saveTempMedia(mediaBuffer, mimeType) {
 }
 
 /**
- * Executa ffmpeg com múltiplos fallbacks em cascata para figurinhas animadas:
- * 1. 15s e 8 fps
- * 2. 15s e 8 fps menor q:v
- * 3. 10s e 8 fps
- * 4. 5s e 8 fps
- * 5. 3.5s e 8 fps
+ * Executa ffmpeg com múltiplos fallbacks em cascata para figurinhas animadas.
  *
  * @param {string} inputPath - Caminho do vídeo/gif de entrada
- * @param {string} filterCommand - Filtro de vídeo (crop, scale, yuva420p, pad)
+ * @param {string|Function} filterCommand - Filtro de vídeo ou função (profile) => filtro
  * @param {Array} [profiles=ANIMATED_FALLBACK_PROFILES] - Perfis sequenciais de fallback
+ * @param {string} [cropType="transparent"] - Modo de recorte para telemetria
  * @returns {Promise<Buffer>} - Buffer WebP animado
  */
 async function encodeAnimatedWebPWithFallback(
 	inputPath,
 	filterCommand,
-	profiles = ANIMATED_FALLBACK_PROFILES
+	profiles = ANIMATED_FALLBACK_PROFILES,
+	cropType = "transparent"
 ) {
 	await ensureTempDir();
 
-	const fnStart = Date.now();
-
-	// Aguarda slot disponível no semáforo (limita FFmpegs paralelos)
+	// Aguarda slot no semáforo antes de abrir o span para não inflar o tempo real de encoding
+	const queueStart = Date.now();
 	await acquireFFmpegSlot();
-
-	const runFfmpeg = (options, filter, output) =>
-		new Promise((resolve, reject) => {
-			ffmpeg(inputPath)
-				.outputOptions(options)
-				.videoFilters(filter)
-				.toFormat("webp")
-				.save(output)
-				.on("end", resolve)
-				.on("error", reject);
-		});
-
-	let bestBuffer = null;
-	let bestSize = Infinity;
-	const tempFilesToClean = [];
+	const queueWaitMs = Date.now() - queueStart;
 
 	try {
-		for (let i = 0; i < profiles.length; i++) {
-			const profile = profiles[i];
-			const currentOutput = path.join(
-				TEMP_DIR,
-				`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
-			);
-			tempFilesToClean.push(currentOutput);
+		return await telemetry.withSpan(
+			"sticker encode.animated",
+			{
+				attributes: {
+					"ravena.sticker.crop_type": String(cropType),
+					"ravena.sticker.profile_count": profiles.length,
+					"ravena.sticker.queue_wait_ms": queueWaitMs
+				}
+			},
+			async (span) => {
+				const runFfmpeg = (options, filter, output) =>
+					new Promise((resolve, reject) => {
+						ffmpeg(inputPath)
+							.outputOptions(options)
+							.videoFilters(filter)
+							.toFormat("webp")
+							.save(output)
+							.on("end", resolve)
+							.on("error", reject);
+					});
 
-			const currentFilter = filterCommand.includes("fps=")
-				? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
-				: `fps=${profile.fps},${filterCommand}`;
+				let bestBuffer = null;
+				let bestSize = Infinity;
+				let bestDesc = profiles[0]?.desc || "";
+				let attempts = 0;
+				const tempFilesToClean = [];
 
-			const attemptStart = Date.now();
-			await runFfmpeg(
-				[
-					"-y",
-					"-t",
-					String(profile.duration),
-					"-c:v",
-					"libwebp",
-					"-lossless",
-					"0",
-					"-compression_level",
-					String(WHATSAPP_STICKER.COMPRESSION_LEVEL),
-					"-q:v",
-					String(profile.qv),
-					"-loop",
-					"0",
-					"-an"
-				],
-				currentFilter,
-				currentOutput
-			);
-			const attemptMs = Date.now() - attemptStart;
+				try {
+					for (let i = 0; i < profiles.length; i++) {
+						const profile = profiles[i];
+						attempts = i + 1;
+						const currentOutput = path.join(
+							TEMP_DIR,
+							`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
+						);
+						tempFilesToClean.push(currentOutput);
 
-			const stats = await fs.stat(currentOutput);
-			const sizeKb = (stats.size / 1024).toFixed(1);
-			// logger.info(
-			// 	`[encodeAnimatedWebP] Tentativa ${i + 1}/${ANIMATED_FALLBACK_PROFILES.length} [${profile.desc}]: ${sizeKb} KB em ${attemptMs}ms`
-			// );
+						let currentFilter;
+						if (typeof filterCommand === "function") {
+							currentFilter = filterCommand(profile);
+						} else {
+							currentFilter = filterCommand.includes("fps=")
+								? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
+								: `fps=${profile.fps},${filterCommand}`;
+						}
 
-			if (stats.size < bestSize) {
-				bestSize = stats.size;
-				bestBuffer = await fs.readFile(currentOutput);
+						const compressionLevel = profile.compressionLevel ?? WHATSAPP_STICKER.COMPRESSION_LEVEL;
+
+						await runFfmpeg(
+							[
+								"-y",
+								"-t",
+								String(profile.duration),
+								"-c:v",
+								"libwebp",
+								"-lossless",
+								"0",
+								"-compression_level",
+								String(compressionLevel),
+								"-q:v",
+								String(profile.qv),
+								"-loop",
+								"0",
+								"-an"
+							],
+							currentFilter,
+							currentOutput
+						);
+
+						const stats = await fs.stat(currentOutput);
+
+						if (stats.size < bestSize) {
+							bestSize = stats.size;
+							bestDesc = profile.desc || bestDesc;
+							bestBuffer = await fs.readFile(currentOutput);
+						}
+
+						if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
+							telemetry.setAttrs(
+								{
+									"ravena.sticker.attempts": attempts,
+									"ravena.sticker.profile_desc": profile.desc,
+									"ravena.sticker.size_bytes": stats.size,
+									"ravena.sticker.approved": true
+								},
+								span
+							);
+							return bestBuffer;
+						}
+					}
+
+					telemetry.setAttrs(
+						{
+							"ravena.sticker.attempts": attempts,
+							"ravena.sticker.profile_desc": bestDesc,
+							"ravena.sticker.size_bytes": bestSize,
+							"ravena.sticker.approved": false
+						},
+						span
+					);
+					return bestBuffer;
+				} finally {
+					await Promise.all(tempFilesToClean.map((file) => fs.unlink(file).catch(() => {})));
+				}
 			}
-
-			if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
-				// logger.info(
-				// 	`[encodeAnimatedWebP] ✓ Perfil '${profile.desc}' aprovado (${sizeKb} KB <= 490 KB). Total: ${Date.now() - fnStart}ms`
-				// );
-				return bestBuffer;
-			}
-
-			// logger.warn(
-			// 	`[encodeAnimatedWebP] Perfil '${profile.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
-			// );
-		}
-
-		// logger.warn(
-		// 	`[encodeAnimatedWebP] Todos os perfis excederam o limite. Usando menor (${(bestSize / 1024).toFixed(1)} KB). Total: ${Date.now() - fnStart}ms`
-		// );
-		return bestBuffer;
+		);
 	} finally {
 		releaseFFmpegSlot();
-		for (const file of tempFilesToClean) {
-			fs.unlink(file).catch(() => {});
-		}
 	}
 }
 
@@ -432,7 +685,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "hq") {
+			} else if (cropType === "hq" || cropType === "longhq") {
 				// Redimensiona para caber em 512x512 mantendo o aspecto original, sem adicionar bordas
 				result = await image
 					.resize(TARGET_SIZE, TARGET_SIZE, { fit: "inside" })
@@ -441,7 +694,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "transparent") {
+			} else if (cropType === "transparent" || cropType === "long") {
 				// Redimensiona para caber em 512x512 mantendo o aspecto e adiciona bordas transparentes
 				result = await image
 					.resize(TARGET_SIZE, TARGET_SIZE, {
@@ -470,43 +723,27 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 			return result;
 		} else if (isVideo(mimeType) || isAnimWebP) {
 			// Para vídeos, GIFs e WebP animado, processa via ffmpeg
-			// logger.info(
-			// 	`[makeSquareMedia] Iniciando processamento FFmpeg [${mimeType}, crop=${cropType}, isAnimWebP=${isAnimWebP}]...`
-			// );
-			const ffmpegStart = Date.now();
 			const inputPath = await saveTempMedia(rawBuffer, mimeType);
-
-			let filterCommand = "";
-			const percentage = parseFloat(cropType);
-
-			if (!isNaN(percentage)) {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):clip((iw*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,iw-min(iw\\,ih)):clip((ih*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,ih-min(iw\\,ih)),scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "center") {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2,scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "top") {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:0,scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "bottom") {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:ih-min(iw\\,ih),scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "stretch") {
-				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "transparent") {
-				// Ajustar vídeo para caber em 512x512 e preencher com fundo 100% transparente (sem bordas pretas)
-				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,format=yuva420p,pad=${TARGET_SIZE}:${TARGET_SIZE}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
-			} else if (cropType === "hq") {
-				// HQ: apenas dimensões (máx 512) com proporção original, sem crop, pad ou yuva420p
-				filterCommand = `fps=25,scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
-			}
+			const filterBuilder = (profile) =>
+				buildAnimatedVideoFilter(cropType, profile.maxSize || TARGET_SIZE, profile.fps || FPS);
 
 			try {
-				const profiles = cropType === "hq" ? ANIMATED_HQ_PROFILES : ANIMATED_FALLBACK_PROFILES;
+				let profiles;
+				if (cropType === "long" || cropType === "longhq") {
+					const mediaDuration = await getMediaDuration(inputPath);
+					profiles = buildLongAnimatedProfiles(cropType, mediaDuration);
+				} else if (cropType === "hq") {
+					profiles = ANIMATED_HQ_PROFILES;
+				} else {
+					profiles = ANIMATED_FALLBACK_PROFILES;
+				}
+
 				const processedBuffer = await encodeAnimatedWebPWithFallback(
 					inputPath,
-					filterCommand,
-					profiles
+					filterBuilder,
+					profiles,
+					cropType
 				);
-				// logger.info(
-				// 	`[makeSquareMedia] ✓ Vídeo/GIF processado via FFmpeg em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
-				// );
 				return processedBuffer;
 			} finally {
 				await fs.unlink(inputPath).catch(() => {});
@@ -752,6 +989,11 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 		// Processar a mídia para torná-la quadrada no padrão WhatsApp
 		// const processStart = Date.now();
 		const processedBuffer = await processMediaToSquare(mediaBuffer, mimeType, finalCropType);
+		telemetry.setAttrs({
+			"ravena.sticker.crop_type": cropType === "llm" ? "llm" : String(cropType),
+			"ravena.sticker.mime_type": mimeType || "unknown",
+			"ravena.sticker.size_bytes": processedBuffer.length
+		});
 		// logger.info(
 		// 	`[squareStickerCommand] processMediaToSquare concluído em ${Date.now() - processStart}ms (${(processedBuffer.length / 1024).toFixed(1)} KB)`
 		// );
@@ -1206,14 +1448,90 @@ const commands = [
 		},
 		method: async (bot, message, args, group) =>
 			await squareStickerCommand(bot, message, args, group, "hq")
+	}),
+	new Command({
+		name: "slongo",
+		description:
+			"Gera figurinha de vídeo longa (até 60s), economizando FPS e resolução para caber no limite do WhatsApp",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "long")
+	}),
+	new Command({
+		name: "stickerlongo",
+		description:
+			"Alias para !slongo: gera figurinha de vídeo longa (até 60s) dentro do limite do WhatsApp",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "long")
+	}),
+	new Command({
+		name: "slongohq",
+		description:
+			"Gera figurinha de vídeo longa (até 60s) em alta qualidade e proporção original como no !shq",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "longhq")
+	}),
+	new Command({
+		name: "stickerlongohq",
+		description:
+			"Alias para !slongohq: gera figurinha de vídeo longa (até 60s) em alta qualidade como no !shq",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "longhq")
 	})
 ];
 
 const helper = {
 	about: "Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)",
 	implementation:
-		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS) e crop por IA",
-	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,midia,recorte,whatsapp",
+		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s) e crop por IA",
+	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp",
 	cmds: [
 		{
 			cmd: "!sticker",
@@ -1225,6 +1543,18 @@ const helper = {
 			cmd: "!shq",
 			desc: "Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais",
 			usage: ["!shq (com imagem/vídeo ou em resposta)", "!stickerhq"],
+			category: "stickers"
+		},
+		{
+			cmd: "!slongo",
+			desc: "Cria figurinha de vídeo longa (até 60s), reduzindo FPS e resolução se necessário para respeitar o limite do WhatsApp",
+			usage: ["!slongo (com vídeo/GIF ou em resposta)", "!stickerlongo"],
+			category: "stickers"
+		},
+		{
+			cmd: "!slongohq",
+			desc: "Cria figurinha de vídeo longa (até 60s) com alta qualidade e proporções originais como no !shq",
+			usage: ["!slongohq (com vídeo/GIF ou em resposta)", "!stickerlongohq"],
 			category: "stickers"
 		},
 		{
