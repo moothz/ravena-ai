@@ -39,6 +39,7 @@ class Command {
 		this.cooldown = data.cooldown ?? 0; // Tempo mínimo entre usos (segundos)
 		this.cooldownPV = data.cooldownPV !== undefined ? data.cooldownPV : undefined; // Cooldown específico para PV (fallback para cooldown se undefined)
 		this.cooldownGrupo = data.cooldownGrupo ?? false; // Cooldown compartilhado por grupo (padrão false)
+		this.cooldownKey = data.cooldownKey ?? null; // Chave canônica de cooldown para compartilhamento explícito
 		this.timeout = data.timeout ?? 30; // Tempo máximo de execução (segundos)
 
 		// Comportamento de resposta
@@ -134,6 +135,7 @@ class Command {
 			reactions: this.reactions,
 			cooldown: this.cooldown,
 			cooldownGrupo: this.cooldownGrupo,
+			cooldownKey: this.cooldownKey,
 			timeout: this.timeout,
 			deleteOnComplete: this.deleteOnComplete,
 			replyInPrivate: this.replyInPrivate,

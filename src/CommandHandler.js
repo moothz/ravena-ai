@@ -37,6 +37,7 @@ class CommandHandler {
 		this.commandLimitTracker = CommandLimitTracker.getInstance();
 		this.customCommands = {}; // Agrupados por groupId
 		this.cooldownCache = new Map(); // "botId_groupId|comando" -> timestamp do ultimo uso
+		this.cooldownCanonicalMap = new Map(); // Mapeia comando/alias para nome canônico de cooldown
 		this.privateManagement = {}; // Para gerenciar grupos a partir de chats privados
 		this.cooldownMessages = {}; // Rastreia quando o último aviso (cooldown/limite) foi enviado
 
@@ -105,6 +106,7 @@ class CommandHandler {
 		try {
 			// Carrega comandos fixos
 			await this.fixedCommands.loadCommands();
+			this.buildCooldownCanonicalMap();
 			this.logger.debug(`Carregados ${this.fixedCommands.getAllCommands().length} comandos fixos`);
 
 			// Imprime comandos fixos carregados
@@ -164,8 +166,129 @@ class CommandHandler {
 	}
 
 	/**
-	 * Métodos de cooldowns removidos (migrado para SQLite)
+	 * Constrói o mapa de nomes canônicos de cooldown para comandos e seus aliases
 	 */
+	buildCooldownCanonicalMap() {
+		this.cooldownCanonicalMap = new Map();
+		if (!this.fixedCommands || typeof this.fixedCommands.getAllCommands !== "function") {
+			return;
+		}
+
+		const allCommands = this.fixedCommands.getAllCommands();
+
+		// Agrupa comandos por method para mapear comandos irmãos/aliases
+		const methodGroups = new Map();
+		for (const cmd of allCommands) {
+			if (typeof cmd.method === "function") {
+				if (!methodGroups.has(cmd.method)) {
+					methodGroups.set(cmd.method, []);
+				}
+				methodGroups.get(cmd.method).push(cmd);
+			}
+		}
+
+		for (const [, siblings] of methodGroups.entries()) {
+			// Encontra o comando principal canônico:
+			// 1. Comando que define cooldownKey explícito
+			// 2. Comando visível que não tenha 'alias' na descrição
+			// 3. Primeiro comando registrado
+			const primary =
+				siblings.find((c) => Boolean(c.cooldownKey)) ||
+				siblings.find((c) => {
+					const desc = (c.description || "").toLowerCase();
+					return !desc.includes("alias") && !c.hidden;
+				}) ||
+				siblings[0];
+
+			const canonicalName = primary.cooldownKey || primary.name || primary.startsWith;
+
+			for (const cmd of siblings) {
+				if (cmd.name) this.cooldownCanonicalMap.set(cmd.name, canonicalName);
+				if (cmd.startsWith) this.cooldownCanonicalMap.set(cmd.startsWith, canonicalName);
+				if (Array.isArray(cmd.aliases)) {
+					for (const alias of cmd.aliases) {
+						this.cooldownCanonicalMap.set(alias, canonicalName);
+					}
+				}
+			}
+		}
+
+		// Registra comandos restantes e seus aliases individuais
+		for (const cmd of allCommands) {
+			const canonicalName = cmd.cooldownKey || cmd.name || cmd.startsWith;
+			if (cmd.name && !this.cooldownCanonicalMap.has(cmd.name)) {
+				this.cooldownCanonicalMap.set(cmd.name, canonicalName);
+			}
+			if (cmd.startsWith && !this.cooldownCanonicalMap.has(cmd.startsWith)) {
+				this.cooldownCanonicalMap.set(cmd.startsWith, canonicalName);
+			}
+			if (Array.isArray(cmd.aliases)) {
+				for (const alias of cmd.aliases) {
+					if (!this.cooldownCanonicalMap.has(alias)) {
+						this.cooldownCanonicalMap.set(alias, canonicalName);
+					}
+				}
+			}
+		}
+	}
+
+	/**
+	 * Obtém o identificador canônico de cooldown para um comando ou alias
+	 * @param {Command|Object|string} command - Comando ou nome do comando
+	 * @returns {string} - Nome canônico para o cooldown
+	 */
+	getCooldownCommandName(command) {
+		if (!command) return "";
+
+		if (!this.cooldownCanonicalMap || this.cooldownCanonicalMap.size === 0) {
+			this.buildCooldownCanonicalMap();
+		}
+
+		if (typeof command === "object" && command !== null) {
+			if (command.cooldownKey) return command.cooldownKey;
+
+			const name = command.name ?? command.startsWith;
+			if (name && this.cooldownCanonicalMap?.has(name)) {
+				return this.cooldownCanonicalMap.get(name);
+			}
+
+			// Se a instância do comando não estiver no mapa pré-computado (ex: testes unitários isolados)
+			if (typeof command.method === "function" && this.fixedCommands?.getAllCommands) {
+				const siblings = this.fixedCommands
+					.getAllCommands()
+					.filter((c) => c.method === command.method);
+				if (siblings.length > 1) {
+					const primary =
+						siblings.find((c) => Boolean(c.cooldownKey)) ||
+						siblings.find((c) => {
+							const desc = (c.description || "").toLowerCase();
+							return !desc.includes("alias") && !c.hidden;
+						}) ||
+						siblings[0];
+					return primary.cooldownKey || primary.name || primary.startsWith || name;
+				}
+			}
+
+			return name || "";
+		}
+
+		if (typeof command === "string") {
+			if (this.cooldownCanonicalMap?.has(command)) {
+				return this.cooldownCanonicalMap.get(command);
+			}
+
+			if (this.fixedCommands?.getCommand) {
+				const cmdObj = this.fixedCommands.getCommand(command);
+				if (cmdObj) {
+					return this.getCooldownCommandName(cmdObj);
+				}
+			}
+
+			return command;
+		}
+
+		return "";
+	}
 
 	/**
 	 * Verifica se um comando está em cooldown
@@ -177,8 +300,7 @@ class CommandHandler {
 	 * @returns {Promise<Object>} - Informações sobre o cooldown
 	 */
 	async checkCooldown(command, groupId, botOrBotId, userKey, isPrivate) {
-		const commandName =
-			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		const commandName = this.getCooldownCommandName(command);
 		const bot =
 			typeof botOrBotId === "object" && botOrBotId !== null
 				? botOrBotId
@@ -303,8 +425,7 @@ class CommandHandler {
 	}
 
 	async updateCooldown(command, groupId, botOrBotId, userKey, isPrivate) {
-		const commandName =
-			typeof command === "string" ? command : (command.name ?? command.startsWith);
+		const commandName = this.getCooldownCommandName(command);
 		const bot =
 			typeof botOrBotId === "object" && botOrBotId !== null
 				? botOrBotId
@@ -396,11 +517,17 @@ class CommandHandler {
 	 * @param {Object} cooldownInfo - Informações sobre o cooldown
 	 */
 	async handleCooldownMessage(bot, message, command, groupId, cooldownInfo, group = null) {
-		const commandName = command.name ?? command;
+		const commandName =
+			typeof command === "object" && command !== null
+				? (command.name ?? command.startsWith ?? "")
+				: command;
+		const canonicalName = this.getCooldownCommandName(command);
 		try {
 			const isReaction = Boolean(message?.originReaction?.reaction);
 			const reactionEmoji = message?.originReaction?.reaction;
-			const key = isReaction ? `${groupId}:reaction:${reactionEmoji}` : `${groupId}:${commandName}`;
+			const key = isReaction
+				? `${groupId}:reaction:${reactionEmoji}`
+				: `${groupId}:${canonicalName || commandName}`;
 			const content = isReaction
 				? `O comando via react ${reactionEmoji} está em cooldown, aguarde ${cooldownInfo.formattedTime} para usar novamente.`
 				: `O comando '${commandName}' está em cooldown, aguarde ${cooldownInfo.formattedTime} para usar novamente.`;
