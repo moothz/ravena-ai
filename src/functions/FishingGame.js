@@ -3323,7 +3323,8 @@ async function fishingDataCommand(bot, message, args, group) {
 		let msg = `🎣 *Ficha do Pescador: ${userName}*\n\n`;
 
 		// Stats
-		msg += `🐛 *Iscas:* ${userData.baits}/${maxBaits}\n`;
+		const baitLimitNotice = maxBaits >= BAITS_HARD_CAP ? " (iscas máximas no limite!)" : "";
+		msg += `🐛 *Iscas:* ${userData.baits}/${maxBaits}${baitLimitNotice}\n`;
 		if (userData.baits < maxBaits) {
 			const nextRegen = getNextBaitRegenTime(userData);
 			const nextMin = Math.ceil(nextRegen.secondsUntilNextBait / 60);
