@@ -151,7 +151,35 @@ const LONG_PROFILE_TIERS = {
 };
 
 /**
- * Obtém a duração de um arquivo de mídia em segundos via ffprobe.
+ * Converte duração numérica ou no formato HH:MM:SS(.ms) retornada pelo ffprobe para segundos.
+ * @param {string|number|undefined|null} rawValue
+ * @returns {number|null}
+ */
+function parseFfprobeDuration(rawValue) {
+	if (typeof rawValue === "number") {
+		return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : null;
+	}
+	if (typeof rawValue !== "string") {
+		return null;
+	}
+	const trimmed = rawValue.trim();
+	if (!trimmed || trimmed === "N/A") {
+		return null;
+	}
+	if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+		const numeric = parseFloat(trimmed);
+		return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+	}
+	const hmsMatch = trimmed.match(/^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
+	if (hmsMatch) {
+		const seconds = Number(hmsMatch[1]) * 3600 + Number(hmsMatch[2]) * 60 + parseFloat(hmsMatch[3]);
+		return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+	}
+	return null;
+}
+
+/**
+ * Obtém a duração de um arquivo de mídia em segundos via ffprobe, priorizando a trilha de vídeo.
  * @param {string} inputPath
  * @returns {Promise<number|null>}
  */
@@ -161,14 +189,24 @@ function getMediaDuration(inputPath) {
 			if (err || !metadata) {
 				return resolve(null);
 			}
-			const formatDuration = parseFloat(metadata.format?.duration);
-			if (Number.isFinite(formatDuration) && formatDuration > 0) {
+			const streams = Array.isArray(metadata.streams) ? metadata.streams : [];
+			const videoDuration = streams
+				.filter((s) => s.codec_type === "video")
+				.map((s) => parseFfprobeDuration(s.duration) ?? parseFfprobeDuration(s.tags?.DURATION))
+				.find((d) => d !== null);
+			if (videoDuration !== undefined) {
+				return resolve(videoDuration);
+			}
+
+			const formatDuration = parseFfprobeDuration(metadata.format?.duration);
+			if (formatDuration !== null) {
 				return resolve(formatDuration);
 			}
-			const streamDuration = (metadata.streams || [])
-				.map((s) => parseFloat(s.duration))
-				.find((d) => Number.isFinite(d) && d > 0);
-			return resolve(streamDuration || null);
+
+			const anyStreamDuration = streams
+				.map((s) => parseFfprobeDuration(s.duration) ?? parseFfprobeDuration(s.tags?.DURATION))
+				.find((d) => d !== null);
+			return resolve(anyStreamDuration ?? null);
 		});
 	});
 }
@@ -180,15 +218,17 @@ function getMediaDuration(inputPath) {
  * @returns {Array<Object>}
  */
 function buildLongAnimatedProfiles(mode, mediaDuration) {
-	const rawDuration =
-		typeof mediaDuration === "number" && Number.isFinite(mediaDuration) && mediaDuration > 0
-			? Math.min(mediaDuration, WHATSAPP_STICKER.MAX_LONG_DURATION)
-			: WHATSAPP_STICKER.MAX_LONG_DURATION;
-	const targetDuration = Number(Math.max(1, rawDuration).toFixed(2));
+	const hasValidDuration =
+		typeof mediaDuration === "number" && Number.isFinite(mediaDuration) && mediaDuration > 0;
+	const targetDuration = hasValidDuration
+		? Number(Math.max(1, Math.min(mediaDuration, WHATSAPP_STICKER.MAX_LONG_DURATION)).toFixed(2))
+		: WHATSAPP_STICKER.MAX_LONG_DURATION;
+	// Sem duração conhecida (ex.: WebM sem metadados), inicia dos perfis mais altos porque -t 60 encerra no EOS
+	const tierCheckDuration = hasValidDuration ? targetDuration : 1;
 	const tiers = LONG_PROFILE_TIERS[mode] || LONG_PROFILE_TIERS.long;
 
 	const selected = tiers
-		.filter((t) => targetDuration <= t.maxUpTo)
+		.filter((t) => tierCheckDuration <= t.maxUpTo)
 		.map((t) => ({
 			duration: targetDuration,
 			fps: t.fps,
@@ -201,6 +241,7 @@ function buildLongAnimatedProfiles(mode, mediaDuration) {
 	// Garante fallbacks de corte de duração apenas como último recurso para entropia extrema
 	const trimDur1 = Number(Math.min(targetDuration, 35).toFixed(2));
 	const trimDur2 = Number(Math.min(targetDuration, 20).toFixed(2));
+	const trimDur3 = Number(Math.min(targetDuration, 10).toFixed(2));
 	const trimFps = mode === "longhq" ? 6 : 4;
 	selected.push(
 		{
@@ -218,6 +259,14 @@ function buildLongAnimatedProfiles(mode, mediaDuration) {
 			qv: 10,
 			compressionLevel: WHATSAPP_STICKER.COMPRESSION_LEVEL,
 			desc: `${trimDur2}s @ ${trimFps}fps mínimo (192px, q:10)`
+		},
+		{
+			duration: trimDur3,
+			fps: 3,
+			maxSize: 160,
+			qv: 8,
+			compressionLevel: 6,
+			desc: `${trimDur3}s @ 3fps compacto extremo (160px, q:8)`
 		}
 	);
 
@@ -327,117 +376,121 @@ async function encodeAnimatedWebPWithFallback(
 ) {
 	await ensureTempDir();
 
-	return telemetry.withSpan(
-		"sticker encode.animated",
-		{
-			attributes: {
-				"ravena.sticker.crop_type": String(cropType),
-				"ravena.sticker.profile_count": profiles.length
-			}
-		},
-		async (span) => {
-			// Aguarda slot disponível no semáforo (limita FFmpegs paralelos)
-			await acquireFFmpegSlot();
+	// Aguarda slot no semáforo antes de abrir o span para não inflar o tempo real de encoding
+	const queueStart = Date.now();
+	await acquireFFmpegSlot();
+	const queueWaitMs = Date.now() - queueStart;
 
-			const runFfmpeg = (options, filter, output) =>
-				new Promise((resolve, reject) => {
-					ffmpeg(inputPath)
-						.outputOptions(options)
-						.videoFilters(filter)
-						.toFormat("webp")
-						.save(output)
-						.on("end", resolve)
-						.on("error", reject);
-				});
+	try {
+		return await telemetry.withSpan(
+			"sticker encode.animated",
+			{
+				attributes: {
+					"ravena.sticker.crop_type": String(cropType),
+					"ravena.sticker.profile_count": profiles.length,
+					"ravena.sticker.queue_wait_ms": queueWaitMs
+				}
+			},
+			async (span) => {
+				const runFfmpeg = (options, filter, output) =>
+					new Promise((resolve, reject) => {
+						ffmpeg(inputPath)
+							.outputOptions(options)
+							.videoFilters(filter)
+							.toFormat("webp")
+							.save(output)
+							.on("end", resolve)
+							.on("error", reject);
+					});
 
-			let bestBuffer = null;
-			let bestSize = Infinity;
-			let bestDesc = profiles[0]?.desc || "";
-			let attempts = 0;
-			const tempFilesToClean = [];
+				let bestBuffer = null;
+				let bestSize = Infinity;
+				let bestDesc = profiles[0]?.desc || "";
+				let attempts = 0;
+				const tempFilesToClean = [];
 
-			try {
-				for (let i = 0; i < profiles.length; i++) {
-					const profile = profiles[i];
-					attempts = i + 1;
-					const currentOutput = path.join(
-						TEMP_DIR,
-						`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
-					);
-					tempFilesToClean.push(currentOutput);
-
-					let currentFilter;
-					if (typeof filterCommand === "function") {
-						currentFilter = filterCommand(profile);
-					} else {
-						currentFilter = filterCommand.includes("fps=")
-							? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
-							: `fps=${profile.fps},${filterCommand}`;
-					}
-
-					const compressionLevel = profile.compressionLevel ?? WHATSAPP_STICKER.COMPRESSION_LEVEL;
-
-					await runFfmpeg(
-						[
-							"-y",
-							"-t",
-							String(profile.duration),
-							"-c:v",
-							"libwebp",
-							"-lossless",
-							"0",
-							"-compression_level",
-							String(compressionLevel),
-							"-q:v",
-							String(profile.qv),
-							"-loop",
-							"0",
-							"-an"
-						],
-						currentFilter,
-						currentOutput
-					);
-
-					const stats = await fs.stat(currentOutput);
-
-					if (stats.size < bestSize) {
-						bestSize = stats.size;
-						bestDesc = profile.desc || bestDesc;
-						bestBuffer = await fs.readFile(currentOutput);
-					}
-
-					if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
-						telemetry.setAttrs(
-							{
-								"ravena.sticker.attempts": attempts,
-								"ravena.sticker.profile_desc": profile.desc,
-								"ravena.sticker.size_bytes": stats.size,
-								"ravena.sticker.approved": true
-							},
-							span
+				try {
+					for (let i = 0; i < profiles.length; i++) {
+						const profile = profiles[i];
+						attempts = i + 1;
+						const currentOutput = path.join(
+							TEMP_DIR,
+							`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
 						);
-						return bestBuffer;
-					}
-				}
+						tempFilesToClean.push(currentOutput);
 
-				telemetry.setAttrs(
-					{
-						"ravena.sticker.attempts": attempts,
-						"ravena.sticker.profile_desc": bestDesc,
-						"ravena.sticker.size_bytes": bestSize,
-						"ravena.sticker.approved": false
-					},
-					span
-				);
-				return bestBuffer;
-			} finally {
-				releaseFFmpegSlot();
-				for (const file of tempFilesToClean) {
-					fs.unlink(file).catch(() => {});
+						let currentFilter;
+						if (typeof filterCommand === "function") {
+							currentFilter = filterCommand(profile);
+						} else {
+							currentFilter = filterCommand.includes("fps=")
+								? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
+								: `fps=${profile.fps},${filterCommand}`;
+						}
+
+						const compressionLevel = profile.compressionLevel ?? WHATSAPP_STICKER.COMPRESSION_LEVEL;
+
+						await runFfmpeg(
+							[
+								"-y",
+								"-t",
+								String(profile.duration),
+								"-c:v",
+								"libwebp",
+								"-lossless",
+								"0",
+								"-compression_level",
+								String(compressionLevel),
+								"-q:v",
+								String(profile.qv),
+								"-loop",
+								"0",
+								"-an"
+							],
+							currentFilter,
+							currentOutput
+						);
+
+						const stats = await fs.stat(currentOutput);
+
+						if (stats.size < bestSize) {
+							bestSize = stats.size;
+							bestDesc = profile.desc || bestDesc;
+							bestBuffer = await fs.readFile(currentOutput);
+						}
+
+						if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
+							telemetry.setAttrs(
+								{
+									"ravena.sticker.attempts": attempts,
+									"ravena.sticker.profile_desc": profile.desc,
+									"ravena.sticker.size_bytes": stats.size,
+									"ravena.sticker.approved": true
+								},
+								span
+							);
+							return bestBuffer;
+						}
+					}
+
+					telemetry.setAttrs(
+						{
+							"ravena.sticker.attempts": attempts,
+							"ravena.sticker.profile_desc": bestDesc,
+							"ravena.sticker.size_bytes": bestSize,
+							"ravena.sticker.approved": false
+						},
+						span
+					);
+					return bestBuffer;
+				} finally {
+					await Promise.all(tempFilesToClean.map((file) => fs.unlink(file).catch(() => {})));
 				}
 			}
-		}
-	);
+		);
+	} finally {
+		releaseFFmpegSlot();
+	}
 }
 
 /**

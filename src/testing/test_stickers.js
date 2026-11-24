@@ -28,6 +28,51 @@ async function createTestVideo(
 	});
 }
 
+async function createMuxedVideoWithLongerAudio(
+	outputPath,
+	width = 320,
+	height = 180,
+	videoDuration = 4,
+	audioDuration = 12
+) {
+	return new Promise((resolve, reject) => {
+		ffmpeg()
+			.input(`testsrc=duration=${videoDuration}:size=${width}x${height}:rate=15`)
+			.inputFormat("lavfi")
+			.input(`anullsrc=r=44100:cl=mono`)
+			.inputFormat("lavfi")
+			.outputOptions([
+				"-y",
+				"-t",
+				String(audioDuration),
+				"-c:v",
+				"libx264",
+				"-pix_fmt",
+				"yuv420p",
+				"-c:a",
+				"aac"
+			])
+			.output(outputPath)
+			.on("end", resolve)
+			.on("error", reject)
+			.run();
+	});
+}
+
+async function createNoisyVideo(outputPath, width = 320, height = 180, duration = 60) {
+	return new Promise((resolve, reject) => {
+		ffmpeg()
+			.input(`testsrc=duration=${duration}:size=${width}x${height}:rate=12`)
+			.inputFormat("lavfi")
+			.videoFilters("noise=alls=100:allf=t+u")
+			.outputOptions(["-y", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"])
+			.output(outputPath)
+			.on("end", resolve)
+			.on("error", reject)
+			.run();
+	});
+}
+
 async function runTests() {
 	console.log("=== Iniciando testes de padronização de stickers e transparência ===");
 	const bot = new FakeBot({ id: "test-bot" });
@@ -41,7 +86,9 @@ async function runTests() {
 	};
 
 	const tempDir = path.join(__dirname, "../../temp", "test-stickers");
+	const stickersTempDir = path.join(__dirname, "../../temp", "whatsapp-bot-stickers");
 	await fs.mkdir(tempDir, { recursive: true });
+	const beforeTempFiles = new Set(await fs.readdir(stickersTempDir).catch(() => []));
 
 	// 1. Teste: Sticker de imagem estática não quadrada com !s / !sticker
 	console.log("\n1. Testando sticker de imagem estática com transparência...");
@@ -513,6 +560,67 @@ async function runTests() {
 	assert.strictEqual(slongoHqImgMeta.width, 512);
 	assert.strictEqual(slongoHqImgMeta.height, 256);
 	console.log("✓ Imagens estáticas ok em !slongo (512x512) e !slongohq (512x256)");
+
+	// 13. Teste: Vídeo curto muxado com trilha de áudio mais longa (!slongohq prioriza trilha de vídeo)
+	console.log("\n13. Testando vídeo 4s muxado com áudio de 12s em !slongohq...");
+	const muxedPath = path.join(tempDir, "muxed-short-video-long-audio.mp4");
+	await createMuxedVideoWithLongerAudio(muxedPath, 320, 180, 4, 12);
+	const muxedBuffer = await fs.readFile(muxedPath);
+	const muxedMsg = createMessage({
+		type: "video",
+		caption: "!slongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: muxedBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, muxedMsg, "slongohq", [], { name: "Grupo Teste" });
+	const muxedWebpBuffer = Buffer.from(bot.capturedMessages[0].content.data, "base64");
+	const muxedMeta = await sharp(muxedWebpBuffer, { animated: true }).metadata();
+	assert.strictEqual(muxedMeta.width, 512, "Vídeo de 4s deve manter 512px mesmo com áudio de 12s");
+	console.log(
+		`✓ !slongohq vídeo 4s + áudio 12s: mantido em ${muxedMeta.width}x${muxedMeta.pageHeight || muxedMeta.height}, ${(muxedWebpBuffer.length / 1024).toFixed(1)} KB`
+	);
+
+	// 14. Teste: Vídeo 60s de ruído puro em !slongohq deve caber no limite de 490 KB
+	console.log("\n14. Testando vídeo 60s de ruído intenso em !slongohq...");
+	const noisyPath = path.join(tempDir, "noisy-60s.mp4");
+	await createNoisyVideo(noisyPath, 320, 180, 60);
+	const noisyBuffer = await fs.readFile(noisyPath);
+	const noisyMsg = createMessage({
+		type: "video",
+		caption: "!slongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: noisyBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, noisyMsg, "slongohq", [], { name: "Grupo Teste" });
+	const noisyWebpBuffer = Buffer.from(bot.capturedMessages[0].content.data, "base64");
+	assert.strictEqual(
+		noisyWebpBuffer.length <= 490 * 1024,
+		true,
+		`Ruído 60s deve caber em <= 490 KB (obtido ${(noisyWebpBuffer.length / 1024).toFixed(1)} KB)`
+	);
+	console.log(
+		`✓ !slongohq ruído 60s: comprimido para ${(noisyWebpBuffer.length / 1024).toFixed(1)} KB <= 490 KB`
+	);
+
+	// 15. Teste: Verificar que nenhum arquivo temporário ficou para trás em temp/whatsapp-bot-stickers
+	const afterTempFiles = await fs.readdir(stickersTempDir).catch(() => []);
+	const leftoverFiles = afterTempFiles.filter((file) => !beforeTempFiles.has(file));
+	assert.strictEqual(
+		leftoverFiles.length,
+		0,
+		`Nenhum arquivo temporário deveria sobrar em temp/whatsapp-bot-stickers (encontrados: ${leftoverFiles.join(", ")})`
+	);
+	console.log("✓ Limpeza confirmada: zero arquivos temporários residuais");
 
 	// Limpeza dos arquivos temporários de teste
 	await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
