@@ -154,9 +154,9 @@ async function abrirTelaQueCaiAntesDeCarregar() {
 	botApi.server.on("request", atender);
 }
 
-async function pedir(rota) {
+async function pedir(rota, status = 200) {
 	const res = await fetch(`${baseUrl}/${rota}/rav-teste`, { headers: { authorization: auth } });
-	assert.strictEqual(res.status, 200);
+	assert.strictEqual(res.status, status);
 }
 
 const iniciarPareamento = () => pedir("qrcode-initconnect");
@@ -276,14 +276,14 @@ const cenarios = {
 		await fechar();
 		await conferirLimpezaAos15Min(estado);
 	},
-	"reconectar a instância já limpa e sair sem parear limpa de novo 15 min depois": async () => {
+	"reconectar a instância já limpa é recusado e não cria outra": async () => {
 		const { estado } = await novoCenario();
 		await esperarLimpeza(estado, 1, 28);
-		await pedir("reconnect");
+		await pedir("reconnect", 409);
 		const fechar = await abrirTela();
-		await iniciarPareamento();
+		await pedir("qrcode-initconnect", 409);
 		await fechar();
-		await conferirLimpezaAos15Min(estado);
+		assert.strictEqual(estado.existe, false);
 	},
 	"tela que caiu antes de carregar não segura a limpeza": async () => {
 		const { estado } = await novoCenario();
