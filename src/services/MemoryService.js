@@ -1400,7 +1400,6 @@ ${textToAnalyze}`;
 				try {
 					slotsData = await this.database.dbGet(
 						"slots",
-						// Cada giro gasta 1 moedinha: as "apostas" do dossiê são os giros (total_plays)
 						"SELECT coins, total_plays AS total_bets, total_wins FROM slots_users WHERE user_id = ?",
 						[userPhone]
 					);
