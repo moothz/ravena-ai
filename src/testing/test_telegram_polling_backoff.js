@@ -5,13 +5,15 @@ process.env.DEBUG = "false";
 const http = require("http");
 const assert = require("assert");
 const axios = require("axios");
-const { trace } = require("@opentelemetry/api");
+const { context, trace } = require("@opentelemetry/api");
+const { AsyncLocalStorageContextManager } = require("@opentelemetry/context-async-hooks");
 const {
 	BasicTracerProvider,
 	InMemorySpanExporter,
 	SimpleSpanProcessor
 } = require("@opentelemetry/sdk-trace-base");
 
+context.setGlobalContextManager(new AsyncLocalStorageContextManager().enable());
 const spanExporter = new InMemorySpanExporter();
 trace.setGlobalTracerProvider(
 	new BasicTracerProvider({ spanProcessors: [new SimpleSpanProcessor(spanExporter)] })
@@ -22,6 +24,8 @@ const TelegramBot = require("../TelegramBot");
 
 const TOKEN = "123456789:TOKEN-FICTICIO-PARA-TESTE";
 const HORIZON_MS = 10 * 60 * 1000;
+const MAX_REQUESTS = 60;
+const MAX_TIMER_MS = 2 ** 31 - 1;
 
 const realSetTimeout = global.setTimeout;
 const realSleep = (ms) => new Promise((resolve) => realSetTimeout(resolve, ms));
@@ -37,9 +41,13 @@ const clock = {
 	}
 };
 
-global.setTimeout = (fn, ms = 0, ...args) => {
+const realDateNow = Date.now;
+Date.now = () => realDateNow() + clock.now;
+
+global.setTimeout = (fn, requestedMs, ...args) => {
 	const caller = new Error().stack.split("\n")[2] || "";
-	if (caller.includes("node_modules")) return realSetTimeout(fn, ms, ...args);
+	if (caller.includes("node_modules")) return realSetTimeout(fn, requestedMs, ...args);
+	const ms = requestedMs >= 1 && requestedMs <= MAX_TIMER_MS ? requestedMs : 1;
 	if (clock.frozen || clock.now + ms > HORIZON_MS) {
 		clock.frozen = true;
 		clock.onHorizon();
@@ -49,10 +57,11 @@ global.setTimeout = (fn, ms = 0, ...args) => {
 	return realSetTimeout(fn, 0, ...args);
 };
 
-const refused = (code, description) => ({
+const refused = (code, description, parameters) => ({
 	status: code,
-	body: { ok: false, error_code: code, description }
+	body: { ok: false, error_code: code, description, parameters }
 });
+const rateLimited = (retryAfter) => refused(429, "Too Many Requests", { retry_after: retryAfter });
 const NOT_FOUND = refused(404, "Not Found");
 const UNAUTHORIZED = refused(401, "Unauthorized");
 const CONFLICT = refused(
@@ -72,7 +81,12 @@ const OK = (result) => ({ status: 200, body: { ok: true, result } });
 const UPDATE = OK([{ update_id: 7, callback_query: { id: "1", data: "noop" } }]);
 
 async function startFakeTelegram(reply) {
-	const state = { polls: [], calls: { deleteWebhook: 0, getMe: 0 }, webhookActive: false };
+	const state = {
+		polls: [],
+		getMeTimes: [],
+		calls: { deleteWebhook: 0, getMe: 0 },
+		webhookActive: false
+	};
 	state.hanging = new Promise((resolve) => (state.onHang = resolve));
 	const server = http.createServer((req, res) => {
 		req.resume();
@@ -85,9 +99,12 @@ async function startFakeTelegram(reply) {
 			} else {
 				state.calls[method] = (state.calls[method] || 0) + 1;
 				if (method === "deleteWebhook") state.webhookActive = false;
+				if (method === "getMe") state.getMeTimes.push(clock.now);
 				answer = reply(-1, clock.now, state, method) || OK(true);
 			}
-			if (answer.hang) return state.onHang();
+			if (answer.hang || state.polls.length + state.calls.getMe > MAX_REQUESTS) {
+				return state.onHang();
+			}
 			if (answer.silent) return;
 			if (answer.reset) return req.socket.destroy();
 			res.writeHead(answer.status, {
@@ -201,10 +218,12 @@ async function run(loopName, reply, { restartWith, timeoutMs = null } = {}) {
 		await settled();
 	};
 
-	loop.start();
+	const caller = trace.getTracer("teste").startSpan("chamador");
+	context.with(trace.setSpan(context.active(), caller), () => loop.start());
 	await finished();
 	const result = {
 		polls: [...fake.state.polls],
+		getMeTimes: [...fake.state.getMeTimes],
 		calls: { ...fake.state.calls },
 		stopped: !loop.active(),
 		lines: [...lines]
@@ -224,7 +243,7 @@ async function run(loopName, reply, { restartWith, timeoutMs = null } = {}) {
 		.map((s) => ({
 			state: s.attributes["ravena.telegram.polling.state"],
 			failure: s.attributes["ravena.telegram.polling.failure"],
-			loop: s.attributes["ravena.telegram.polling.loop"],
+			attempts: s.attributes["ravena.telegram.polling.attempts"],
 			parent: s.parentSpanContext || s.parentSpanId
 		}));
 	result.rawSpans = JSON.stringify(
@@ -252,7 +271,7 @@ const problemLines = (lines) =>
 
 function assertRejected(r) {
 	assert.ok(r.stopped, "o polling deve parar");
-	assert.ok(r.polls.length <= 3, `pedidos demais: ${r.polls.length}`);
+	assert.deepStrictEqual(r.polls, [0, 2000, 6000, 14000, 30000, 62000]);
 	assert.strictEqual(matching(r.lines, STOP_NOTICE).length, 1, "um aviso de token recusado");
 	assert.strictEqual(problemLines(r.lines).length, 1, "o aviso é a única linha de problema");
 	assert.deepStrictEqual(
@@ -289,14 +308,12 @@ function assertRecovered(r, failure) {
 			["recovered", failure]
 		]
 	);
-	assert.ok(
-		r.spans.every((s) => !s.parent),
-		"spans raiz"
-	);
 }
 
 const failThenRecover = (failure, times) => (n) =>
 	n < 0 ? undefined : n < times ? failure : n === times ? UPDATE : HANG;
+const failRecoverTwice = (failure, times) => (n) =>
+	n < 0 ? undefined : n > 2 * times + 1 ? HANG : n % (times + 1) === times ? UPDATE : failure;
 const always = (failure) => (n) => (n < 0 ? undefined : failure);
 const rejectEverything = (failure) => () => failure;
 
@@ -313,6 +330,21 @@ const pollingScenarios = [
 		}
 	},
 	{
+		name: "30 s de 401 e volta, duas vezes, não para",
+		reply: failRecoverTwice(UNAUTHORIZED, 5),
+		check(r) {
+			assert.ok(!r.stopped, "o polling deve continuar");
+			assert.deepStrictEqual(r.updates, ["1", "1"]);
+			assert.strictEqual(problemLines(r.lines).length, 0);
+			assert.deepStrictEqual(r.spans, []);
+		}
+	},
+	{
+		name: "401 intercalado com 409 não acumula",
+		reply: (n) => (n < 0 ? undefined : n % 2 ? CONFLICT : UNAUTHORIZED),
+		check: (r) => assertBackoff(r, "conflict")
+	},
+	{
 		name: "404 de proxy não para",
 		reply: always(PROXY_404),
 		check: (r) => assertBackoff(r, "http_error")
@@ -320,33 +352,64 @@ const pollingScenarios = [
 	{
 		name: "409 outra instância",
 		reply: always(CONFLICT),
-		check: (r) => assertBackoff(r, "conflict")
+		check(r) {
+			assertBackoff(r, "conflict");
+			assert.strictEqual(
+				r.calls.deleteWebhook,
+				this.loop === "notifications" ? 1 : 0,
+				"outra instância não é motivo para remover o webhook"
+			);
+		}
 	},
 	{
 		name: "409 e a outra instância sai",
 		reply: failThenRecover(CONFLICT, 4),
 		check: (r) => assertRecovered(r, "conflict")
 	},
-	{
-		name: "429 retry_after 45",
-		reply: failThenRecover(
-			{
-				status: 429,
-				body: {
-					ok: false,
-					error_code: 429,
-					description: "Too Many Requests: retry after 45",
-					parameters: { retry_after: 45 }
-				}
-			},
-			2
-		),
+	...[45, 90].map((retryAfter) => ({
+		name: `429 retry_after ${retryAfter}`,
+		reply: failThenRecover(rateLimited(retryAfter), 2),
 		check(r) {
-			assert.ok(
-				r.gaps.slice(0, 2).every((gap) => gap >= 45000),
-				`retry_after ignorado: ${r.gaps}`
-			);
+			assert.deepStrictEqual(r.gaps.slice(0, 2), [retryAfter * 1000, retryAfter * 1000]);
 			assertRecovered(r, "rate_limited");
+		}
+	})),
+	{
+		name: "429 retry_after não numérico",
+		reply: failThenRecover(rateLimited("abc"), 3),
+		check(r) {
+			assert.deepStrictEqual(r.gaps.slice(0, 3), [2000, 4000, 8000]);
+			assertRecovered(r, "rate_limited");
+		}
+	},
+	{
+		name: "429 retry_after acima do limite do setTimeout",
+		reply: failThenRecover(rateLimited(MAX_TIMER_MS), 1),
+		check: (r) => assert.strictEqual(r.polls.length, 1, `nova tentativa cedo demais: ${r.gaps}`)
+	},
+	{
+		name: "description não string",
+		reply: failThenRecover(refused(500, { texto: "x" }), 3),
+		check: (r) => assertRecovered(r, "http_error")
+	},
+	{
+		name: "502, volta, 502 de novo e volta",
+		reply: failRecoverTwice(BAD_GATEWAY, 3),
+		check(r) {
+			assert.deepStrictEqual(r.updates, ["1", "1"]);
+			assert.deepStrictEqual(r.gaps.slice(0, 3), [2000, 4000, 8000]);
+			assert.deepStrictEqual(r.gaps.slice(4, 7), [2000, 4000, 8000]);
+			assert.strictEqual(matching(r.lines, FAILURE_LINE).length, 2);
+			assert.strictEqual(matching(r.lines, RECOVERY_LINE).length, 2);
+			assert.deepStrictEqual(
+				r.spans.map((s) => [s.state, s.attempts]),
+				[
+					["failing", 1],
+					["recovered", 3],
+					["failing", 1],
+					["recovered", 3]
+				]
+			);
 		}
 	},
 	{
@@ -417,10 +480,25 @@ const scenarios = [
 		name: "token com 401",
 		reply: rejectEverything(UNAUTHORIZED),
 		check(r) {
-			assert.ok(r.calls.getMe <= 3, `getMe demais: ${r.calls.getMe}`);
+			assert.deepStrictEqual(r.getMeTimes, [0, 30000, 60000]);
 			assert.strictEqual(r.polls.length, 0);
 			assert.strictEqual(matching(r.lines, STOP_NOTICE).length, 1);
 			assert.strictEqual(problemLines(r.lines).length, 1);
+		}
+	},
+	{
+		loop: "inicialização",
+		name: "401 passageiro no getMe e depois no polling não para",
+		reply(n, _now, state, method) {
+			if (method === "getMe") {
+				return state.calls.getMe <= 2 ? UNAUTHORIZED : OK({ id: 1, username: "bot_teste" });
+			}
+			return failThenRecover(UNAUTHORIZED, 2)(n);
+		},
+		check(r) {
+			assert.deepStrictEqual(r.getMeTimes, [0, 30000, 60000]);
+			assert.deepStrictEqual(r.updates, ["1"]);
+			assert.strictEqual(matching(r.lines, STOP_NOTICE).length, 0);
 		}
 	},
 	{
@@ -445,6 +523,10 @@ async function main() {
 			`intervalos=${[...new Set(r.gaps.map((g) => g / 1000))].join(",")}`;
 		try {
 			scenario.check(r);
+			assert.ok(
+				r.spans.every((s) => !s.parent),
+				"o span deve ser raiz"
+			);
 			for (const text of [...r.allLines, r.rawSpans]) {
 				assert.ok(!text.includes(TOKEN), "token vazou em log ou span");
 			}
