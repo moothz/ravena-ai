@@ -186,7 +186,7 @@ function registerInstancesRoutes(api) {
 				.json({ status: "error", message: `Bot com ID '${botId}' não encontrado` });
 		}
 		try {
-			if (req.query.onlyIfMissing) {
+			if ("onlyIfMissing" in req.query) {
 				postponePendingCleanup(bot);
 				const instanceExists = await goInstanceExists(bot);
 				if (instanceExists) return refuse(res, "instance_exists");

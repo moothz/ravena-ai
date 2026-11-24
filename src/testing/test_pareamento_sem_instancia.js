@@ -193,6 +193,12 @@ const cenarios = {
 		assert.strictEqual(conexao.corpo.instanceExists, true);
 		assert.strictEqual(conexao.corpo.extra.connectData.pairingCode, "ABCD-1234");
 	},
+	"criar com a marca sem valor também não apaga": async () => {
+		const { estado } = await novoCenario({ existe: true });
+		for (const marca of ["onlyIfMissing=", "onlyIfMissing"]) {
+			await conferirRecusa(estado, `recreate/rav-teste?${marca}`, true);
+		}
+	},
 	"Criar com instância na lista é recusado sem apagar": async () => {
 		const { estado } = await novoCenario({ existe: true });
 		await conferirRecusa(estado, CRIAR, true);
