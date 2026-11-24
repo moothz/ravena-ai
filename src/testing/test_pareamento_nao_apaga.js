@@ -1,6 +1,3 @@
-// src/testing/test_pareamento_nao_apaga.js
-// Fechar a tela de pareamento não apaga a instância; a limpeza de 15 min sem sessão continua.
-// Usa as rotas e o WhatsAppBotGo reais contra uma whatsgoapi falsa, com o relógio acelerado.
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 process.env.BOTAPI_USER = "admin";
