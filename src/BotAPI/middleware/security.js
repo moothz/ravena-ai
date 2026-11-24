@@ -3,6 +3,20 @@
  * Arquivo: src/BotAPI/middleware/security.js
  */
 
+const FRAME_ANCESTORS = "frame-ancestors 'self'";
+
+const ADMIN_CSP = [
+	"default-src 'none'",
+	"script-src 'self'",
+	"style-src 'self'",
+	"img-src 'self' data:",
+	"font-src 'self'",
+	"connect-src 'self'",
+	"base-uri 'none'",
+	"form-action 'none'",
+	FRAME_ANCESTORS
+].join("; ");
+
 /**
  * Proíbe que outros sites ponham as páginas da Ravena num iframe (clickjacking).
  * A própria Ravena continua podendo: o Desktop OS e o painel /admin embutem telas
@@ -11,7 +25,7 @@
  */
 function createFrameAncestorsGuard() {
 	return (req, res, next) => {
-		res.setHeader("Content-Security-Policy", "frame-ancestors 'self'");
+		res.setHeader("Content-Security-Policy", FRAME_ANCESTORS);
 		res.setHeader("X-Frame-Options", "SAMEORIGIN");
 		next();
 	};
@@ -127,4 +141,10 @@ function createSameOriginGuard({ hasCredentials, logger } = {}) {
 	};
 }
 
-module.exports = { createFrameAncestorsGuard, createSameOriginGuard, isCrossOrigin, allowedHosts };
+module.exports = {
+	ADMIN_CSP,
+	createFrameAncestorsGuard,
+	createSameOriginGuard,
+	isCrossOrigin,
+	allowedHosts
+};

@@ -67,7 +67,7 @@ const { registerAdminRoutes } = require("./BotAPI/routes/adminRoutes");
  * Arquitetura Modular:
  * - src/BotAPI/middleware/auth.js: Autenticação de admin, sessão via cookie, Basic Auth e UPS Secret
  * - src/BotAPI/middleware/rateLimiters.js: Limitadores de taxa geral e restrito
- * - src/BotAPI/middleware/security.js: frame-ancestors e checagem de origem nas escritas
+ * - src/BotAPI/middleware/security.js: frame-ancestors, CSP do /admin e checagem de origem nas escritas
  * - src/BotAPI/middleware/upload.js: Configuração de upload via Multer (geral e fotos NSFW)
  * - src/BotAPI/services/analyticsHelper.js: Agregação analítica, estatísticas e cache de comandos
  * - src/BotAPI/services/webhookManager.js: Servidor de webhooks de grupos e fila de bufferização
