@@ -228,6 +228,7 @@ class WhatsAppBotGo {
 
 		// Controle de desconexão
 		this._disconnectTimer = null;
+		this._hasDisconnected = false;
 
 		// SSE clients para streaming de QR code/pairing code na página /qrcode/:botId
 		this.qrSseClients = [];
@@ -2420,6 +2421,7 @@ class WhatsAppBotGo {
 		this.isConnected = false;
 		this._hasEmittedConnected = false;
 		if (!wasConnected && reason !== "INITIALIZING") return;
+		this._hasDisconnected = true;
 		this.logger.info(`[${this.id}] Disconnected from WhatsApp. Reason: ${reason}`);
 		if (this.eventHandler && typeof this.eventHandler.onDisconnected === "function") {
 			this.eventHandler.onDisconnected(this, reason);
@@ -2449,7 +2451,7 @@ class WhatsAppBotGo {
 	}
 
 	_renewInstanceCleanup() {
-		if (!this.isConnected) this._scheduleInstanceCleanup();
+		if (this._hasDisconnected && !this.isConnected) this._scheduleInstanceCleanup();
 	}
 
 	async _cleanupDisconnectedInstance(span) {
