@@ -221,6 +221,7 @@ class WhatsAppBotTelegram {
 		} catch (error) {
 			const tokenRejected = TelegramPollingBackoff.isTokenRejected(error);
 			if (!tokenRejected) {
+				this.pollingBackoff.interruptRejections();
 				this.logger.error(
 					`Error during Telegram bot initialization:`,
 					this.pollingBackoff.redact(error.stack)

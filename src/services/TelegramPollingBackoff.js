@@ -86,6 +86,10 @@ class TelegramPollingBackoff {
 		return delayMs;
 	}
 
+	interruptRejections() {
+		this.rejectedSince = null;
+	}
+
 	succeed() {
 		if (this.reportedFailure) {
 			this._report("recovered", this.reportedFailure, () =>
