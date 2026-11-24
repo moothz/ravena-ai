@@ -34,6 +34,9 @@ async function criarWhatsgoFalsa() {
 	const estado = {
 		existe: true,
 		sessao: { Connected: true, LoggedIn: true },
+		falharStatus: false,
+		falharDelete: false,
+		esperarStatus: null,
 		apagou: 0,
 		conectou: 0,
 		reconectou: 0
@@ -43,12 +46,21 @@ async function criarWhatsgoFalsa() {
 	app.get("/instance/all", (req, res) =>
 		res.json({ data: estado.existe ? [{ id: "id-1", name: "rav-teste" }] : [] })
 	);
-	app.get("/instance/status", (req, res) =>
-		estado.existe ? res.json({ data: estado.sessao }) : res.status(401).json({ message: "sem" })
-	);
+	app.get("/instance/status", async (req, res) => {
+		const { sessao } = estado;
+		await estado.esperarStatus;
+		if (estado.falharStatus) return res.status(500).json({ message: "erro" });
+		if (!estado.existe) return res.status(401).json({ message: "sem" });
+		res.json({ data: sessao });
+	});
 	app.delete("/instance/delete/:id", (req, res) => {
+		if (estado.falharDelete) return res.status(500).json({ message: "erro" });
 		estado.apagou++;
 		estado.existe = false;
+		res.json({ message: "success" });
+	});
+	app.post("/instance/create", (req, res) => {
+		estado.existe = true;
 		res.json({ message: "success" });
 	});
 	app.post("/instance/connect", (req, res) => {
@@ -84,8 +96,26 @@ async function novoCenario() {
 	return { estado, webhook };
 }
 
-async function abrirTela() {
-	const req = http.get(`${baseUrl}/qrcode-stream/rav-teste`, { headers: { authorization: auth } });
+function segurarStatus(estado) {
+	let soltar;
+	estado.esperarStatus = new Promise((resolve) => {
+		soltar = resolve;
+	});
+	return async () => {
+		estado.esperarStatus = null;
+		soltar();
+		await passar(0.5);
+	};
+}
+
+async function abrirTela(corpo) {
+	const req = http.request(`${baseUrl}/qrcode-stream/rav-teste`, {
+		headers: {
+			authorization: auth,
+			...(corpo && { "content-type": "application/json", "content-length": corpo.length })
+		}
+	});
+	req.end(corpo);
 	const res = await new Promise((resolve, reject) =>
 		req.on("response", resolve).on("error", reject)
 	);
@@ -98,15 +128,48 @@ async function abrirTela() {
 	};
 }
 
-async function iniciarPareamento() {
-	const res = await fetch(`${baseUrl}/qrcode-initconnect/rav-teste`, {
-		headers: { authorization: auth }
+async function abrirTelaQueCaiAntesDeCarregar() {
+	const [atender] = botApi.server.listeners("request");
+	botApi.server.off("request", atender);
+	const atendida = new Promise((resolve) => {
+		botApi.server.once("request", (req, res) => {
+			res.once("close", () => {
+				atender(req, res);
+				resolve();
+			});
+			res.socket.destroy();
+		});
 	});
+	const cliente = http.get(`${baseUrl}/qrcode-stream/rav-teste`, {
+		headers: { authorization: auth },
+		agent: false
+	});
+	cliente.on("error", () => {});
+	await atendida;
+	botApi.server.on("request", atender);
+}
+
+async function pedir(rota) {
+	const res = await fetch(`${baseUrl}/${rota}/rav-teste`, { headers: { authorization: auth } });
 	assert.strictEqual(res.status, 200);
 }
 
+const iniciarPareamento = () => pedir("qrcode-initconnect");
+
 function conferirApagadas({ apagou }, esperado) {
 	assert.strictEqual(apagou, esperado, `DELETE na whatsgoapi: ${apagou}, esperado ${esperado}`);
+}
+
+async function esperarLimpeza(estado, esperado, minutos) {
+	for (let i = 0; i < minutos && estado.apagou < esperado; i++) await passar(1);
+	conferirApagadas(estado, esperado);
+}
+
+async function conferirLimpezaAos15Min(estado) {
+	const antes = estado.apagou;
+	await passar(12);
+	conferirApagadas(estado, antes);
+	await esperarLimpeza(estado, antes + 1, 15);
 }
 
 const cenarios = {
@@ -141,7 +204,7 @@ const cenarios = {
 		conferirApagadas(estado, 0);
 		assert.ok(estado.reconectou > 0, "a limpeza tentou reconectar a sessão");
 	},
-	"abrir e fechar a tela sem limpeza pendente não apaga a instância": async () => {
+	"sem limpeza pendente, sair da tela sem parear limpa 15 min depois": async () => {
 		const { estado } = await novoCenario();
 		estado.sessao = { Connected: false, LoggedIn: true };
 		await passar(25);
@@ -149,7 +212,145 @@ const cenarios = {
 		const fechar = await abrirTela();
 		await iniciarPareamento();
 		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"sem limpeza pendente, sair da tela não apaga uma sessão autenticada": async () => {
+		const { estado } = await novoCenario();
+		estado.sessao = { Connected: false, LoggedIn: true };
 		await passar(25);
+		const fechar = await abrirTela();
+		await fechar();
+		const reconexoes = estado.reconectou;
+		await passar(25);
+		conferirApagadas(estado, 0);
+		assert.ok(estado.reconectou > reconexoes, "a limpeza tentou reconectar a sessão");
+	},
+	"mais de 15 min na tela e sair sem parear limpa 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		const fechar = await abrirTela();
+		await iniciarPareamento();
+		await passar(40);
+		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"tentar reconectar na tela e sair sem parear limpa 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		const fechar = await abrirTela();
+		await iniciarPareamento();
+		await pedir("reconnect");
+		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"recriar a instância já limpa e sair sem parear limpa de novo 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		await esperarLimpeza(estado, 1, 28);
+		await pedir("recreate");
+		const fechar = await abrirTela();
+		await iniciarPareamento();
+		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"reconectar a instância já limpa e sair sem parear limpa de novo 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		await esperarLimpeza(estado, 1, 28);
+		await pedir("reconnect");
+		const fechar = await abrirTela();
+		await iniciarPareamento();
+		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"tela que caiu antes de carregar não segura a limpeza": async () => {
+		const { estado } = await novoCenario();
+		await abrirTelaQueCaiAntesDeCarregar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"tela que caiu antes de carregar agenda a limpeza que faltava": async () => {
+		const { estado } = await novoCenario();
+		await esperarLimpeza(estado, 1, 28);
+		await pedir("recreate");
+		await abrirTelaQueCaiAntesDeCarregar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"tela aberta por requisição com corpo conta como aberta até sair": async () => {
+		const { estado } = await novoCenario();
+		const fechar = await abrirTela("{}");
+		await passar(40);
+		conferirApagadas(estado, 0);
+		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"status com erro no disparo não apaga e tenta de novo 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		estado.falharStatus = true;
+		await passar(40);
+		conferirApagadas(estado, 0);
+		estado.falharStatus = false;
+		await esperarLimpeza(estado, 1, 28);
+	},
+	"status sem resposta no disparo não apaga e tenta de novo 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		await passar(13);
+		const soltar = segurarStatus(estado);
+		await passar(10);
+		estado.esperarStatus = null;
+		await esperarLimpeza(estado, 1, 20);
+		await pedir("recreate");
+		await soltar();
+		await passar(10);
+		conferirApagadas(estado, 1);
+	},
+	"tela aberta durante a consulta do status não apaga": async () => {
+		const { estado } = await novoCenario();
+		await passar(13);
+		const soltar = segurarStatus(estado);
+		await passar(5);
+		const fechar = await abrirTela();
+		await soltar();
+		conferirApagadas(estado, 0);
+		await fechar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"tela aberta e fechada durante a consulta do status recomeça a contagem": async () => {
+		const { estado } = await novoCenario();
+		await passar(13);
+		const soltar = segurarStatus(estado);
+		await passar(5);
+		const fechar = await abrirTela();
+		await fechar();
+		await soltar();
+		await conferirLimpezaAos15Min(estado);
+	},
+	"parear durante a consulta do status não apaga": async () => {
+		const { estado, webhook } = await novoCenario();
+		await passar(13);
+		const soltar = segurarStatus(estado);
+		await passar(5);
+		estado.sessao = { Connected: true, LoggedIn: true };
+		await webhook("Connected");
+		await soltar();
+		await passar(25);
+		conferirApagadas(estado, 0);
+	},
+	"falha ao apagar tenta de novo 15 min depois": async () => {
+		const { estado } = await novoCenario();
+		estado.falharDelete = true;
+		await passar(17);
+		estado.falharDelete = false;
+		await esperarLimpeza(estado, 1, 25);
+	},
+	"instância limpa e recriada sem passar pela tela não é apagada de novo": async () => {
+		const { estado } = await novoCenario();
+		await esperarLimpeza(estado, 1, 28);
+		await pedir("recreate");
+		await passar(40);
+		conferirApagadas(estado, 1);
+	},
+	"instância que já não existe encerra a limpeza": async () => {
+		const { estado } = await novoCenario();
+		estado.existe = false;
+		await passar(20);
+		estado.existe = true;
+		await passar(40);
 		conferirApagadas(estado, 0);
 	},
 	"sem ninguém na tela, 15 min sem sessão apagam a instância uma vez": async () => {
@@ -165,19 +366,13 @@ const cenarios = {
 		await iniciarPareamento();
 		await passar(10);
 		await fechar();
-		await passar(12);
-		conferirApagadas(estado, 0);
-		await passar(6);
-		conferirApagadas(estado, 1);
+		await conferirLimpezaAos15Min(estado);
 	},
 	"iniciar o pareamento sem o stream adia a limpeza, sem cancelar": async () => {
 		const { estado } = await novoCenario();
 		await passar(10);
 		await iniciarPareamento();
-		await passar(12);
-		conferirApagadas(estado, 0);
-		await passar(6);
-		conferirApagadas(estado, 1);
+		await conferirLimpezaAos15Min(estado);
 	},
 	"parear com a tela aberta cancela a limpeza": async () => {
 		const { estado, webhook } = await novoCenario();
