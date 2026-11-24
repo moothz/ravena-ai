@@ -18,6 +18,8 @@ const { fetchUserProfilePictureMedia } = require("../utils/ProfilePictureHelper"
 
 const SECRET = "AAFicticio_Para-TesteAbCdEfGhIjKlMn";
 const TOKEN = `123456789:${SECRET}`;
+const PLAIN_SECRET = SECRET.replace("-", "x");
+const PLAIN_TOKEN = `123456789:${PLAIN_SECRET}`;
 const MASKED = "123456789:***";
 const WEBHOOK_PORT = 43975;
 const CLOSED_PORT_URL = "http://127.0.0.1:1";
@@ -103,6 +105,7 @@ const COMMON_LOGS = [
 	"5511999990001:3EB0123456789ABCDEF0123456789ABCDEF01234",
 	"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
 	"fazenda:5511999990001:colheita_diaria",
+	`5511999990001:${"chave_".repeat(5).slice(0, 29)}`,
 	"Bot ID: 123456789, Username: @ravena"
 ];
 
@@ -174,6 +177,7 @@ async function defineTests(apiUrl) {
 		"URL codificada duas vezes": encodeURIComponent(encodeURIComponent(sendUrl)),
 		"URL codificada em minúsculas": encodeURIComponent(sendUrl).toLowerCase(),
 		"token solto": `token ${TOKEN}.`,
+		"segredo de 30 caracteres": `123456789:${SECRET.slice(0, 30)}`,
 		"dois tokens": `${TOKEN} ${TOKEN}`
 	};
 	for (const [name, message] of Object.entries(messages)) {
@@ -219,25 +223,81 @@ async function defineTests(apiUrl) {
 		assert.ok(!consoleText.includes(SECRET), "console com o segredo");
 	});
 
-	test("webhook: só o caminho com o token do bot entrega atualizações", async () => {
-		const bot = buildBot(apiUrl, { webhookHost: "exemplo.test", webhookPort: WEBHOOK_PORT });
+	const withWebhook = async (action) => {
+		const bot = buildBot(apiUrl, {
+			telegramBotToken: PLAIN_TOKEN,
+			webhookHost: "exemplo.test",
+			webhookPort: WEBHOOK_PORT
+		});
 		const updates = [];
 		bot._processUpdate = (update) => updates.push(update.update_id);
 		await logged(() => bot.initialize());
-		const post = async (token, update_id) =>
-			(
-				await axios.post(
-					`http://127.0.0.1:${WEBHOOK_PORT}/webhook/telegram/${token}`,
-					{ update_id },
-					{ validateStatus: () => true }
-				)
-			).status;
-		assert.strictEqual(await post(TOKEN, 1), 200);
-		assert.strictEqual(await post(encodeURIComponent(TOKEN), 2), 200);
-		assert.strictEqual(await post("123456789:OUTRO", 3), 404);
-		assert.strictEqual(await post("outro", 4), 404);
-		assert.deepStrictEqual(updates, [1, 2]);
-		bot.webhookServer.close();
+		const post = (token, update_id) =>
+			axios.post(
+				`http://127.0.0.1:${WEBHOOK_PORT}/webhook/telegram/${token}`,
+				{ update_id },
+				{ validateStatus: () => true }
+			);
+		try {
+			await action(post, updates);
+		} finally {
+			bot.webhookServer.close();
+		}
+	};
+
+	test("webhook: só o caminho com o token do bot entrega atualizações", () =>
+		withWebhook(async (post, updates) => {
+			const accepted = [PLAIN_TOKEN, encodeURIComponent(PLAIN_TOKEN)];
+			const refused = [
+				"outro",
+				"123456789:OUTRO",
+				`123456789:${"B".repeat(SECRET.length)}`,
+				PLAIN_TOKEN.toLowerCase(),
+				PLAIN_TOKEN.toUpperCase(),
+				PLAIN_TOKEN.slice(0, -1),
+				`${PLAIN_TOKEN}x`
+			];
+			for (const token of accepted) {
+				assert.strictEqual((await post(token, token)).status, 200, `${token} recusado`);
+			}
+			for (const token of refused) {
+				assert.strictEqual((await post(token, token)).status, 404, `${token} aceito`);
+			}
+			assert.deepStrictEqual(updates, accepted);
+			assert.strictEqual((await post(PLAIN_TOKEN, "x".repeat(200_000))).status, 413);
+		}));
+
+	test("webhook: URL malformada é recusada sem gerar erro no console", () =>
+		withWebhook(async (post, updates) => {
+			for (const token of [`${TOKEN}%`, `${PLAIN_TOKEN}%`, "%E0"]) {
+				let response;
+				const { consoleText } = await logged(async () => {
+					response = await post(token, 1);
+					logger.info("fim");
+				});
+				assert.ok(!consoleText.includes("URIError"), "console com o erro da URL");
+				assert.ok(consoleText.endsWith(" fim"), "o restante do log deve continuar");
+				assert.strictEqual(response.status, 400);
+				assert.strictEqual(response.data, "Bad Request");
+			}
+			assert.deepStrictEqual(updates, []);
+		}));
+
+	test("telemetria: a exceção mantém o tipo", async () => {
+		const errors = {
+			TypeError: new TypeError("falhou"),
+			EFICTICIO: Object.assign(new Error("falhou"), { code: "EFICTICIO" })
+		};
+		for (const [type, error] of Object.entries(errors)) {
+			let span;
+			await failure(
+				telemetry.withSpan("teste tipo", {}, async (current) => {
+					span = current;
+					throw error;
+				})
+			);
+			assert.strictEqual(span.events[0].attributes["exception.type"], type);
+		}
 	});
 
 	test("telemetria: spans e métricas saem sem o segredo", async () => {
@@ -265,8 +325,10 @@ async function defineTests(apiUrl) {
 			assert.ok(traces.includes(expected), `falta ${expected}`);
 		for (const text of [traces, metrics]) {
 			assert.ok(text.includes("/webhook/telegram/"));
-			const at = text.indexOf(SECRET);
-			assert.strictEqual(at, -1, JSON.stringify(text.slice(Math.max(0, at - 60), at + 6)));
+			for (const secret of [SECRET, PLAIN_SECRET]) {
+				const at = text.indexOf(secret);
+				assert.strictEqual(at, -1, JSON.stringify(text.slice(Math.max(0, at - 60), at + 6)));
+			}
 		}
 	});
 }
