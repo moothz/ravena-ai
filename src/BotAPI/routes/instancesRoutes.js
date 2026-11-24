@@ -324,10 +324,6 @@ function registerInstancesRoutes(api) {
 			return res.status(404).json({ status: "error", message: `Bot '${botId}' não encontrado` });
 		}
 		try {
-			if (bot._disconnectTimer) {
-				clearTimeout(bot._disconnectTimer);
-				bot._disconnectTimer = null;
-			}
 			const instanceStatus = await bot._checkInstanceStatusAndConnect(true, true);
 			let instanceExists = false;
 			try {
@@ -357,14 +353,6 @@ function registerInstancesRoutes(api) {
 		res.setHeader("X-Accel-Buffering", "no");
 		res.flushHeaders();
 
-		if (bot._disconnectTimer) {
-			clearTimeout(bot._disconnectTimer);
-			bot._disconnectTimer = null;
-			api.logger.info(
-				`[QR SSE] Timer de apagar instância cancelado para ${botId} (usuário abrindo página)`
-			);
-		}
-
 		if (bot.connectDataCache?.data) {
 			const d = bot.connectDataCache.data;
 			res.write(
@@ -386,35 +374,6 @@ function registerInstancesRoutes(api) {
 			clearInterval(heartbeat);
 			bot.removeQRSseClient(res);
 			api.logger.info(`[QR SSE] Cliente desconectou de ${botId}`);
-
-			if (!bot.isConnected && bot.qrSseClients.length === 0 && bot.disconnectedAt) {
-				const elapsed = Date.now() - bot.disconnectedAt;
-				const remaining = 15 * 60 * 1000 - elapsed;
-				if (remaining > 0) {
-					bot._disconnectTimer = setTimeout(async () => {
-						try {
-							api.logger.info(
-								`[${botId}] Timer reagendado: apagando instância após 15 min desconectado.`
-							);
-							await bot.deleteInstance();
-							bot.connectDataCache = null;
-							bot._disconnectTimer = null;
-							bot.broadcastQRUpdate({ type: "instance_deleted", botId: bot.id });
-						} catch (err) {
-							api.logger.error(`[${botId}] Erro ao apagar instância (reagendado):`, err);
-						}
-					}, remaining);
-					api.logger.info(
-						`[QR SSE] Timer reagendado para ${botId}: ${Math.round(remaining / 1000)}s restantes`
-					);
-				} else {
-					bot
-						.deleteInstance()
-						.catch((err) =>
-							api.logger.error(`[${botId}] Erro ao apagar instância (imediato):`, err)
-						);
-				}
-			}
 		});
 	});
 
