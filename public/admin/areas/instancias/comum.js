@@ -129,7 +129,7 @@ export async function botAction(bot, path, what) {
 	try {
 		json = await botFetch(bot, path);
 	} catch (err) {
-		throw new Error(explain(err, what));
+		throw Object.assign(new Error(explain(err, what)), { body: err.body });
 	}
 	invalidate("/api/bots");
 	const r = actionOutcome(json);
