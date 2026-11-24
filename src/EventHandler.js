@@ -558,17 +558,15 @@ class EventHandler extends EventEmitter {
 
 			const ignorePV = bot.ignorePV && bot.notInWhitelist(message.author) && message.group === null;
 
-			// Verifica links de convite em chats privados
-			if (!message.group && !ignorePV) {
+			// Verifica links de convite em chats privados (permitido mesmo com ignorePV se ignoreInvites=false)
+			if (!message.group && !bot.ignoreInvites && bot.inviteSystem) {
 				// Verifica se é uma mensagem de link de convite
-				if (!bot.ignoreInvites && bot.inviteSystem) {
-					const isInviteHandled = await bot.inviteSystem.processMessage(message);
-					if (isInviteHandled) return;
+				const isInviteHandled = await bot.inviteSystem.processMessage(message);
+				if (isInviteHandled) return;
 
-					// Verifica se é uma mensagem de acompanhamento para um convite
-					const isFollowUpHandled = await bot.inviteSystem.processFollowUpMessage(message);
-					if (isFollowUpHandled) return;
-				}
+				// Verifica se é uma mensagem de acompanhamento para um convite
+				const isFollowUpHandled = await bot.inviteSystem.processFollowUpMessage(message);
+				if (isFollowUpHandled) return;
 			}
 
 			// Processa saudação para novos usuários no PV
@@ -966,7 +964,7 @@ class EventHandler extends EventEmitter {
 		// 	}
 		// }
 
-		if (!group && message.type === "text" && bot.pvAI) {
+		if (!group && !ignorePV && message.type === "text" && bot.pvAI) {
 			const userId = `${bot.id}_${message.author || message.from}`;
 			if (!this.pvDebounce[userId]) {
 				this.pvDebounce[userId] = {
