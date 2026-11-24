@@ -488,6 +488,20 @@ const scenarios = [
 	},
 	{
 		loop: "inicialização",
+		name: "401, 502 e 401 no getMe não são recusas seguidas",
+		reply(n, _now, state, method) {
+			if (method !== "getMe") return failThenRecover(UNAUTHORIZED, 0)(n);
+			const answers = [UNAUTHORIZED, BAD_GATEWAY, UNAUTHORIZED];
+			return answers[state.calls.getMe - 1] || OK({ id: 1, username: "bot_teste" });
+		},
+		check: (r) => {
+			assert.deepStrictEqual(r.getMeTimes, [0, 30000, 60000, 90000]);
+			assert.deepStrictEqual(r.updates, ["1"]);
+			assert.strictEqual(matching(r.lines, STOP_NOTICE).length, 0);
+		}
+	},
+	{
+		loop: "inicialização",
 		name: "401 passageiro no getMe e depois no polling não para",
 		reply(n, _now, state, method) {
 			if (method === "getMe") {
