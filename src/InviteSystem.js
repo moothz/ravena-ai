@@ -2554,9 +2554,9 @@ Decida se este grupo deve ser aceito automaticamente.`;
 
 			await this.bot.sendMessage(authorId, finalUserMessage);
 
-			// Envia notificações para o grupoInvites se configurado (WhatsApp e Telegram)
+			// Envia notificações para o grupoInvites do WhatsApp se configurado
 			const targetGrupoInvites = this.bot.grupoInvites || process.env.GRUPO_INVITES;
-			if (targetGrupoInvites || process.env.GRUPO_INVITES_TELEGRAM) {
+			if (targetGrupoInvites) {
 				try {
 					let infoMessageHeader = `📩 *Nova Solicitação de Convite de Grupo*\n\n`;
 					if (autoAccepted) {
@@ -2741,43 +2741,6 @@ Decida se este grupo deve ser aceito automaticamente.`;
 						}
 					} else {
 						this.logger.warn("Nenhum grupoInvites do WhatsApp configurado.");
-					}
-
-					// 2. Envio detalhado para o Telegram (GRUPO_INVITES_TELEGRAM)
-					try {
-						const TelegramNotificationService = require("./services/TelegramNotificationService");
-						const { formatWhatsAppToTelegram } = require("./utils/TelegramMarkupHelper");
-						const telegramService = TelegramNotificationService.getInstance({
-							database: this.database
-						});
-
-						const telegramChatId =
-							process.env.GRUPO_INVITES_TELEGRAM || telegramService.inviteChatId;
-
-						if (telegramChatId) {
-							// Converte o relatório completo para HTML do Telegram
-							let telegramText = formatWhatsAppToTelegram(infoMessage);
-
-							// Comandos clicáveis/copiáveis para o usuário copiar no Telegram e colar no WhatsApp
-							telegramText += `\n\n📋 <b>Comandos para copiar e colar no WhatsApp:</b>\n`;
-							telegramText += `<code>!sa-joinGrupo ${inviteCode} ${authorId} ${userName}</code>\n`;
-
-							if (otherBotsInGroup.length === 0) {
-								telegramText += `<code>!sa-blockInvites ${authorId.split("@")[0]} ${inviteCode}</code>\n`;
-							}
-							if (!inviteInfoData) {
-								telegramText += `<code>!sa-inviteInfo ${inviteCode}</code>\n`;
-							}
-
-							await telegramService.sendNotification(telegramChatId, telegramText, {
-								parse_mode: "HTML"
-							});
-						}
-					} catch (telegramErr) {
-						this.logger.error(
-							"Erro ao enviar notificação de convite para o Telegram:",
-							telegramErr
-						);
 					}
 				} catch (error) {
 					this.logger.error("Erro ao processar envio de notificações de convite:", error);

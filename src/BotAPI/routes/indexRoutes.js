@@ -448,27 +448,35 @@ function registerIndexRoutes(api) {
 				}
 			}
 
-			// 3. Verificação prévia de JID de grupo bloqueado (via getInviteInfo)
-			let inviteInfoData = null;
-			const onlineWaBot =
-				(api.bots || []).find(
+			// 3. Busca de informações do convite em até 3 instâncias online do WhatsApp
+			const isWhatsApp = (b) => !b.useTelegram && !b.useDiscord && b.isConnected;
+			const waBots = (api.bots || []).filter(isWhatsApp);
+
+			const candidateBots = waBots
+				.filter(
 					(b) =>
-						!b.useTelegram &&
-						!b.useDiscord &&
-						b.isConnected &&
-						b.client &&
-						typeof b.client.getInviteInfo === "function"
-				) || (api.bots || []).find((b) => !b.useTelegram && !b.useDiscord && b.isConnected);
-			if (
-				onlineWaBot &&
-				onlineWaBot.client &&
-				typeof onlineWaBot.client.getInviteInfo === "function"
-			) {
+						(b.client && typeof b.client.getInviteInfo === "function") ||
+						typeof b.inviteInfo === "function"
+				)
+				.slice(0, 3);
+
+			let inviteInfoData = null;
+			let successfulBot = null;
+
+			for (const botCandidate of candidateBots) {
 				try {
-					inviteInfoData = await onlineWaBot.client.getInviteInfo(inviteCode);
+					if (botCandidate.client && typeof botCandidate.client.getInviteInfo === "function") {
+						inviteInfoData = await botCandidate.client.getInviteInfo(inviteCode);
+					} else if (typeof botCandidate.inviteInfo === "function") {
+						inviteInfoData = await botCandidate.inviteInfo(inviteCode);
+					}
+					if (inviteInfoData) {
+						successfulBot = botCandidate;
+						break;
+					}
 				} catch (e) {
 					api.logger.debug(
-						`[BotAPI] Não foi possível consultar JID prévio do convite ${inviteCode}: ${e.message}`
+						`[BotAPI] Tentativa de getInviteInfo falhou no bot ${botCandidate.id}: ${e.message}`
 					);
 				}
 			}
@@ -492,22 +500,175 @@ function registerIndexRoutes(api) {
 				}
 			}
 
-			// 4. Roteamento: Enviar exclusivamente OU no Telegram OU no WhatsApp
+			// 4. Enriquecimento de metadados para notificação similar à do WhatsApp
+			let groupPhotoUrl = null;
+			if (inviteInfoData?.JID && successfulBot) {
+				try {
+					if (typeof successfulBot.getProfilePictureUrl === "function") {
+						groupPhotoUrl = await successfulBot.getProfilePictureUrl(inviteInfoData.JID);
+					} else if (
+						successfulBot.client &&
+						typeof successfulBot.client.getProfilePictureUrl === "function"
+					) {
+						groupPhotoUrl = await successfulBot.client.getProfilePictureUrl(inviteInfoData.JID);
+					}
+				} catch (photoErr) {
+					api.logger.debug(`[BotAPI] Não foi possível obter foto do grupo: ${photoErr.message}`);
+				}
+			}
+
+			let wasInGroupBefore = false;
+			let membershipHistoryText = "";
+			if (inviteInfoData?.JID && api.database) {
+				try {
+					if (typeof api.database.wasInGroupBefore === "function") {
+						wasInGroupBefore = await api.database.wasInGroupBefore(inviteInfoData.JID);
+					}
+				} catch (e) {}
+
+				try {
+					if (typeof api.database.getGroupMembershipPeriods === "function") {
+						const periods = await api.database.getGroupMembershipPeriods(inviteInfoData.JID);
+						if (periods && periods.length > 0) {
+							membershipHistoryText = `\n🚪 <b>Histórico de Estadia no Grupo:</b>\n`;
+							periods.forEach((p, idx) => {
+								const joinDate = p.join_timestamp
+									? new Date(p.join_timestamp).toLocaleString("pt-BR")
+									: "Desconhecido";
+								const leaveDate = p.leave_timestamp
+									? new Date(p.leave_timestamp).toLocaleString("pt-BR")
+									: "Ainda no grupo";
+
+								let durationText = "";
+								if (p.duration) {
+									const sec = Math.floor(p.duration / 1000);
+									const days = Math.floor(sec / 86400);
+									const hours = Math.floor((sec % 86400) / 3600);
+									const minutes = Math.floor((sec % 3600) / 60);
+
+									const parts = [];
+									if (days > 0) parts.push(`${days}d`);
+									if (hours > 0) parts.push(`${hours}h`);
+									if (minutes > 0) parts.push(`${minutes}m`);
+									if (parts.length === 0) parts.push("menos de 1m");
+									durationText = ` (${parts.join(" ")})`;
+								} else if (p.join_timestamp && p.leave_timestamp) {
+									durationText = " (tempo desconhecido)";
+								}
+
+								const botTag = p.bot_id ? ` [🤖 ${p.bot_id}]` : "";
+								membershipHistoryText += `${idx + 1}.${botTag} 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
+							});
+						}
+					}
+				} catch (e) {}
+			}
+
+			let isDonator = false;
+			let donateValue = 0;
+			if (cleanPhone && api.database && typeof api.database.getDonations === "function") {
+				try {
+					const donations = await api.database.getDonations();
+					if (donations && donations.length > 0) {
+						isDonator = donations.some((donation) => {
+							if (donation.numero) {
+								const cleanDonorNumber = String(donation.numero).replace(/[^0-9]/g, "");
+								if (cleanDonorNumber.length > 10) {
+									if (
+										cleanDonorNumber.includes(cleanPhone) ||
+										cleanPhone.includes(cleanDonorNumber)
+									) {
+										donateValue = Number(donation.valor) || 0;
+										return true;
+									}
+								}
+							}
+							return false;
+						});
+					}
+				} catch (e) {}
+			}
+
+			let authorInvitesCount = 0;
+			let groupInvitesCount = 0;
+			let otherInvitersText = "";
+			if (api.database) {
+				if (cleanPhone && typeof api.database.getInviteHistoryByAuthor === "function") {
+					try {
+						const authorInvites = await api.database.getInviteHistoryByAuthor(
+							`${cleanPhone}@s.whatsapp.net`
+						);
+						authorInvitesCount = authorInvites?.length || 0;
+					} catch (e) {}
+				}
+				if (typeof api.database.getInviteHistoryByGroup === "function") {
+					try {
+						const groupInvites = await api.database.getInviteHistoryByGroup(
+							inviteInfoData?.JID || null,
+							inviteCode
+						);
+						groupInvitesCount = groupInvites?.length || 0;
+
+						const otherInvitersMap = new Map();
+						for (const gi of groupInvites || []) {
+							if (gi.author_id) {
+								const cleanGiAuthor = String(gi.author_id).replace(/[^0-9]/g, "");
+								if (cleanGiAuthor && cleanGiAuthor !== cleanPhone) {
+									otherInvitersMap.set(cleanGiAuthor, gi.author_name || "Pessoa");
+								}
+							}
+						}
+						if (otherInvitersMap.size > 0) {
+							const list = Array.from(otherInvitersMap.entries()).map(
+								([num, name]) => `${name} (${num})`
+							);
+							otherInvitersText = `- 👥 <b>Outros que já indicaram:</b> ${list.join(", ")}\n`;
+						}
+					} catch (e) {}
+				}
+			}
+
+			const otherBotsInGroup = [];
+			if (inviteInfoData?.Participants && Array.isArray(inviteInfoData.Participants)) {
+				const groupUserIds = inviteInfoData.Participants.map((p) =>
+					String(p.JID || p.id || "")
+						.split("@")[0]
+						.replace(/\D/g, "")
+				);
+				for (const b of api.bots || []) {
+					const botNum = String(b.numero || "").replace(/\D/g, "");
+					if (botNum && groupUserIds.includes(botNum)) {
+						otherBotsInGroup.push(b.nomeExibir || b.nome || b.id);
+					}
+				}
+			}
+
+			// 5. Roteamento: Enviar exclusivamente para o Telegram (ou fallback WhatsApp)
+			const TelegramNotificationService = require("../../services/TelegramNotificationService");
+			const telegramNotifier = TelegramNotificationService.getInstance({
+				bots: api.bots,
+				database: api.database
+			});
+
 			const telegramInvitesGroup = process.env.GRUPO_INVITES_TELEGRAM;
 
 			if (telegramInvitesGroup) {
-				const TelegramNotificationService = require("../../services/TelegramNotificationService");
-				const telegramNotifier = TelegramNotificationService.getInstance({
-					bots: api.bots,
-					database: api.database
-				});
-
 				const tgResult = await telegramNotifier.sendInviteNotification({
 					inviteCode,
 					cleanPhone,
 					formattedContact,
 					cleanReason,
-					chatId: telegramInvitesGroup
+					chatId: telegramInvitesGroup,
+					inviteInfoData,
+					isDonator,
+					donateValue,
+					wasInGroupBefore,
+					membershipHistoryText,
+					authorInvitesCount,
+					groupInvitesCount,
+					otherInvitersText,
+					otherBotsInGroup,
+					photoUrl: groupPhotoUrl
 				});
 
 				if (!tgResult || !tgResult.success) {
@@ -533,9 +694,6 @@ function registerIndexRoutes(api) {
 			}
 
 			// Fallback: Envio para WhatsApp priorizando: normais > vips > comunitárias
-			const isWhatsApp = (b) => !b.useTelegram && !b.useDiscord && b.isConnected;
-			const waBots = (api.bots || []).filter(isWhatsApp);
-
 			const isNormal = (b) => !b.comunitario && !b.vip && !b.privado;
 			const isVip = (b) => b.vip || b.id === "ravenavip";
 			const isComunitario = (b) => Boolean(b.comunitario);
@@ -602,6 +760,25 @@ function registerIndexRoutes(api) {
 				status: "error",
 				message: "Erro interno ao processar sua solicitação."
 			});
+		}
+	});
+
+	// Webhook opcional do Telegram para processar botões interativos diretamente via HTTP
+	app.post("/api/telegram/webhook", async (req, res) => {
+		try {
+			const update = req.body;
+			if (update?.callback_query) {
+				const TelegramNotificationService = require("../../services/TelegramNotificationService");
+				const telegramNotifier = TelegramNotificationService.getInstance({
+					bots: api.bots,
+					database: api.database
+				});
+				await telegramNotifier.handleCallbackQuery(update.callback_query);
+			}
+			return res.status(200).json({ ok: true });
+		} catch (err) {
+			api.logger.error("[BotAPI] Erro ao processar webhook do Telegram:", err);
+			return res.status(200).json({ ok: true });
 		}
 	});
 
