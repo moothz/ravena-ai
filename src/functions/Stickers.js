@@ -826,6 +826,18 @@ async function createAudioStickerFromAudioAndSticker({
 		"sticker sound.fuse",
 		{ attributes: { "ravena.sticker.crop_type": cropType } },
 		async (span) => {
+			if (bot?.useTelegram || bot?.useDiscord) {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "unsupported_platform"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content: "Figurinhas com som só são suportadas no WhatsApp por enquanto."
+				});
+			}
+
 			const parentType = String(quotedStickerMsg?.type || "").toLowerCase();
 			if (!quotedStickerMsg || parentType !== "sticker") {
 				telemetry.setAttrs({
@@ -836,12 +848,31 @@ async function createAudioStickerFromAudioAndSticker({
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Para criar uma figurinha com som, responda a uma figurinha com um áudio e depois responda ao áudio com !s."
+						"Para criar uma figurinha com som, responda a uma figurinha com um áudio e depois responda ao áudio com !s (ou use !sa em um vídeo)."
+				});
+			}
+
+			const audioSeconds = Number(
+				audioMsg?.content?.seconds || audioMsg?.content?._mediaDetails?.seconds || 0
+			);
+			if (audioSeconds > 240) {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "audio_too_long"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content: "❌ O áudio é muito longo (máximo de 4 minutos para figurinhas com som)."
 				});
 			}
 
 			const audioMedia = await audioMsg.downloadMedia();
 			if (!audioMedia || (!audioMedia.data && !audioMedia.url)) {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "audio_download_failed"
+				});
 				await message.origin.react("❌");
 				return new ReturnMessage({
 					chatId,
@@ -854,6 +885,10 @@ async function createAudioStickerFromAudioAndSticker({
 				stickerMedia = await prepareStickerMediaForAudioFusion(quotedStickerMsg);
 			} catch (dlErr) {
 				logger.warn(`[createAudioStickerFromAudioAndSticker] ${dlErr.message}`);
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "sticker_download_failed"
+				});
 				await message.origin.react("❌");
 				return new ReturnMessage({
 					chatId,
@@ -910,7 +945,9 @@ async function createAudioStickerFromAudioAndSticker({
  */
 async function appendAudioStickerExtraction({ chatId, message, quotedMsg, visualReturnMessage }) {
 	const hasEmbeddedAudio = Boolean(
-		quotedMsg?.content?.audioMessage || quotedMsg?.content?._mediaDetails?.audioMessage
+		quotedMsg?.content?.audioMessage ||
+		quotedMsg?.content?._mediaDetails?.Audio?.AudioMessage ||
+		quotedMsg?.content?._mediaDetails?.audioMessage
 	);
 	if (!hasEmbeddedAudio || typeof quotedMsg.downloadStickerAudio !== "function") {
 		return visualReturnMessage;
@@ -946,6 +983,249 @@ async function appendAudioStickerExtraction({ chatId, message, quotedMsg, visual
 }
 
 /**
+ * Extrai a faixa de áudio de um vídeo em OGG Opus e valida se existe áudio e duração <= 240s.
+ * @param {Buffer} videoBuffer - Buffer do vídeo
+ * @param {string} mimeType - Mimetype do vídeo
+ * @returns {Promise<{audioBuffer: Buffer, duration: number}>}
+ */
+async function extractAudioFromVideoBuffer(videoBuffer, mimeType = "video/mp4") {
+	const videoPath = await saveTempMedia(videoBuffer, mimeType);
+	const audioPath = `${videoPath}.ogg`;
+	try {
+		const probeData = await new Promise((resolve, reject) => {
+			ffmpeg.ffprobe(videoPath, (err, metadata) => {
+				if (err) reject(err);
+				else resolve(metadata);
+			});
+		});
+
+		const streams = Array.isArray(probeData?.streams) ? probeData.streams : [];
+		const audioStream = streams.find((s) => s.codec_type === "audio");
+		if (!audioStream) {
+			const err = new Error("Vídeo sem faixa de áudio");
+			err.code = "VIDEO_WITHOUT_AUDIO";
+			throw err;
+		}
+
+		const duration =
+			parseFfprobeDuration(probeData?.format?.duration) ??
+			parseFfprobeDuration(audioStream.duration) ??
+			0;
+		if (duration > 240) {
+			const err = new Error("Vídeo muito longo para figurinha com som");
+			err.code = "VIDEO_TOO_LONG";
+			throw err;
+		}
+
+		await acquireFFmpegSlot();
+		try {
+			await new Promise((resolve, reject) => {
+				ffmpeg(videoPath)
+					.noVideo()
+					.audioCodec("libopus")
+					.audioBitrate("48k")
+					.audioFrequency(48000)
+					.audioChannels(1)
+					.format("ogg")
+					.output(audioPath)
+					.on("end", resolve)
+					.on("error", reject)
+					.run();
+			});
+		} finally {
+			releaseFFmpegSlot();
+		}
+
+		const audioBuffer = await fs.readFile(audioPath);
+		return { audioBuffer, duration };
+	} finally {
+		await fs.unlink(videoPath).catch(() => {});
+		await fs.unlink(audioPath).catch(() => {});
+	}
+}
+
+/**
+ * Cria figurinha com som diretamente a partir de um vídeo (!sa / !saudio).
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+ */
+async function audioStickerFromVideoCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	telemetry.setAttrs({
+		"ravena.sticker.crop_type": "transparent",
+		"ravena.sticker.has_audio": true
+	});
+
+	if (bot?.useTelegram || bot?.useDiscord) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "unsupported_platform"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content: "Figurinhas com som só são suportadas no WhatsApp por enquanto."
+		});
+	}
+
+	let videoMsg = null;
+	if (message.type === "video") {
+		videoMsg = message;
+	} else if (message.type === "audio" || message.type === "ptt") {
+		const quotedStickerMsg =
+			typeof message.origin?.getQuotedMessage === "function"
+				? await message.origin.getQuotedMessage().catch(() => null)
+				: null;
+		return await createAudioStickerFromAudioAndSticker({
+			bot,
+			message,
+			args,
+			group,
+			chatId,
+			audioMsg: message,
+			quotedStickerMsg,
+			cropType: "transparent"
+		});
+	} else {
+		const quotedMsg =
+			typeof message.origin?.getQuotedMessage === "function"
+				? await message.origin.getQuotedMessage().catch(() => null)
+				: null;
+		const qType = String(quotedMsg?.type || "").toLowerCase();
+		if (qType === "video") {
+			videoMsg = quotedMsg;
+		} else if (qType === "audio" || qType === "ptt") {
+			const quotedStickerMsg =
+				typeof quotedMsg.origin?.getQuotedMessage === "function"
+					? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+					: null;
+			return await createAudioStickerFromAudioAndSticker({
+				bot,
+				message,
+				args,
+				group,
+				chatId,
+				audioMsg: quotedMsg,
+				quotedStickerMsg,
+				cropType: "transparent"
+			});
+		}
+	}
+
+	if (!videoMsg) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "missing_video_for_saudio"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content:
+				"Manda um vídeo com !sa na legenda ou responde a um vídeo com !sa para criar uma figurinha com som! 🎬🔊"
+		});
+	}
+
+	let videoMedia = null;
+	if (videoMsg.content && videoMsg.content.data) {
+		videoMedia = videoMsg.content;
+	} else if (typeof videoMsg.downloadMedia === "function") {
+		videoMedia = await videoMsg.downloadMedia().catch(() => null);
+	}
+
+	if (!videoMedia || !videoMedia.data) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "video_download_failed"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Não consegui baixar esse vídeo (pode ter expirado ou ser visualização única protegida)."
+		});
+	}
+
+	const mimeType = videoMedia.mimetype || "video/mp4";
+	const videoBuffer = Buffer.from(videoMedia.data, "base64");
+
+	let extracted;
+	try {
+		extracted = await extractAudioFromVideoBuffer(videoBuffer, mimeType);
+	} catch (err) {
+		if (err.code === "VIDEO_WITHOUT_AUDIO") {
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "video_without_audio"
+			});
+			await message.origin.react("❌");
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Esse vídeo não tem faixa de áudio. Para figurinha sem som, use !s."
+			});
+		}
+		if (err.code === "VIDEO_TOO_LONG") {
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "video_too_long"
+			});
+			await message.origin.react("❌");
+			return new ReturnMessage({
+				chatId,
+				content: "❌ O vídeo é muito longo (máximo de 4 minutos para figurinhas com som)."
+			});
+		}
+		throw err;
+	}
+
+	const processedBuffer = await processMediaToSquare(videoMedia, mimeType, "transparent");
+	telemetry.setAttrs({
+		"ravena.sticker.crop_type": "transparent",
+		"ravena.sticker.mime_type": mimeType,
+		"ravena.sticker.size_bytes": processedBuffer.length,
+		"ravena.sticker.has_audio": true
+	});
+
+	const stickerMedia = {
+		mimetype: "image/webp",
+		data: processedBuffer.toString("base64"),
+		filename: `sticker-${Date.now()}.webp`,
+		isMessageMedia: true
+	};
+	const stickerName = args.length > 0 ? args.join(" ") : group ? group.name : "sticker";
+
+	cmdUsage.logFixedCommandUsage({
+		timestamp: Date.now(),
+		command: "sticker",
+		user: message.author,
+		groupId: chatId,
+		args: args.join(" "),
+		info: {
+			cropType: "transparent",
+			mimeType,
+			hasAudio: true,
+			fromVideo: true
+		}
+	});
+
+	return [
+		new ReturnMessage({
+			chatId,
+			content: stickerMedia,
+			options: {
+				sendMediaAsSticker: true,
+				stickerAudio: {
+					data: extracted.audioBuffer.toString("base64"),
+					mimetype: "audio/ogg; codecs=opus",
+					filename: `sticker-audio-${Date.now()}.ogg`
+				},
+				stickerAuthor: bot?.nomeExibir || "ravena",
+				stickerName,
+				quotedMessageId: message.origin.id._serialized
+			}
+		})
+	];
+}
+
+/**
  * Cria um sticker quadrado a partir de uma mídia, aplicando diferentes tipos de corte
  * @param {WhatsAppBot} bot - Instância do bot
  * @param {Object} message - Dados da mensagem
@@ -966,22 +1246,26 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 		let mediaBuffer, mimeType, quotedMessageId;
 
 		// Extrair mídia e informações necessárias da mensagem direta ou citada
-		if (message.type === "audio") {
+		if (message.type === "audio" || message.type === "ptt") {
 			const quotedStickerMsg =
 				typeof message.origin?.getQuotedMessage === "function"
 					? await message.origin.getQuotedMessage().catch(() => null)
 					: null;
-			return await createAudioStickerFromAudioAndSticker({
-				bot,
-				message,
-				args,
-				group,
-				chatId,
-				audioMsg: message,
-				quotedStickerMsg,
-				cropType
-			});
-		} else if (message.type === "image" || message.type === "video" || message.type === "gif") {
+			const quotedParentType = String(quotedStickerMsg?.type || "").toLowerCase();
+			if (!["image", "video", "gif"].includes(quotedParentType)) {
+				return await createAudioStickerFromAudioAndSticker({
+					bot,
+					message,
+					args,
+					group,
+					chatId,
+					audioMsg: message,
+					quotedStickerMsg,
+					cropType
+				});
+			}
+		}
+		if (message.type === "image" || message.type === "video" || message.type === "gif") {
 			// Mídia na mensagem atual
 			// logger.debug(`Processando mídia da mensagem atual: ${message.type}`);
 
@@ -1030,11 +1314,27 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				// Baixa o sticker original para extrair a mídia
 				const stickerMedia = await quotedMsg.downloadMedia();
 				if (!stickerMedia || !stickerMedia.data || !stickerMedia.mimetype) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "sticker_download_failed"
+					});
 					await message.origin.react("❌");
 					return new ReturnMessage({
 						chatId,
 						content:
 							"❌ Não consegui baixar a figurinha marcada (a mídia expirou ou ficou indisponível)."
+					});
+				}
+
+				if (String(stickerMedia.mimetype).toLowerCase().includes("was")) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "unsupported_lottie_sticker"
+					});
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: "Figurinhas animadas Lottie (.was) ainda não são suportadas para extração."
 					});
 				}
 
@@ -1741,6 +2041,44 @@ const commands = [
 		},
 		method: async (bot, message, args, group) =>
 			await squareStickerCommand(bot, message, args, group, "longhq")
+	}),
+	new Command({
+		name: "sa",
+		description:
+			"Cria figurinha com som a partir de um vídeo (na legenda ou respondendo a um vídeo)",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await audioStickerFromVideoCommand(bot, message, args, group)
+	}),
+	new Command({
+		name: "saudio",
+		description:
+			"Alias para !sa: cria figurinha com som a partir de um vídeo (na legenda ou respondendo a um vídeo)",
+		category: "stickers",
+		group: "ssticker",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await audioStickerFromVideoCommand(bot, message, args, group)
 	})
 ];
 
@@ -1748,13 +2086,19 @@ const helper = {
 	about:
 		"Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers), incluindo stickers com som",
 	implementation:
-		"Processa imagens, vídeos e áudios com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s), crop por IA, criação de figurinhas com som ([figurinha] -> [áudio] -> !s) e extração das mídias originais de figurinhas com som",
-	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp,som,audio",
+		"Processa imagens, vídeos e áudios com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s), crop por IA, criação de figurinhas com som ([figurinha] -> [áudio] -> !s e !sa/!saudio em vídeo) e extração das mídias originais de figurinhas com som",
+	tags: "sticker,figurinha,s,sa,saudio,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp,som,audio",
 	cmds: [
 		{
 			cmd: "!sticker",
 			desc: "Converte uma imagem, vídeo ou GIF em figurinha (ou responda a uma figurinha com áudio e dê !s no áudio para fazer sticker com som)",
 			usage: ["!sticker (com imagem ou em resposta)", "!s", "[figurinha] -> [áudio] -> !s"],
+			category: "stickers"
+		},
+		{
+			cmd: "!sa",
+			desc: "Cria figurinha com som diretamente a partir de um vídeo (mantendo o áudio do vídeo)",
+			usage: ["!sa (na legenda do vídeo ou em resposta a um vídeo)", "!saudio"],
 			category: "stickers"
 		},
 		{

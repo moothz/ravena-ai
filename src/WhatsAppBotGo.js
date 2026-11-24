@@ -1525,6 +1525,33 @@ class WhatsAppBotGo {
 		return quotedMsg;
 	}
 
+	_extractStickerAudioMessage(stickerMessage) {
+		return stickerMessage?.Audio?.AudioMessage || stickerMessage?.audioMessage || null;
+	}
+
+	_sanitizeMessageForDownload(messageContent) {
+		if (!messageContent || typeof messageContent !== "object") return messageContent;
+		const sanitized = { ...messageContent };
+		for (const key of [
+			"imageMessage",
+			"videoMessage",
+			"audioMessage",
+			"stickerMessage",
+			"documentMessage"
+		]) {
+			if (sanitized[key] && typeof sanitized[key] === "object") {
+				const clone = { ...sanitized[key] };
+				delete clone.contextInfo;
+				if (key === "stickerMessage") {
+					delete clone.Audio;
+					delete clone.audioMessage;
+				}
+				sanitized[key] = clone;
+			}
+		}
+		return sanitized;
+	}
+
 	async _downloadMediaFromWhatsgo(messageContent, messageId = null, { isViewOnce = false } = {}) {
 		try {
 			const cleanId = messageId && this.getActualMsgId ? this.getActualMsgId(messageId) : messageId;
@@ -1534,7 +1561,7 @@ class WhatsAppBotGo {
 			}
 
 			const { unwrapped } = this._unwrapGoMessageContent(messageContent || {});
-			const payloadMsg = unwrapped || messageContent;
+			const payloadMsg = this._sanitizeMessageForDownload(unwrapped || messageContent);
 			// Sem a captura de view-once, não pede ao whatsgo a cópia guardada por messageId
 			const sendMessageId = cleanId && (!isViewOnce || this.viewOnceCaptureEnabled);
 			const response = await this.apiClient.post("/message/downloadmedia", {
@@ -2988,10 +3015,16 @@ class WhatsAppBotGo {
 		);
 	}
 
-	async _downloadStickerAudioFromMessage(audioMessage, messageId = null) {
+	async _downloadStickerAudioFromMessage(
+		audioMessage,
+		messageId = null,
+		{ isViewOnce = false } = {}
+	) {
 		if (!audioMessage) return null;
 		try {
-			const downloaded = await this._downloadMediaFromWhatsgo({ audioMessage }, messageId);
+			const downloaded = await this._downloadMediaFromWhatsgo({ audioMessage }, messageId, {
+				isViewOnce
+			});
 			if (downloaded) {
 				return {
 					mimetype: downloaded.mimetype || audioMessage.mimetype || "audio/ogg; codecs=opus",
@@ -3065,7 +3098,7 @@ class WhatsAppBotGo {
 			mediaInfo = {
 				mimetype: quotedContent.stickerMessage.mimetype,
 				url: quotedContent.stickerMessage.url,
-				audioMessage: quotedContent.stickerMessage.audioMessage || null,
+				audioMessage: this._extractStickerAudioMessage(quotedContent.stickerMessage),
 				_mediaDetails: quotedContent.stickerMessage
 			};
 			content = mediaInfo;
@@ -3103,8 +3136,21 @@ class WhatsAppBotGo {
 			hasQuotedMsg: Boolean(nestedQuotedId || nestedContextInfo?.quotedMessage),
 			quotedMessageId: nestedQuotedId,
 			isQuoted: true,
-			downloadStickerAudio: async () =>
-				await this._downloadStickerAudioFromMessage(mediaInfo?.audioMessage, stanzaId),
+			downloadStickerAudio: async (downloadOptions = {}) => {
+				if (
+					!this._isViewOnceDownloadAllowed(
+						quotedIsViewOnce,
+						downloadOptions?.requesterIds,
+						[participant, author],
+						stanzaId
+					)
+				) {
+					return null;
+				}
+				return await this._downloadStickerAudioFromMessage(mediaInfo?.audioMessage, stanzaId, {
+					isViewOnce: quotedIsViewOnce
+				});
+			},
 			downloadMedia: async (downloadOptions = {}) => {
 				if (
 					!this._isViewOnceDownloadAllowed(
@@ -3287,7 +3333,7 @@ class WhatsAppBotGo {
 				mediaInfo = {
 					mimetype: messageContent.stickerMessage.mimetype,
 					url: messageContent.stickerMessage.url,
-					audioMessage: messageContent.stickerMessage.audioMessage || null,
+					audioMessage: this._extractStickerAudioMessage(messageContent.stickerMessage),
 					_mediaDetails: messageContent.stickerMessage
 				};
 				content = mediaInfo;
@@ -3425,8 +3471,25 @@ class WhatsAppBotGo {
 						fromMe,
 						participant: senderAlt
 					}),
-				downloadStickerAudio: async () =>
-					await this._downloadStickerAudioFromMessage(mediaInfo?.audioMessage, id),
+				downloadStickerAudio: async (downloadOptions = {}) => {
+					const reaction = formattedMessage.originReaction;
+					const requesterIds =
+						downloadOptions?.requesterIds ||
+						(reaction ? [reaction.senderId, reaction.senderIdAlt] : null);
+					if (
+						!this._isViewOnceDownloadAllowed(
+							isViewOnce,
+							requesterIds,
+							[authorJid, sender, senderAlt],
+							id
+						)
+					) {
+						return null;
+					}
+					return await this._downloadStickerAudioFromMessage(mediaInfo?.audioMessage, id, {
+						isViewOnce
+					});
+				},
 				downloadMedia: async (downloadOptions = {}) => {
 					// Em reações, quem pede é quem reagiu (originReaction é anexado pelo ReactionsHandler)
 					const reaction = formattedMessage.originReaction;

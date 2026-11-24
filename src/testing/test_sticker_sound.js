@@ -339,10 +339,25 @@ async function runTests() {
 						stickerMessage: {
 							mimetype: "image/webp",
 							url: "https://example.com/sticker.webp",
-							audioMessage: {
-								mimetype: "audio/ogg; codecs=opus",
-								directPath: "/v/t62.7117-24/mock",
-								seconds: 2
+							Audio: {
+								AudioMessage: {
+									mimetype: "audio/ogg; codecs=opus",
+									directPath: "/v/t62.7117-24/mock",
+									seconds: 2
+								}
+							},
+							contextInfo: {
+								stanzaID: "QUOTEDSTICKER0",
+								quotedMessage: {
+									stickerMessage: {
+										mimetype: "image/webp",
+										Audio: {
+											AudioMessage: {
+												directPath: "/v/t62.7117-24/nested"
+											}
+										}
+									}
+								}
 							}
 						}
 					}
@@ -352,11 +367,50 @@ async function runTests() {
 
 		const formattedGo = await goBot.formatMessageFromGo(goRawWebhook, true);
 		assert.strictEqual(formattedGo.type, "sticker");
-		assert.ok(formattedGo.content.audioMessage, "Deve preservar stickerMessage.audioMessage");
+		assert.ok(formattedGo.content.audioMessage, "Deve ler stickerMessage.Audio.AudioMessage");
+
+		const downloadedSticker = await formattedGo.downloadMedia();
+		assert.ok(downloadedSticker && downloadedSticker.data === audioB64);
+		assert.strictEqual(postedCalls[0].endpoint, "/message/downloadmedia");
+		assert.strictEqual(
+			postedCalls[0].payload.message.stickerMessage.Audio,
+			undefined,
+			"Nao deve enviar stickerMessage.Audio (oneof Go) no /message/downloadmedia"
+		);
+		assert.strictEqual(
+			postedCalls[0].payload.message.stickerMessage.contextInfo,
+			undefined,
+			"Nao deve enviar contextInfo no /message/downloadmedia"
+		);
+
 		const downloadedAudio = await formattedGo.downloadStickerAudio();
 		assert.ok(downloadedAudio && downloadedAudio.data === audioB64);
-		assert.strictEqual(postedCalls[0].endpoint, "/message/downloadmedia");
-		assert.ok(postedCalls[0].payload.message.audioMessage, "Deve baixar audioMessage embutido");
+		assert.strictEqual(postedCalls[1].endpoint, "/message/downloadmedia");
+		assert.ok(postedCalls[1].payload.message.audioMessage, "Deve baixar audioMessage embutido");
+
+		// Quoted sticker com Audio.AudioMessage e trava de view-once em downloadStickerAudio
+		const quotedAudioSticker = goBot.formatQuotedMessageFromContext(
+			{
+				stanzaID: "VOSTICKER1",
+				participant: "5511999990001@s.whatsapp.net",
+				quotedMessage: {
+					viewOnceMessage: {
+						message: goRawWebhook.Message
+					}
+				}
+			},
+			"120363000000000099@g.us"
+		);
+		assert.ok(
+			quotedAudioSticker.content.audioMessage,
+			"Quoted sticker deve ler Audio.AudioMessage"
+		);
+		const callsBeforeVo = postedCalls.length;
+		const blockedVoAudio = await quotedAudioSticker.downloadStickerAudio({
+			requesterIds: ["5511999999999@s.whatsapp.net"]
+		});
+		assert.strictEqual(blockedVoAudio, null, "Terceiro nao pode baixar audio de view-once");
+		assert.strictEqual(postedCalls.length, callsBeforeVo);
 
 		await goBot.sendMessage("120363000000000099@g.us", fused.content, fused.options);
 		const sendCall = postedCalls.find((c) => c.endpoint === "/send/sticker/audio");
@@ -367,8 +421,142 @@ async function runTests() {
 		assert.ok(sendCall.payload.sticker.includes("mock-storage"), "Deve enviar URL do sticker WebP");
 		assert.ok(sendCall.payload.audio.includes("mock-storage"), "Deve enviar URL do audio");
 		console.log(
-			"✓ WhatsAppBotGo desembrulhou audioStickerMessage e enviou via POST /send/sticker/audio"
+			"✓ WhatsAppBotGo leu Audio.AudioMessage, sanitizou /message/downloadmedia e enviou via /send/sticker/audio"
 		);
+
+		// 6. !sa / !saudio em video com audio (legenda e resposta)
+		console.log("\n6. Testando !sa em video com audio (na legenda e em resposta)...");
+		const videoWithAudioPath = path.join(tempDir, "video_with_audio.mp4");
+		await new Promise((resolve, reject) => {
+			ffmpeg()
+				.input("testsrc=duration=1.5:size=160x160:rate=10")
+				.inputFormat("lavfi")
+				.input("sine=frequency=440:duration=1.5")
+				.inputFormat("lavfi")
+				.outputOptions(["-y", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac"])
+				.output(videoWithAudioPath)
+				.on("end", resolve)
+				.on("error", reject)
+				.run();
+		});
+		const videoWithAudioB64 = (await fs.readFile(videoWithAudioPath)).toString("base64");
+
+		const videoCaptionMsg = buildMockMsg({
+			type: "video",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "video/mp4",
+				data: videoWithAudioB64
+			},
+			extra: { caption: "!sa MeuVideo" }
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, videoCaptionMsg, "sa", ["MeuVideo"], {
+			name: "Grupo Teste"
+		});
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+		assert.strictEqual(bot.capturedMessages[0].options.stickerName, "MeuVideo");
+		assert.ok(bot.capturedMessages[0].options.stickerAudio?.data, "Deve extrair audio do video");
+		assert.strictEqual(bot.capturedMessages[0].content.mimetype, "image/webp");
+
+		const replyVideoCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!saudio",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: videoCaptionMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, replyVideoCmdMsg, "saudio", [], {
+			name: "Grupo Teste"
+		});
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+		assert.ok(bot.capturedMessages[0].options.stickerAudio?.data);
+		console.log("✓ !sa na legenda e !saudio em resposta ao video criaram figurinha com som");
+
+		// 7. !sa em video sem audio
+		console.log("\n7. Testando !sa em video sem faixa de audio...");
+		const videoSilentMsg = buildMockMsg({
+			type: "video",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "video/mp4",
+				data: (await fs.readFile(animInputPath)).toString("base64")
+			}
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, videoSilentMsg, "sa", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.ok(String(bot.capturedMessages[0].content).includes("não tem faixa de áudio"));
+		console.log("✓ !sa rejeitou video sem audio com orientacao");
+
+		// 8. Audio > 4 min deve ser recusado antes de enviar
+		console.log("\n8. Testando recusa de audio > 4 minutos...");
+		const longAudioMsg = buildMockMsg({
+			type: "audio",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: { mimetype: "audio/ogg", data: audioB64, seconds: 300 },
+			quotedMessage: quotedStickerMsg
+		});
+		const longAudioCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!s",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: longAudioMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, longAudioCmdMsg, "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.ok(String(bot.capturedMessages[0].content).includes("muito longo"));
+		console.log("✓ Audio acima de 4 min recusado com aviso");
+
+		// 9. Regressao: !s em audio que cita imagem continua criando sticker da imagem
+		console.log("\n9. Testando !s em audio que responde a imagem (sem regressao)...");
+		const quotedImgMsg = buildMockMsg({
+			type: "image",
+			author: "5511999990001@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: { mimetype: "image/png", data: stickerPngBuffer.toString("base64") }
+		});
+		const audioQuotingImg = buildMockMsg({
+			type: "audio",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: { mimetype: "audio/wav", data: audioB64 },
+			quotedMessage: quotedImgMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, audioQuotingImg, "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].options?.sendMediaAsSticker, true);
+		console.log("✓ Audio que cita imagem manteve criacao de sticker da imagem");
+
+		// 10. Sticker Lottie (.was) nao retorna arquivo cru
+		console.log("\n10. Testando recusa limpa de sticker Lottie (application/was)...");
+		const lottieMsg = buildMockMsg({
+			type: "sticker",
+			author: "5511999990001@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: { mimetype: "application/was", data: Buffer.from("lottie").toString("base64") }
+		});
+		const lottieCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!s",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: lottieMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, lottieCmdMsg, "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.ok(String(bot.capturedMessages[0].content).includes("Lottie"));
+		console.log("✓ Sticker Lottie recusado com mensagem clara");
 
 		console.log("\n=== TODOS OS TESTES DE STICKER COM SOM PASSARAM! ===");
 	} finally {
