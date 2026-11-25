@@ -1128,30 +1128,35 @@ function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime,
 		TEXT_STICKER.NAME_COLORS[Math.floor(Math.random() * TEXT_STICKER.NAME_COLORS.length)];
 
 	const innerMaxWidth = TEXT_STICKER.BUBBLE_MAX_WIDTH - TEXT_STICKER.PADDING_X * 2;
-	const headerHeight = 28;
 	const headerGap = 10;
 	const footerHeight = 20;
 	const footerGap = 12;
-	const maxBodyHeight =
-		TEXT_STICKER.BUBBLE_MAX_HEIGHT -
-		TEXT_STICKER.PADDING_Y * 2 -
-		headerHeight -
-		headerGap -
-		footerGap -
-		footerHeight;
 
-	// Escolhe o maior tamanho de fonte que caiba no bubble
+	// Escolhe o maior tamanho de fonte que caiba no bubble (nome levemente maior que o texto)
 	const fontSizes = [28, 24, 21, 18];
 	let selectedFontSize = fontSizes[fontSizes.length - 1];
+	let nameFontSize = selectedFontSize + 3;
+	let headerHeight = Math.round(nameFontSize * 1.25);
 	let selectedLines = [];
 	let selectedLineHeight = 24;
 
 	for (const size of fontSizes) {
+		const candidateNameSize = size + 3;
+		const candidateHeaderHeight = Math.round(candidateNameSize * 1.25);
+		const maxBodyHeight =
+			TEXT_STICKER.BUBBLE_MAX_HEIGHT -
+			TEXT_STICKER.PADDING_Y * 2 -
+			candidateHeaderHeight -
+			headerGap -
+			footerGap -
+			footerHeight;
 		const lineHeight = Math.round(size * 1.32);
 		ctx.font = `${size}px ${TEXT_STICKER.FONT_FAMILY}`;
 		const lines = wrapTextLines(ctx, limitedText, innerMaxWidth);
 		if (lines.length * lineHeight <= maxBodyHeight) {
 			selectedFontSize = size;
+			nameFontSize = candidateNameSize;
+			headerHeight = candidateHeaderHeight;
 			selectedLines = lines;
 			selectedLineHeight = lineHeight;
 			break;
@@ -1159,6 +1164,8 @@ function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime,
 		if (size === fontSizes[fontSizes.length - 1]) {
 			const maxLines = Math.max(1, Math.floor(maxBodyHeight / lineHeight));
 			selectedFontSize = size;
+			nameFontSize = candidateNameSize;
+			headerHeight = candidateHeaderHeight;
 			selectedLineHeight = lineHeight;
 			selectedLines = lines.slice(0, maxLines);
 			if (lines.length > maxLines) {
@@ -1172,7 +1179,7 @@ function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime,
 	}
 
 	// Medir largura necessária do conteúdo para dimensionar o bubble proporcionalmente
-	ctx.font = `bold 19px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.font = `bold ${nameFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
 	const nameRawWidth = ctx.measureText(displayName).width;
 	ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
 	const phoneWidth = formattedPhone ? ctx.measureText(formattedPhone).width + 14 : 0;
@@ -1232,7 +1239,7 @@ function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime,
 	ctx.stroke();
 
 	const contentX = bubbleX + TEXT_STICKER.PADDING_X;
-	const headerY = bubbleY + TEXT_STICKER.PADDING_Y + 19;
+	const headerY = bubbleY + TEXT_STICKER.PADDING_Y + nameFontSize;
 
 	// Cabeçalho: Nome colorido + Número à direita
 	let maxNameWidth = bubbleInnerWidth;
@@ -1245,7 +1252,7 @@ function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime,
 		ctx.fillText(formattedPhone, bubbleX + bubbleWidth - TEXT_STICKER.PADDING_X, headerY);
 	}
 
-	ctx.font = `bold 19px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.font = `bold ${nameFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
 	ctx.fillStyle = chosenColor;
 	ctx.textAlign = "left";
 	ctx.fillText(truncateTextToWidth(ctx, displayName, maxNameWidth), contentX, headerY);
