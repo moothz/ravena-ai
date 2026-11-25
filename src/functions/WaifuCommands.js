@@ -5891,100 +5891,71 @@ async function reordenarColecoes(bot, message, args) {
 	}
 }
 
-function matchUserNumber(nickNumero, targetUserId) {
-	if (!nickNumero || !targetUserId) return false;
-	const cleanNick = String(nickNumero).replace(/\D/g, "");
-	const cleanTarget = String(targetUserId).replace(/\D/g, "");
-	if (cleanNick && cleanTarget && cleanNick === cleanTarget) return true;
-	return String(nickNumero).toLowerCase() === String(targetUserId).toLowerCase();
-}
-
-function findNickInGroup(groupObj, targetUserId) {
-	if (!groupObj || !Array.isArray(groupObj.nicks)) return null;
-	const item = groupObj.nicks.find((n) => matchUserNumber(n.numero, targetUserId));
-	return item?.apelido?.trim() || null;
-}
-
 /**
- * Resolve o nome de exibição de um jogador para o ranking, dando preferência
- * ao apelido configurado no grupo em que ele usa comandos (ou no grupo atual).
- * @param {Object} user - Objeto de usuário retornado da API
- * @param {Object} [currentGroup] - Objeto do grupo atual onde o comando foi chamado
- * @returns {Promise<string>}
+ * Quebra uma lista de entradas de ranking em um ou mais ReturnMessage respeitando
+ * os limites de linhas e caracteres do WhatsAppBotGo (15.000 chars / 200 linhas).
+ * @param {string} chatId
+ * @param {string} titleHeader - Cabeçalho sem as quebras finais
+ * @param {string[]} entries - Blocos de texto de cada jogador (terminados em \n)
+ * @param {string} [footer=""] - Rodapé opcional (incluído apenas no último bloco)
+ * @param {{ maxLines?: number, maxChars?: number }} [opts]
+ * @returns {ReturnMessage|ReturnMessage[]}
  */
-async function resolveUserDisplayName(user, currentGroup) {
-	const rawUserId = user.id;
-	const cleanUserId = String(rawUserId || "").replace(/\D/g, "");
+function buildRankingReturnMessages(
+	chatId,
+	titleHeader,
+	entries,
+	footer = "",
+	{ maxLines = 150, maxChars = 12000 } = {}
+) {
+	const chunks = [];
+	let currentEntries = [];
+	let currentLines = 0;
+	let currentChars = 0;
+	const headerOverheadLines = 3;
+	const headerOverheadChars = titleHeader.length + 16;
 
-	// 1. Apelido no grupo atual onde o comando foi executado
-	const currentNick = findNickInGroup(currentGroup, rawUserId);
-	if (currentNick) {
-		return currentNick;
+	for (const entry of entries) {
+		const entryLines = entry.split("\n").length - 1 || 1;
+		const entryChars = entry.length;
+
+		const wouldExceedLines =
+			currentEntries.length > 0 && headerOverheadLines + currentLines + entryLines > maxLines;
+		const wouldExceedChars =
+			currentEntries.length > 0 && headerOverheadChars + currentChars + entryChars > maxChars;
+
+		if (wouldExceedLines || wouldExceedChars) {
+			chunks.push(currentEntries.join(""));
+			currentEntries = [];
+			currentLines = 0;
+			currentChars = 0;
+		}
+
+		currentEntries.push(entry);
+		currentLines += entryLines;
+		currentChars += entryChars;
 	}
 
-	// 2. Apelido no grupo em que o usuário mais usa comandos de waifu (mu-%)
-	try {
-		const muGroupRow = await database.dbGet(
-			"cmd_usage",
-			`SELECT group_id, count(*) as cnt 
-			 FROM cmd_usage_log 
-			 WHERE (user = ? OR user LIKE ? OR user = ?) 
-			   AND group_id IS NOT NULL 
-			   AND command LIKE ? 
-			 GROUP BY group_id 
-			 ORDER BY cnt DESC 
-			 LIMIT 1`,
-			[cleanUserId, `${cleanUserId}@%`, rawUserId, "mu-%"]
-		);
-
-		if (muGroupRow?.group_id) {
-			const muGroup = await database.getGroup(muGroupRow.group_id);
-			const muNick = findNickInGroup(muGroup, rawUserId);
-			if (muNick) return muNick;
-		}
-
-		// 3. Apelido no grupo mais ativo do usuário no geral
-		const generalGroupRow = await database.dbGet(
-			"cmd_usage",
-			`SELECT group_id, count(*) as cnt 
-			 FROM cmd_usage_log 
-			 WHERE (user = ? OR user LIKE ? OR user = ?) 
-			   AND group_id IS NOT NULL 
-			 GROUP BY group_id 
-			 ORDER BY cnt DESC 
-			 LIMIT 1`,
-			[cleanUserId, `${cleanUserId}@%`, rawUserId]
-		);
-
-		if (generalGroupRow?.group_id && generalGroupRow.group_id !== muGroupRow?.group_id) {
-			const generalGroup = await database.getGroup(generalGroupRow.group_id);
-			const genNick = findNickInGroup(generalGroup, rawUserId);
-			if (genNick) return genNick;
-		}
-
-		// 4. Fallback: busca em qualquer grupo no core.db que tenha apelido para este número
-		if (cleanUserId) {
-			const coreRow = await database.dbGet(
-				"core",
-				"SELECT nicks FROM groups WHERE nicks LIKE ? LIMIT 1",
-				[`%${cleanUserId}%`]
-			);
-			if (coreRow?.nicks) {
-				try {
-					const parsedNicks = JSON.parse(coreRow.nicks);
-					const fallbackItem = parsedNicks.find((n) => matchUserNumber(n.numero, cleanUserId));
-					if (fallbackItem?.apelido?.trim()) return fallbackItem.apelido.trim();
-				} catch {
-					// Ignora erro de JSON parse
-				}
-			}
-		}
-	} catch (err) {
-		logger.debug(`Erro ao resolver apelido para usuário ${rawUserId}:`, err.message);
+	if (currentEntries.length > 0) {
+		chunks.push(currentEntries.join(""));
 	}
 
-	// 5. Fallback para o nome cadastrado na API
-	return user.name || "Jogador";
+	if (chunks.length <= 1) {
+		const body = chunks[0] || "";
+		return new ReturnMessage({
+			chatId,
+			content: `${titleHeader}\n\n${body}${footer}`
+		});
+	}
+
+	const total = chunks.length;
+	return chunks.map((body, idx) => {
+		const chunkFooter = idx === total - 1 ? footer : "";
+		return new ReturnMessage({
+			chatId,
+			content: `${titleHeader} (${idx + 1}/${total})\n\n${body}${chunkFooter}`
+		});
+	});
 }
 
 /**
@@ -6030,20 +6001,23 @@ async function verRanking(bot, message, args, group) {
 			const lines = await Promise.all(
 				topHarem.map(async (u, idx) => {
 					const pos = medals[idx] || `${idx + 1}.`;
-					const displayName = await resolveUserDisplayName(u, currentGroup);
+					const displayName = await resolveDisplayName(currentGroup, u.id, u.name);
 					let line = `${pos} *${displayName}* — *${u.collectionPoints} pts* (${u.totalMarriages} waifus | ${u.totalKeys} 🔑)\n`;
 					line += `   └ ⚪${u.commonCount}  🟢${u.uncommonCount}  🔵${u.rareCount}  🟣${u.epicCount}  ⭐${u.legendaryCount}\n`;
 					return line;
 				})
 			);
 
-			let text = `👑 *Ranking de Colecionadores de Waifus (Harém & Raridade)* [${topHarem.length} jogadores]:\n\n`;
-			text += lines.join("");
-			if (!isAll) {
-				text += `\n💡 Para ver todos os jogadores: \`!mu-rank casamentos all\``;
-			}
+			telemetry.setAttrs({
+				"ravena.waifu.rank_scope": "casamentos",
+				"ravena.waifu.rank_all": isAll,
+				"ravena.waifu.rank_count": topHarem.length
+			});
 
-			return new ReturnMessage({ chatId, content: text });
+			const header = `👑 *Ranking de Colecionadores de Waifus (Harém & Raridade)* [${topHarem.length} jogadores]:`;
+			const footer = !isAll ? `\n💡 Para ver todos os jogadores: \`!mu-rank casamentos all\`` : "";
+
+			return buildRankingReturnMessages(chatId, header, lines, footer);
 		} catch (err) {
 			return handleApiError(err, chatId, "Erro ao consultar ranking de casamentos.");
 		}
@@ -6066,18 +6040,21 @@ async function verRanking(bot, message, args, group) {
 			const lines = await Promise.all(
 				topRich.map(async (u, idx) => {
 					const pos = medals[idx] || `${idx + 1}.`;
-					const displayName = await resolveUserDisplayName(u, currentGroup);
+					const displayName = await resolveDisplayName(currentGroup, u.id, u.name);
 					return `${pos} *${displayName}* — 💜 *${u.kakera}* Zinthos (Harém: ${u._count?.harem ?? 0})\n`;
 				})
 			);
 
-			let text = `💜 *Ranking de Jogadores Mais Ricos em Zinthos* [${topRich.length} jogadores]:\n\n`;
-			text += lines.join("");
-			if (!isAll) {
-				text += `\n💡 Para ver todos os jogadores: \`!mu-rank zinthos all\``;
-			}
+			telemetry.setAttrs({
+				"ravena.waifu.rank_scope": "zinthos",
+				"ravena.waifu.rank_all": isAll,
+				"ravena.waifu.rank_count": topRich.length
+			});
 
-			return new ReturnMessage({ chatId, content: text });
+			const header = `💜 *Ranking de Jogadores Mais Ricos em Zinthos* [${topRich.length} jogadores]:`;
+			const footer = !isAll ? `\n💡 Para ver todos os jogadores: \`!mu-rank zinthos all\`` : "";
+
+			return buildRankingReturnMessages(chatId, header, lines, footer);
 		} catch (err) {
 			return handleApiError(err, chatId, "Erro ao consultar ranking de Zinthos.");
 		}
@@ -6104,7 +6081,7 @@ async function verRanking(bot, message, args, group) {
 			const richLines = await Promise.all(
 				topRich.slice(0, 10).map(async (u, idx) => {
 					const pos = medals[idx] || `${idx + 1}.`;
-					const displayName = await resolveUserDisplayName(u, currentGroup);
+					const displayName = await resolveDisplayName(currentGroup, u.id, u.name);
 					return `${pos} *${displayName}* — *${u.kakera}* Zinthos\n`;
 				})
 			);
@@ -6118,7 +6095,7 @@ async function verRanking(bot, message, args, group) {
 			const haremLines = await Promise.all(
 				topHarem.slice(0, 10).map(async (u, idx) => {
 					const pos = medals[idx] || `${idx + 1}.`;
-					const displayName = await resolveUserDisplayName(u, currentGroup);
+					const displayName = await resolveDisplayName(currentGroup, u.id, u.name);
 					let line = `${pos} *${displayName}* — *${u.collectionPoints} pts* (${u.totalMarriages} waifus)\n`;
 					line += `   └ ⚪${u.commonCount}  🟢${u.uncommonCount}  🔵${u.rareCount}  🟣${u.epicCount}  ⭐${u.legendaryCount}\n`;
 					return line;
@@ -6126,6 +6103,12 @@ async function verRanking(bot, message, args, group) {
 			);
 			text += haremLines.join("");
 		}
+
+		telemetry.setAttrs({
+			"ravena.waifu.rank_scope": "consolidado",
+			"ravena.waifu.rank_all": false,
+			"ravena.waifu.rank_count": topRich.length + topHarem.length
+		});
 
 		text += `\n────────────────────────\n`;
 		text += `💡 *Rankings completos:*\n`;
