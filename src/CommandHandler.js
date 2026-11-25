@@ -1854,6 +1854,25 @@ class CommandHandler {
 								} catch (notifyErr) {
 									this.logger.warn("Erro ao enviar aviso de estorno de roll:", notifyErr.message);
 								}
+							} else if (command.category === "stickers") {
+								try {
+									const failedStickerMsg = msgList.find((m) => m instanceof ReturnMessage);
+									const targetChat = failedStickerMsg?.chatId || message.group || message.author;
+									const rawReason = String(
+										sendError?.data?.error || sendError?.message || ""
+									).toLowerCase();
+									let aviso =
+										"❌ Não consegui enviar a figurinha para o WhatsApp agora. Tente novamente em instantes!";
+									if (rawReason.includes("audio") || rawReason.includes("opus")) {
+										aviso =
+											"❌ Não consegui finalizar a figurinha com som porque o áudio falhou no envio. Tente enviar outro áudio ou gravar novamente!";
+									}
+									if (bot && typeof bot.sendMessage === "function" && targetChat) {
+										await bot.sendMessage(targetChat, aviso);
+									}
+								} catch (notifyErr) {
+									this.logger.warn("Erro ao enviar aviso de falha de sticker:", notifyErr.message);
+								}
 							}
 						}
 					}

@@ -612,7 +612,138 @@ async function runTests() {
 		`✓ !slongohq ruído 60s: comprimido para ${(noisyWebpBuffer.length / 1024).toFixed(1)} KB <= 490 KB`
 	);
 
-	// 15. Teste: Verificar que nenhum arquivo temporário ficou para trás em temp/whatsapp-bot-stickers
+	// 15. Teste: Combinação de argumentos e transformações (!s hq qc, !s fh, !s fv, !s 90, !s -90)
+	console.log("\n15. Testando argumentos combináveis e transformações...");
+	const rectImgBuffer = await sharp({
+		create: {
+			width: 400,
+			height: 200,
+			channels: 4,
+			background: { r: 255, g: 0, b: 0, alpha: 1 }
+		}
+	})
+		.composite([
+			{
+				input: await sharp({
+					create: {
+						width: 200,
+						height: 200,
+						channels: 4,
+						background: { r: 0, g: 255, b: 0, alpha: 1 }
+					}
+				})
+					.png()
+					.toBuffer(),
+				left: 200,
+				top: 0
+			}
+		])
+		.png()
+		.toBuffer();
+
+	// 15a. !s hq qc em imagem -> 512x512 quadrado
+	const hqQcMsg = createMessage({
+		type: "image",
+		caption: "!s hq qc",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "image/png", data: rectImgBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, hqQcMsg, "s", ["hq", "qc"], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	const hqQcMeta = await sharp(
+		Buffer.from(bot.capturedMessages[0].content.data, "base64")
+	).metadata();
+	assert.strictEqual(hqQcMeta.width, 512);
+	assert.strictEqual(hqQcMeta.height, 512);
+	assert.strictEqual(bot.capturedMessages[0].options.stickerName, "Grupo Teste");
+
+	// 15b. !s fh (inverter horizontal: direita verde passa para a esquerda)
+	const fhMsg = createMessage({
+		type: "image",
+		caption: "!s fh",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "image/png", data: rectImgBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, fhMsg, "s", ["fh"], { name: "Grupo Teste" });
+	const fhBuf = Buffer.from(bot.capturedMessages[0].content.data, "base64");
+	const fhLeftPixel = await sharp(fhBuf)
+		.extract({ left: 10, top: 256, width: 1, height: 1 })
+		.raw()
+		.toBuffer();
+	assert.ok(fhLeftPixel[1] > 200 && fhLeftPixel[0] < 50, "Lado esquerdo deve ficar verde após fh");
+
+	// 15c. !s 90 (girar 90° horário: 400x200 vira 200x400, então com hq fica mais alto que largo)
+	const rot90Msg = createMessage({
+		type: "image",
+		caption: "!s hq 90",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "image/png", data: rectImgBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, rot90Msg, "s", ["hq", "90"], { name: "Grupo Teste" });
+	const rot90Meta = await sharp(
+		Buffer.from(bot.capturedMessages[0].content.data, "base64")
+	).metadata();
+	assert.strictEqual(rot90Meta.width, 256);
+	assert.strictEqual(rot90Meta.height, 512);
+
+	// 15d. !s -90 fv em vídeo
+	const videoRotMsg = createMessage({
+		type: "video",
+		caption: "!s -90 fv",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "video/mp4", data: videoBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, videoRotMsg, "s", ["-90", "fv"], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+	console.log("✓ Combinação de args (!s hq qc, !s fh, !s hq 90, !s -90 fv) validada");
+
+	// 16. Teste: Anexo document PNG transparente, vídeo e tipo não suportado
+	console.log("\n16. Testando !s em anexos document...");
+	const docPngMsg = createMessage({
+		type: "document",
+		caption: "!s",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "application/octet-stream",
+			filename: "arte.png",
+			data: rectImgBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, docPngMsg, "s", [], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+
+	const docPdfMsg = createMessage({
+		type: "document",
+		caption: "!s",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "application/pdf",
+			filename: "doc.pdf",
+			data: Buffer.from("%PDF-1.4").toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, docPdfMsg, "s", [], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert.ok(
+		String(bot.capturedMessages[0].content).includes("Esse tipo de arquivo não vira figurinha")
+	);
+	console.log("✓ Document PNG gerou sticker e Document PDF foi recusado com aviso");
+
+	// 17. Teste: Verificar que nenhum arquivo temporário ficou para trás em temp/whatsapp-bot-stickers
 	const afterTempFiles = await fs.readdir(stickersTempDir).catch(() => []);
 	const leftoverFiles = afterTempFiles.filter((file) => !beforeTempFiles.has(file));
 	assert.strictEqual(

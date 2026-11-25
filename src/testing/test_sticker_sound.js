@@ -142,7 +142,12 @@ async function runTests() {
 		assert.strictEqual(fused.options.stickerName, "SomTeste");
 		assert.strictEqual(fused.content.mimetype, "image/webp");
 		assert.ok(fused.options.stickerAudio, "options.stickerAudio deve estar preenchido");
-		assert.strictEqual(fused.options.stickerAudio.data, audioB64);
+		assert.strictEqual(fused.options.stickerAudio.mimetype, "audio/ogg; codecs=opus");
+		assert.strictEqual(
+			Buffer.from(fused.options.stickerAudio.data, "base64").slice(0, 4).toString("utf8"),
+			"OggS",
+			"Audio deve ser convertido para OGG Opus"
+		);
 
 		const fusedWebp = Buffer.from(fused.content.data, "base64");
 		const fusedMeta = await sharp(fusedWebp).metadata();
@@ -557,6 +562,78 @@ async function runTests() {
 		assert.strictEqual(bot.capturedMessages.length, 1);
 		assert.ok(String(bot.capturedMessages[0].content).includes("Lottie"));
 		console.log("✓ Sticker Lottie recusado com mensagem clara");
+
+		// 11. Documento de audio respondendo sticker com !s na legenda
+		console.log("\n11. Testando [figurinha] -> [document audio com !s na legenda]...");
+		const docAudioCaptionMsg = buildMockMsg({
+			type: "document",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "audio/wav",
+				filename: "efeito.wav",
+				data: audioB64
+			},
+			extra: { caption: "!s" },
+			quotedMessage: quotedStickerMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, docAudioCaptionMsg, "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+		assert.strictEqual(
+			bot.capturedMessages[0].options.stickerAudio?.mimetype,
+			"audio/ogg; codecs=opus"
+		);
+		console.log("✓ Document de áudio com !s na legenda respondendo sticker funcionou");
+
+		// 12. Audio corrompido deve retornar mensagem detalhada e amigável sem caminhos de arquivo
+		console.log("\n12. Testando erro amigável para áudio corrompido...");
+		const brokenAudioMsg = buildMockMsg({
+			type: "audio",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "audio/mp4",
+				filename: "quebrado.m4a",
+				data: Buffer.from("not-a-valid-audio-file").toString("base64")
+			},
+			quotedMessage: quotedStickerMsg
+		});
+		const brokenCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!s",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: brokenAudioMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, brokenCmdMsg, "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		const brokenReply = String(bot.capturedMessages[0].content);
+		assert.ok(brokenReply.includes("❌"), "Deve informar erro ao usuário");
+		assert.ok(
+			!brokenReply.includes("/app/") && !brokenReply.includes("temp-"),
+			"Não deve expor caminhos de arquivo"
+		);
+		console.log("✓ Erro amigável retornado sem expor caminhos internos:", brokenReply);
+
+		// 13. !sa hq longo q em vídeo com áudio
+		console.log("\n13. Testando !sa hq longo q (args combináveis)...");
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, videoCaptionMsg, "sa", ["hq", "longo", "q"], {
+			name: "Grupo Teste"
+		});
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		const comboSticker = bot.capturedMessages[0];
+		assert.strictEqual(comboSticker.options.sendMediaAsSticker, true);
+		assert.ok(comboSticker.options.stickerAudio?.data);
+		const comboMeta = await sharp(Buffer.from(comboSticker.content.data, "base64"), {
+			animated: true
+		}).metadata();
+		assert.strictEqual(comboMeta.width, 512);
+		assert.strictEqual(comboMeta.pageHeight || comboMeta.height, 512);
+		console.log("✓ !sa hq longo q gerou sticker quadrado 512x512 com áudio");
 
 		console.log("\n=== TODOS OS TESTES DE STICKER COM SOM PASSARAM! ===");
 	} finally {
