@@ -218,7 +218,14 @@ function updatePublicCommandsCache(api) {
 			}
 			for (const groupName in groups) {
 				if (groups[groupName].length > 0) {
-					groups[groupName].sort((a, b) => a.name.localeCompare(b.name));
+					groups[groupName].sort((a, b) => {
+						const indexA = COMMAND_ORDER.indexOf(a.name);
+						const indexB = COMMAND_ORDER.indexOf(b.name);
+						if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+						if (indexA !== -1) return -1;
+						if (indexB !== -1) return 1;
+						return a.name.localeCompare(b.name);
+					});
 					groupedCommands.push(groups[groupName]);
 				}
 			}

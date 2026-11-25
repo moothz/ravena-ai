@@ -743,7 +743,87 @@ async function runTests() {
 	);
 	console.log("✓ Document PNG gerou sticker e Document PDF foi recusado com aviso");
 
-	// 17. Teste: Verificar que nenhum arquivo temporário ficou para trás em temp/whatsapp-bot-stickers
+	// 17. Teste: Exibição da categoria Stickers no !cmd e /cmd (BotAPI) e recusa de vídeo no !sbg
+	console.log("\n17. Testando categoria Stickers em !cmd, /cmd e !sbg...");
+	const Menu = require("../functions/Menu");
+	const analyticsHelper = require("../BotAPI/services/analyticsHelper");
+	const ImageManipulation = require("../functions/ImageManipulation");
+	await cmdHandler.fixedCommands.loadCommands();
+	bot.eventHandler = eventHandler;
+
+	const cmdMenu = Menu.commands.find((c) => c.name === "cmd");
+	const stickersCmdMsg = createMessage({
+		content: "!cmd stickers",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net"
+	});
+	const cmdStickersRes = await cmdMenu.method(bot, stickersCmdMsg, ["stickers"], {
+		id: "120363000000000099@g.us",
+		name: "Grupo Teste",
+		prefix: "!"
+	});
+	const stickersMenuText = cmdStickersRes.content;
+	assert.ok(
+		stickersMenuText.includes("• *!s, !fig, !figurinha, !sticker*"),
+		`!s deve ser o primeiro no grupo principal. Obtido:\n${stickersMenuText}`
+	);
+	assert.ok(
+		stickersMenuText.includes("• *!sbg, !stickerbg*") &&
+			stickersMenuText.includes("apenas para imagens"),
+		"!sbg deve indicar apenas para imagens e aceitar opções do !s"
+	);
+	for (const expectedLine of [
+		"• *!sa, !saudio*",
+		"• *!sq, !stickerq*",
+		"• *!sqc, !stickerqc*",
+		"• *!sqb, !stickerqb*",
+		"• *!sqe, !stickerqe*",
+		"• *!sqi, !stickerqi*",
+		"• *!shq, !stickerhq*",
+		"• *!slongo, !stickerlongo*",
+		"• *!slongohq, !stickerlongohq*"
+	]) {
+		assert.ok(
+			stickersMenuText.includes(expectedLine),
+			`Deve exibir linha separada: ${expectedLine}`
+		);
+	}
+
+	const publicCmds = analyticsHelper.updatePublicCommandsCache({
+		bots: [bot],
+		logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
+	});
+	const publicStickers = publicCmds.categories.find((c) => c.name.toLowerCase() === "stickers");
+	assert.ok(publicStickers, "Categoria stickers deve existir no /cmd");
+	const publicSCmd = publicStickers.commands.find((c) => c.name === "s");
+	assert.ok(publicSCmd, "Comando principal no /cmd deve ser 's'");
+	assert.deepStrictEqual(publicSCmd.aliases, ["fig", "figurinha", "sticker"]);
+	for (const flag of ["hq", "longo", "q", "qc", "qb", "qe", "qi", "fh", "fv", "90", "-90"]) {
+		assert.ok(
+			publicSCmd.usage.some((u) => u.includes(flag)),
+			`Exemplos de !s no /cmd devem incluir '${flag}'`
+		);
+	}
+	for (const sep of ["sbg", "sa", "sq", "sqc", "sqb", "sqe", "sqi", "shq", "slongo", "slongohq"]) {
+		assert.ok(
+			publicStickers.commands.some((c) => c.name === sep),
+			`Comando !${sep} deve estar separado no /cmd`
+		);
+	}
+
+	const sbgCmd = ImageManipulation.commands.find((c) => c.name === "sbg");
+	const sbgVideoMsg = createMessage({
+		type: "video",
+		caption: "!sbg",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "video/mp4", data: videoBuffer.toString("base64") }
+	});
+	const sbgVideoRes = await sbgCmd.method(bot, sbgVideoMsg, [], { name: "Grupo Teste" });
+	assert.ok(String(sbgVideoRes.content).includes("apenas com imagens"));
+	console.log("✓ !cmd stickers, /cmd e validação de imagem do !sbg passaram");
+
+	// 18. Teste: Verificar que nenhum arquivo temporário ficou para trás em temp/whatsapp-bot-stickers
 	const afterTempFiles = await fs.readdir(stickersTempDir).catch(() => []);
 	const leftoverFiles = afterTempFiles.filter((file) => !beforeTempFiles.has(file));
 	assert.strictEqual(

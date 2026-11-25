@@ -2280,10 +2280,13 @@ async function processAutoSticker(bot, message, group) {
 }
 
 // Criar array de comandos usando a classe Command
+const STICKER_OPTIONS_DESC =
+	"Cria uma figurinha (imagem, vídeo, GIF ou documento)! Opções: hq (alta resolução/FPS), longo (até 60s), q (centro), qc (topo), qb (base), qe (esticado), qi (IA), fh/inv (espelhar horizontal), fv (espelhar vertical), 90 (girar 90° horário), -90/270 (anti-horário). Também cria/extrai figurinhas com som.";
+
 const commands = [
 	new Command({
 		name: "sticker",
-		description: "Converte mídia em sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
@@ -2302,7 +2305,7 @@ const commands = [
 	}),
 	new Command({
 		name: "figurinha",
-		description: "Converte mídia em sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
@@ -2322,7 +2325,7 @@ const commands = [
 
 	new Command({
 		name: "s",
-		description: "Alias curto para comando sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true,
@@ -2341,7 +2344,7 @@ const commands = [
 	}),
 	new Command({
 		name: "fig",
-		description: "Alias curto para comando sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true,
@@ -2360,9 +2363,10 @@ const commands = [
 	}),
 	new Command({
 		name: "sqi",
-		description: "Sticker quadrado com corte inteligente via IA",
+		description:
+			"Cria figurinha quadrada com corte inteligente via IA (atalho para !s qi; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqi",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2377,9 +2381,10 @@ const commands = [
 	}),
 	new Command({
 		name: "stickerqi",
-		description: "Sticker quadrado com corte inteligente via IA",
+		description:
+			"Cria figurinha quadrada com corte inteligente via IA (atalho para !s qi; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqi",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2395,9 +2400,9 @@ const commands = [
 	new Command({
 		name: "sq",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortada no centro (atalho para !s q; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2413,9 +2418,9 @@ const commands = [
 	new Command({
 		name: "stickerq",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortada no centro (atalho para !s q; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2431,9 +2436,9 @@ const commands = [
 	new Command({
 		name: "sqc",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando no topo (atalho para !s qc; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqc",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2449,9 +2454,9 @@ const commands = [
 	new Command({
 		name: "stickerqc",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando no topo (atalho para !s qc; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqc",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2468,9 +2473,9 @@ const commands = [
 	new Command({
 		name: "sqb",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando na base (atalho para !s qb; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqb",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2486,9 +2491,9 @@ const commands = [
 	new Command({
 		name: "stickerqb",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando na base (atalho para !s qb; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqb",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2504,9 +2509,10 @@ const commands = [
 	// Comando para sticker esticado (sqe)
 	new Command({
 		name: "sqe",
-		description: "Sticker quadrado esticado, sem cortar a imagem",
+		description:
+			"Cria figurinha quadrada esticada sem cortar as bordas (atalho para !s qe; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqe",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2521,9 +2527,10 @@ const commands = [
 	}),
 	new Command({
 		name: "stickerqe",
-		description: "Sticker quadrado esticado, sem cortar a imagem",
+		description:
+			"Cria figurinha quadrada esticada sem cortar as bordas (atalho para !s qe; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqe",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2538,9 +2545,10 @@ const commands = [
 	}),
 	new Command({
 		name: "shq",
-		description: "Cria figurinha em alta taxa de quadros (HQ: 22-25 FPS)",
+		description:
+			"Cria figurinha em alta taxa de quadros e resolução (atalho para !s hq; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_shq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2556,9 +2564,10 @@ const commands = [
 	}),
 	new Command({
 		name: "stickerhq",
-		description: "Cria figurinha em alta taxa de quadros (HQ: 22-25 FPS)",
+		description:
+			"Cria figurinha em alta taxa de quadros e resolução (atalho para !s hq; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_shq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2575,9 +2584,9 @@ const commands = [
 	new Command({
 		name: "slongo",
 		description:
-			"Gera figurinha de vídeo longa (até 60s), economizando FPS e resolução para caber no limite do WhatsApp",
+			"Cria figurinha de vídeo longa até 60s (atalho para !s longo; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_slongo",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2594,9 +2603,9 @@ const commands = [
 	new Command({
 		name: "stickerlongo",
 		description:
-			"Alias para !slongo: gera figurinha de vídeo longa (até 60s) dentro do limite do WhatsApp",
+			"Cria figurinha de vídeo longa até 60s (atalho para !s longo; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_slongo",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2613,9 +2622,9 @@ const commands = [
 	new Command({
 		name: "slongohq",
 		description:
-			"Gera figurinha de vídeo longa (até 60s) em alta qualidade e proporção original como no !shq",
+			"Cria figurinha de vídeo longa até 60s em alta qualidade (atalho para !s hq longo; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_slongohq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2632,9 +2641,9 @@ const commands = [
 	new Command({
 		name: "stickerlongohq",
 		description:
-			"Alias para !slongohq: gera figurinha de vídeo longa (até 60s) em alta qualidade como no !shq",
+			"Cria figurinha de vídeo longa até 60s em alta qualidade (atalho para !s hq longo; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_slongohq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2651,9 +2660,9 @@ const commands = [
 	new Command({
 		name: "sa",
 		description:
-			"Cria figurinha com som a partir de um vídeo (na legenda ou respondendo a um vídeo)",
+			"Transforma vídeo (ou áudio respondendo a figurinha) em figurinha com som (também aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "sstickersound",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2670,9 +2679,9 @@ const commands = [
 	new Command({
 		name: "saudio",
 		description:
-			"Alias para !sa: cria figurinha com som a partir de um vídeo (na legenda ou respondendo a um vídeo)",
+			"Transforma vídeo (ou áudio respondendo a figurinha) em figurinha com som (também aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "sstickersound",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -2697,67 +2706,83 @@ const helper = {
 	cmds: [
 		{
 			cmd: "!sticker",
-			desc: "Converte imagem, vídeo, GIF ou documento em figurinha; aceita flags combináveis (hq, longo, q, qc, qb, qe, qi, fh, fv, 90, -90) e áudio respondendo a figurinha",
+			desc: "Cria uma figurinha (imagem, vídeo, GIF ou documento)! Opções: hq (alta resolução/FPS), longo (até 60s), q (centro), qc (topo), qb (base), qe (esticado), qi (IA), fh/inv (espelhar horizontal), fv (espelhar vertical), 90 (girar 90° horário), -90/270 (anti-horário). Também cria/extrai figurinhas com som.",
 			usage: [
-				"!s (com mídia/documento ou em resposta)",
-				"!s hq qc",
-				"!s fh 90",
-				"[figurinha] -> [áudio/arquivo] -> !s"
+				"!s (com imagem, vídeo, GIF, documento ou em resposta)",
+				"!s hq (alta resolução/FPS sem bordas transparentes)",
+				"!s longo (preserva duração de vídeos longos até 60s)",
+				"!s q / c / centro (corte quadrado no centro)",
+				"!s qc / cima (corte quadrado no topo)",
+				"!s qb / baixo (corte quadrado na base)",
+				"!s qe / esticar (esticado para quadrado sem cortar)",
+				"!s qi / ia (corte quadrado inteligente por IA)",
+				"!s fh / inv / espelhar (inverte horizontalmente)",
+				"!s fv (inverte verticalmente)",
+				"!s 90 / horario (gira 90° no sentido horário)",
+				"!s -90 / 270 / antihorario (gira 90° no sentido anti-horário)",
+				"!s hq qc fh (combine livremente e adicione um nome no fim)",
+				"[figurinha] -> [áudio ou documento de áudio] -> !s (cria sticker com som)",
+				"!s (respondendo a uma figurinha extrai a mídia e o áudio original)"
 			],
 			category: "stickers"
 		},
 		{
 			cmd: "!sa",
-			desc: "Cria figurinha com som a partir de um vídeo ou áudio+figurinha, aceitando flags combináveis (ex: !sa hq longo q)",
-			usage: ["!sa (com vídeo ou em resposta)", "!sa hq longo q", "!saudio"],
+			desc: "Transforma vídeo (ou áudio respondendo a figurinha) em figurinha com som (também aceita opções do !s)",
+			usage: [
+				"!sa (na legenda do vídeo ou em resposta a um vídeo)",
+				"!sa hq longo q (alta qualidade, até 60s e corte central)",
+				"!sa qc fh 90 (combina corte, espelhamento e rotação)",
+				"!saudio"
+			],
 			category: "stickers"
 		},
 		{
 			cmd: "!shq",
-			desc: "Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais",
-			usage: ["!shq (com imagem/vídeo ou em resposta)", "!stickerhq"],
+			desc: "Cria figurinha em alta taxa de quadros e resolução (atalho para !s hq; aceita opções do !s)",
+			usage: ["!shq (com imagem/vídeo ou em resposta)", "!shq qc", "!stickerhq"],
 			category: "stickers"
 		},
 		{
 			cmd: "!slongo",
-			desc: "Cria figurinha de vídeo longa (até 60s), reduzindo FPS e resolução se necessário para respeitar o limite do WhatsApp",
-			usage: ["!slongo (com vídeo/GIF ou em resposta)", "!stickerlongo"],
+			desc: "Cria figurinha de vídeo longa até 60s (atalho para !s longo; aceita opções do !s)",
+			usage: ["!slongo (com vídeo/GIF ou em resposta)", "!slongo q", "!stickerlongo"],
 			category: "stickers"
 		},
 		{
 			cmd: "!slongohq",
-			desc: "Cria figurinha de vídeo longa (até 60s) com alta qualidade e proporções originais como no !shq",
-			usage: ["!slongohq (com vídeo/GIF ou em resposta)", "!stickerlongohq"],
+			desc: "Cria figurinha de vídeo longa até 60s em alta qualidade (atalho para !s hq longo; aceita opções do !s)",
+			usage: ["!slongohq (com vídeo/GIF ou em resposta)", "!slongohq qc", "!stickerlongohq"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqi",
-			desc: "Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA",
-			usage: ["!sqi (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada com enquadramento inteligente via IA (atalho para !s qi; aceita opções do !s)",
+			usage: ["!sqi (com imagem ou em resposta)", "!sqi hq fh", "!stickerqi"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sq",
-			desc: "Cria figurinha quadrada cortada no centro",
-			usage: ["!sq (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada cortada no centro (atalho para !s q; aceita opções do !s)",
+			usage: ["!sq (com imagem/vídeo ou em resposta)", "!sq hq", "!stickerq"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqc",
-			desc: "Cria figurinha quadrada cortando no topo",
-			usage: ["!sqc (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada cortando no topo (atalho para !s qc; aceita opções do !s)",
+			usage: ["!sqc (com imagem/vídeo ou em resposta)", "!sqc hq", "!stickerqc"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqb",
-			desc: "Cria figurinha quadrada cortando na base",
-			usage: ["!sqb (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada cortando na base (atalho para !s qb; aceita opções do !s)",
+			usage: ["!sqb (com imagem/vídeo ou em resposta)", "!sqb hq", "!stickerqb"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqe",
-			desc: "Cria figurinha quadrada esticada sem cortar as bordas",
-			usage: ["!sqe (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada esticada sem cortar as bordas (atalho para !s qe; aceita opções do !s)",
+			usage: ["!sqe (com imagem/vídeo ou em resposta)", "!sqe 90", "!stickerqe"],
 			category: "stickers"
 		}
 	]
@@ -2766,5 +2791,8 @@ const helper = {
 module.exports = {
 	helper,
 	commands,
-	processAutoSticker
+	processAutoSticker,
+	parseStickerArgs,
+	processMediaToSquare,
+	getLLMCropPercentage
 };

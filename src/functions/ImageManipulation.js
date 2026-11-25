@@ -12,6 +12,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const CmdUsage = require("../utils/CmdUsage");
 const ServiceProviderService = require("../services/ServiceProviderService");
+const Stickers = require("./Stickers");
 
 const execPromise = util.promisify(exec);
 const logger = new Logger("image-commands");
@@ -598,6 +599,23 @@ async function handleStickerBg(bot, message, args, group) {
 			});
 		}
 
+		const mediaMime = String(media.mimetype || "").toLowerCase();
+		if (
+			mediaMime.startsWith("video/") ||
+			mediaMime === "image/gif" ||
+			mediaMime.startsWith("audio/")
+		) {
+			try {
+				await message.origin.react("❌");
+			} catch {}
+			return new ReturnMessage({
+				chatId,
+				content:
+					"❌ O comando !sbg funciona apenas com imagens estáticas por enquanto. Para vídeos ou GIFs, use !s."
+			});
+		}
+
+		const stickerOptions = Stickers.parseStickerArgs(args);
 		const inputPath = await saveMediaToTemp(media);
 		logger.debug(`Imagem de entrada salva em ${inputPath}`);
 
@@ -613,20 +631,26 @@ async function handleStickerBg(bot, message, args, group) {
 		logger.debug(`Imagem recortada, salva em ${trimmedPath}`);
 		filePaths.push(trimmedPath);
 
-		// Padroniza para dimensões de sticker do WhatsApp (512x512, fundo transparente, WebP)
+		const trimmedBuffer = await fs.readFile(trimmedPath);
+		let finalStickerOptions = stickerOptions;
+		if (stickerOptions.cropMode === "llm") {
+			const percentage = await Stickers.getLLMCropPercentage(trimmedBuffer, "image/png");
+			finalStickerOptions = { ...stickerOptions, cropMode: String(percentage) };
+		}
+
+		// Padroniza para dimensões de sticker do WhatsApp aplicando também opções do !s (hq, q, qc, qb, qe, qi, fh, fv, 90, -90)
+		const processedBuffer = await Stickers.processMediaToSquare(
+			trimmedBuffer,
+			"image/png",
+			finalStickerOptions
+		);
 		const stickerPath = inputPath.replace(/\.[^/.]+$/, "") + "_sticker.webp";
-		await sharp(trimmedPath)
-			.resize(512, 512, {
-				fit: "contain",
-				background: { r: 0, g: 0, b: 0, alpha: 0 }
-			})
-			.webp({ quality: 80, effort: 6 })
-			.toFile(stickerPath);
+		await fs.writeFile(stickerPath, processedBuffer);
 		filePaths.push(stickerPath);
 
 		const resultMedia = await bot.createMedia(stickerPath);
 
-		// Limpa arquivos temporários
+		// Limpa arquivos após obter a mídia processada
 		cleanupTempFiles(filePaths).catch((error) => {
 			logger.error("Erro ao limpar arquivos temporários:", error);
 		});
@@ -639,18 +663,19 @@ async function handleStickerBg(bot, message, args, group) {
 			groupId: chatId,
 			args: args.join(" "),
 			info: {
-				cropType: "nobg",
+				cropType: `nobg:${finalStickerOptions.cropMode}`,
 				mimeType: "image/webp"
 			}
 		});
 
+		const nameArgs = stickerOptions.remainingArgs || [];
 		return new ReturnMessage({
 			chatId,
 			content: resultMedia,
 			options: {
 				sendMediaAsSticker: true,
 				stickerAuthor: bot?.nomeExibir || "ravena",
-				stickerName: args.join(" ") || `${bot?.nomeExibir || "ravena"} sticker`,
+				stickerName: nameArgs.join(" ") || `${bot?.nomeExibir || "ravena"} sticker`,
 				quotedMessageId: message.origin.id._serialized,
 				goReply: message.origin
 			}
@@ -804,10 +829,9 @@ const commands = [
 		name: "stickerbg",
 		cooldown: 5,
 		cooldownPV: 0,
-		description: "Cria um sticker após remover o fundo",
+		description: "Cria figurinha sem fundo (apenas para imagens; também aceita as opções do !s)",
 		category: "stickers",
 		group: "stickerbg",
-		aliases: ["sbg"],
 		needsMedia: true,
 		reactions: {
 			before: process.env.LOADING_EMOJI ?? "⌛️",
@@ -820,7 +844,7 @@ const commands = [
 		name: "sbg",
 		cooldown: 5,
 		cooldownPV: 0,
-		description: "Envia sticker sem fundo",
+		description: "Cria figurinha sem fundo (apenas para imagens; também aceita as opções do !s)",
 		category: "stickers",
 		group: "stickerbg",
 		needsMedia: true,
@@ -893,8 +917,19 @@ const helper = {
 	tags: "imagem,efeitos,filtros,removebg,neon,pixelate,oil,sketch,distorcer,fotos",
 	cmds: [
 		{
+			cmd: "!sbg",
+			desc: "Cria figurinha sem fundo (apenas para imagens; também aceita as opções do !s)",
+			usage: [
+				"!sbg (com imagem, em resposta ou marcando @alguém)",
+				"!sbg hq qc (remove o fundo, alta qualidade e corta no topo)",
+				"!sbg fh 90 (remove o fundo, espelha horizontalmente e gira 90°)",
+				"!stickerbg"
+			],
+			category: "stickers"
+		},
+		{
 			cmd: "!removebg",
-			desc: "Remove o fundo de uma imagem usando inteligência artificial",
+			desc: "Remove o fundo de uma imagem usando inteligência artificial (apenas imagens)",
 			usage: ["!removebg (em resposta a uma foto)"],
 			category: "midia"
 		},
