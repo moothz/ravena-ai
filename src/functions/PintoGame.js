@@ -48,6 +48,7 @@ const MAX_FLACCID = 12.0;
 const MIN_ERECT = 5.0;
 const BASE_MAX_ERECT = 25.0;
 const MAX_ERECT = 35.0;
+const TOP_TIER_CHANCE = 0.05; // 5% de chance fixa de entrar no sorteio raro de 25.1cm a 35.0cm
 const MIN_GIRTH = 8.0;
 const MAX_GIRTH = 18.0;
 const MAX_SCORE = 1000;
@@ -97,14 +98,16 @@ function calculateScore(flaccid, erect, girth, curvature) {
  * @returns {number} - Comprimento ereto final
  */
 function generateErect(flaccid, donorMultiplier = 1) {
-	// Random separado para a faixa dos últimos 10cm (25.0 a 35.0 cm), igual para todos os jogadores
-	const entersTopTier = Math.random() < (MAX_ERECT - BASE_MAX_ERECT) / (MAX_ERECT - MIN_ERECT);
+	// Random separado para a faixa rara (25.1 a 35.0 cm), chance fixa igual para todos sem bônus
+	const entersTopTier = Math.random() < TOP_TIER_CHANCE;
 	if (entersTopTier) {
-		// Valores de 25.1cm a 35.0cm são neutros e não sofrem efeito de nenhum multiplicador
-		return generateRandomValue(BASE_MAX_ERECT + 0.1, MAX_ERECT);
+		// Curva quadrática torna valores próximos de 35cm progressivamente mais raros
+		const topValue =
+			BASE_MAX_ERECT + 0.1 + (MAX_ERECT - (BASE_MAX_ERECT + 0.1)) * Math.random() ** 2;
+		return Math.round(topValue * 10) / 10;
 	}
 
-	// Faixa base até 25cm
+	// Faixa base até 25cm (usa o flácido original antes do bônus para não contar o multiplicador duas vezes)
 	let erect = generateRandomValue(Math.max(flaccid, MIN_ERECT), BASE_MAX_ERECT);
 	if (donorMultiplier > 1) {
 		erect = Math.min(BASE_MAX_ERECT, Math.round(erect * donorMultiplier * 10) / 10);
@@ -401,7 +404,8 @@ async function pintoCommand(bot, message, args, group) {
 		}
 
 		// Gera os valores aleatórios base
-		let flaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
+		const baseFlaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
+		let flaccid = baseFlaccid;
 		let girth = generateRandomValue(MIN_GIRTH, MAX_GIRTH);
 		const curvature = generateRandomValue(-30, 30);
 
@@ -416,8 +420,8 @@ async function pintoCommand(bot, message, args, group) {
 			donorBonusText = `\n💎 *Benefício de Apoiador:* +${Math.round(donorTotal)}% de bônus estético aplicado!`;
 		}
 
-		// Gera o comprimento ereto considerando a faixa base (5 a 25cm) e o sorteio separado dos últimos 10cm (25 a 35cm)
-		const erect = generateErect(flaccid, donorMultiplier);
+		// Gera o comprimento ereto usando o flácido original (antes do bônus) para o multiplicador contar apenas 1x
+		const erect = generateErect(baseFlaccid, donorMultiplier);
 
 		// Calcula o score com os valores finais
 		const score = calculateScore(flaccid, erect, girth, curvature);
@@ -836,5 +840,6 @@ module.exports = {
 	MIN_ERECT,
 	BASE_MAX_ERECT,
 	MAX_ERECT,
+	TOP_TIER_CHANCE,
 	MAX_SCORE
 };
