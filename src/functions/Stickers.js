@@ -918,7 +918,7 @@ const TEXT_STICKER = {
 };
 
 /**
- * Formata um JID/ID de telefone para exibição amigável (+55 (DD) NNNNN-NNNN quando BR).
+ * Formata um JID/ID de telefone para exibição amigável mascarando os últimos 4 dígitos (+55 (DD) NNNNN-####).
  * @param {string} jid
  * @returns {string}
  */
@@ -929,16 +929,17 @@ function formatPhoneFromJid(jid) {
 		return "";
 	}
 	if (raw.startsWith("55") && raw.length === 13) {
-		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 9)}-${raw.slice(9)}`;
+		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 9)}-####`;
 	}
 	if (raw.startsWith("55") && raw.length === 12) {
-		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 8)}-${raw.slice(8)}`;
+		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 8)}-####`;
 	}
-	return `+${raw}`;
+	return `+${raw.slice(0, -4)}####`;
 }
 
 /**
- * Resolve apelido na ravena, nome do contato e número formatado de uma mensagem citada.
+ * Resolve apelido na ravena, nome do contato e número mascarado de uma mensagem citada.
+ * Quando há nome ou apelido, o número não é exibido.
  * @param {Object} quotedMsg
  * @param {Object|null} group
  * @returns {{displayName: string, formattedPhone: string}}
@@ -948,8 +949,7 @@ function resolveQuotedSenderInfo(quotedMsg, group = null) {
 		(v) => typeof v === "string" && v.trim()
 	);
 	const primaryId = candidates[0] || "";
-	const formattedPhone =
-		candidates.map((id) => formatPhoneFromJid(id)).find((p) => Boolean(p)) || "";
+	const maskedPhone = candidates.map((id) => formatPhoneFromJid(id)).find((p) => Boolean(p)) || "";
 
 	// 1. Apelido configurado no grupo (group.nicks)
 	let groupNick = "";
@@ -989,10 +989,16 @@ function resolveQuotedSenderInfo(quotedMsg, group = null) {
 				return true;
 			}) || "";
 
-	// 3. Fallback para número formatado
-	const displayName = groupNick || msgName || formattedPhone || "+55 (55) 9999-9999";
-	const showPhone = formattedPhone && formattedPhone !== displayName ? formattedPhone : "";
-	return { displayName, formattedPhone: showPhone };
+	// 3. Se houver nome/apelido, não exibir o número; fallback para número mascarado
+	const resolvedName = groupNick || msgName;
+	if (resolvedName) {
+		return { displayName: resolvedName, formattedPhone: "" };
+	}
+
+	return {
+		displayName: maskedPhone || "+55 (55) 9999-####",
+		formattedPhone: ""
+	};
 }
 
 /**

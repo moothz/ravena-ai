@@ -16,7 +16,7 @@ async function main() {
 		nicks: [{ numero: "5511999990001@s.whatsapp.net", apelido: "Cabrito Mestre" }]
 	};
 
-	// Caso 1: apelido na ravena tem prioridade sobre pushname
+	// Caso 1: apelido na ravena tem prioridade sobre pushname e oculta o número
 	const fromNick = Stickers.resolveQuotedSenderInfo(
 		{
 			author: "5511999990001@s.whatsapp.net",
@@ -26,9 +26,9 @@ async function main() {
 		groupWithNick
 	);
 	assert.strictEqual(fromNick.displayName, "Cabrito Mestre");
-	assert.strictEqual(fromNick.formattedPhone, "+55 (11) 99999-0001");
+	assert.strictEqual(fromNick.formattedPhone, "");
 
-	// Caso 2: sem apelido, usa nome da mensagem
+	// Caso 2: sem apelido, usa nome da mensagem e oculta o número
 	const fromName = Stickers.resolveQuotedSenderInfo(
 		{
 			author: "5511999990002@s.whatsapp.net",
@@ -37,9 +37,9 @@ async function main() {
 		groupWithNick
 	);
 	assert.strictEqual(fromName.displayName, "Fulano Teste");
-	assert.strictEqual(fromName.formattedPhone, "+55 (11) 99999-0002");
+	assert.strictEqual(fromName.formattedPhone, "");
 
-	// Caso 3: fallback de cache ("Usuario") cai no número formatado
+	// Caso 3: fallback de cache ("Usuario") cai no número mascarado (12 dígitos)
 	const fromFallback = Stickers.resolveQuotedSenderInfo(
 		{
 			author: "555599999999@s.whatsapp.net",
@@ -48,8 +48,18 @@ async function main() {
 		},
 		groupWithNick
 	);
-	assert.strictEqual(fromFallback.displayName, "+55 (55) 9999-9999");
+	assert.strictEqual(fromFallback.displayName, "+55 (55) 9999-####");
 	assert.strictEqual(fromFallback.formattedPhone, "");
+
+	// Caso 4: fallback para número BR de 13 dígitos mascarado
+	const fromFallback13 = Stickers.resolveQuotedSenderInfo(
+		{
+			author: "5511987654321@s.whatsapp.net"
+		},
+		groupWithNick
+	);
+	assert.strictEqual(fromFallback13.displayName, "+55 (11) 98765-####");
+	assert.strictEqual(fromFallback13.formattedPhone, "");
 
 	console.log("2. Testando renderTextBubblePng (curto, médio e longo)...");
 	for (const [label, text] of [
