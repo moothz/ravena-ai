@@ -231,11 +231,62 @@ async function runTests() {
 			"Deve enviar exatamente 2 mensagens: visual (PNG) + audio"
 		);
 		assert.strictEqual(bot.capturedMessages[0].content.mimetype, "image/png");
-		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsDocument, true);
+		assert.ok(
+			!bot.capturedMessages[0].options.sendMediaAsDocument,
+			"Foto deve ser enviada como imagem, não como documento"
+		);
 		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
 		assert.strictEqual(bot.capturedMessages[1].options.sendMediaAsSticker, false);
 		assert.strictEqual(bot.capturedMessages[1].content.data, audioB64);
-		console.log("✓ !s em sticker com som enviou as 2 midias originais (PNG + audio)");
+		console.log("✓ !s em sticker estático com som enviou a foto + audio separado (PNG + audio)");
+
+		// 3b. Sticker estático opaco (sem alpha) com som -> foto PNG + audio separado
+		console.log("\n3b. Testando !s em sticker estático opaco com som...");
+		const opaqueStaticWebp = await sharp({
+			create: {
+				width: 64,
+				height: 64,
+				channels: 3,
+				background: { r: 200, g: 40, b: 40 }
+			}
+		})
+			.webp({ lossless: false })
+			.toBuffer();
+		const opaqueSoundStickerMsg = buildMockMsg({
+			type: "sticker",
+			author: "5511999990001@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "image/webp",
+				data: opaqueStaticWebp.toString("base64"),
+				audioMessage: {
+					mimetype: "audio/ogg; codecs=opus",
+					directPath: "/v/t62.7117-24/opaque"
+				}
+			}
+		});
+		opaqueSoundStickerMsg.downloadStickerAudio = async () => ({
+			mimetype: "audio/ogg; codecs=opus",
+			data: audioB64,
+			filename: "opaque-sticker-audio.ogg",
+			isMessageMedia: true
+		});
+		const opaqueExtractCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!s",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: opaqueSoundStickerMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, opaqueExtractCmdMsg, "s", [], {
+			name: "Grupo Teste"
+		});
+		assert.strictEqual(bot.capturedMessages.length, 2, "Deve enviar foto + audio");
+		assert.strictEqual(bot.capturedMessages[0].content.mimetype, "image/png");
+		assert.ok(!bot.capturedMessages[0].options.sendMediaAsDocument);
+		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
+		console.log("✓ !s em sticker estático opaco com som enviou foto + audio separado");
 
 		// 4. Fluxo reverso em sticker animado com som: envia MP4 + audio
 		console.log("\n4. Testando !s em sticker animado com som (retorna MP4 + audio)...");
@@ -295,8 +346,19 @@ async function runTests() {
 
 		assert.strictEqual(bot.capturedMessages.length, 2, "Deve enviar MP4 + audio");
 		assert.strictEqual(bot.capturedMessages[0].content.mimetype, "video/mp4");
+		// O MP4 deve ter o som embutido (áudio também continua separado)
+		const mergedMp4Path = path.join(tempDir, "merged_anim.mp4");
+		await fs.writeFile(mergedMp4Path, Buffer.from(bot.capturedMessages[0].content.data, "base64"));
+		const mergedMeta = await new Promise((resolve, reject) =>
+			ffmpeg.ffprobe(mergedMp4Path, (err, m) => (err ? reject(err) : resolve(m)))
+		);
+		const mergedStreams = Array.isArray(mergedMeta?.streams) ? mergedMeta.streams : [];
+		const hasVideo = mergedStreams.some((st) => st.codec_type === "video");
+		const hasAudio = mergedStreams.some((st) => st.codec_type === "audio");
+		assert.ok(hasVideo, "MP4 com som deve ter faixa de vídeo");
+		assert.ok(hasAudio, "MP4 com som deve ter faixa de áudio embutida");
 		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
-		console.log("✓ !s em sticker animado com som enviou MP4 + audio");
+		console.log("✓ !s em sticker animado com som enviou MP4 com som + audio separado");
 
 		// 5. WhatsAppBotGo: unwrap audioStickerMessage, downloadStickerAudio e POST /send/sticker/audio
 		console.log(

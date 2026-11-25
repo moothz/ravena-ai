@@ -1,3 +1,4 @@
+const os = require("os");
 const path = require("path");
 const Logger = require("../utils/Logger");
 const fs = require("fs").promises;
@@ -1416,22 +1417,95 @@ async function createAudioStickerFromAudioAndSticker({
 }
 
 /**
- * Se a figurinha extraída possuir áudio embutido, anexa também o áudio original na resposta.
+ * Extrai o áudio do sticker citado: áudio embutido ("sticker com som") ou áudio citado
+ * no contexto (ex.: sticker respondendo a um áudio).
+ * @param {Object} quotedMsg - Mensagem do sticker citada
+ * @returns {Promise<Object|null>} - media pronto ou null
  */
-async function appendAudioStickerExtraction({ chatId, message, quotedMsg, visualReturnMessage }) {
+async function getStickerAudioMedia(quotedMsg) {
+	if (!quotedMsg) return null;
+
+	// 1. Áudio embutido (sticker com som)
 	const hasEmbeddedAudio = Boolean(
 		quotedMsg?.content?.audioMessage ||
 		quotedMsg?.content?._mediaDetails?.Audio?.AudioMessage ||
 		quotedMsg?.content?._mediaDetails?.audioMessage
 	);
-	if (!hasEmbeddedAudio || typeof quotedMsg.downloadStickerAudio !== "function") {
-		return visualReturnMessage;
+	if (hasEmbeddedAudio && typeof quotedMsg.downloadStickerAudio === "function") {
+		const media = await quotedMsg.downloadStickerAudio().catch((err) => {
+			logger.warn(`[getStickerAudioMedia] Falha ao baixar áudio do sticker: ${err.message}`);
+			return null;
+		});
+		if (media && (media.data || media.url)) return media;
+		// Se o download embutido falhar, retorna null
 	}
 
-	const audioMedia = await quotedMsg.downloadStickerAudio().catch((err) => {
-		logger.warn(`[appendAudioStickerExtraction] Falha ao baixar áudio do sticker: ${err.message}`);
-		return null;
-	});
+	return null;
+}
+
+/**
+ * Une o vídeo de um sticker animado (MP4) com o áudio original usando ffmpeg.
+ * @param {Buffer} mp4Buffer - Buffer do MP4 do sticker animado
+ * @param {Object} audioMedia - Media do áudio original (data base64)
+ * @returns {Promise<Buffer>} - MP4 com áudio embutido (ou o MP4 original se não for possível)
+ */
+async function muxStickerVideoWithAudio(mp4Buffer, audioMedia) {
+	if (!audioMedia?.data) return mp4Buffer;
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sticker-mux-"));
+	try {
+		const videoPath = path.join(tempDir, "video.mp4");
+		const audioPath = path.join(tempDir, "audio.ogg");
+		const outPath = path.join(tempDir, "out.mp4");
+		await fs.writeFile(videoPath, mp4Buffer);
+		await fs.writeFile(
+			audioPath,
+			Buffer.from(String(audioMedia.data).replace(/^data:[^;]+;base64,/, ""), "base64")
+		);
+
+		await acquireFFmpegSlot();
+		try {
+			await new Promise((resolve, reject) => {
+				ffmpeg(videoPath)
+					.input(audioPath)
+					.outputOptions([
+						"-y",
+						"-c:v",
+						"copy",
+						"-c:a",
+						"aac",
+						"-shortest",
+						"-movflags",
+						"+faststart"
+					])
+					.output(outPath)
+					.on("end", resolve)
+					.on("error", reject)
+					.run();
+			});
+		} finally {
+			releaseFFmpegSlot();
+		}
+
+		return await fs.readFile(outPath);
+	} finally {
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+	}
+}
+
+/**
+ * Se a figurinha extraída possuir áudio (embutido ou citado), anexa também o áudio na resposta.
+ */
+async function appendAudioStickerExtraction({
+	chatId,
+	message,
+	quotedMsg,
+	visualReturnMessage,
+	precomputedAudioMedia = undefined
+}) {
+	const audioMedia =
+		precomputedAudioMedia === undefined
+			? await getStickerAudioMedia(quotedMsg)
+			: precomputedAudioMedia;
 	if (!audioMedia || (!audioMedia.data && !audioMedia.url)) {
 		return visualReturnMessage;
 	}
@@ -1923,6 +1997,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 						const buffer = Buffer.from(stickerMedia.data, "base64");
 						const image = sharp(buffer, { animated: true });
 						const metadata = await image.metadata();
+						const audioMedia = await getStickerAudioMedia(quotedMsg);
 
 						if (metadata.pages > 1) {
 							// WebP Animado -> GIF (via sharp) -> MP4 (via ffmpeg)
@@ -1952,16 +2027,28 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 									.run();
 							});
 
-							const mp4Buffer = await fs.readFile(outputPath);
+							let mp4Buffer = await fs.readFile(outputPath);
+							await fs.unlink(inputPath).catch(() => {});
+							await fs.unlink(outputPath).catch(() => {});
+
+							// Une o som original com o vídeo animado (mantendo o áudio
+							// separado na resposta também)
+							if (audioMedia && (audioMedia.data || audioMedia.url)) {
+								try {
+									mp4Buffer = await muxStickerVideoWithAudio(mp4Buffer, audioMedia);
+								} catch (muxErr) {
+									logger.warn(
+										`[!s] Não consegui misturar som no sticker animado: ${muxErr.message}`
+									);
+								}
+							}
+
 							const mp4Media = {
 								mimetype: "video/mp4",
 								data: mp4Buffer.toString("base64"),
 								filename: "sticker.mp4",
 								isMessageMedia: true
 							};
-
-							await fs.unlink(inputPath).catch(() => {});
-							await fs.unlink(outputPath).catch(() => {});
 
 							return await appendAudioStickerExtraction({
 								chatId,
@@ -1976,10 +2063,11 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 										quotedMessageId: message.origin.id._serialized,
 										goReply: message.origin
 									}
-								})
+								}),
+								precomputedAudioMedia: audioMedia
 							});
-						} else if (metadata.hasAlpha) {
-							// WebP Transparente -> PNG (Documento)
+						} else {
+							// WebP Estático -> PNG
 							const pngBuffer = await image.png().toBuffer();
 							const pngMedia = {
 								mimetype: "image/png",
@@ -1988,21 +2076,45 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 								isMessageMedia: true
 							};
 
-							return await appendAudioStickerExtraction({
-								chatId,
-								message,
-								quotedMsg,
-								visualReturnMessage: new ReturnMessage({
+							if (audioMedia && (audioMedia.data || audioMedia.url)) {
+								// Figurinha estática com som: foto + áudio separado
+								return await appendAudioStickerExtraction({
 									chatId,
-									content: pngMedia,
-									options: {
-										sendMediaAsDocument: true,
-										caption: "Sticker Transparente",
-										quotedMessageId: message.origin.id._serialized,
-										goReply: message.origin
-									}
-								})
-							});
+									message,
+									quotedMsg,
+									visualReturnMessage: new ReturnMessage({
+										chatId,
+										content: pngMedia,
+										options: {
+											sendMediaAsSticker: false,
+											caption: "Sticker Transparente",
+											quotedMessageId: message.origin.id._serialized,
+											goReply: message.origin
+										}
+									}),
+									precomputedAudioMedia: audioMedia
+								});
+							}
+
+							if (metadata.hasAlpha) {
+								// WebP Transparente -> PNG (Documento)
+								return await appendAudioStickerExtraction({
+									chatId,
+									message,
+									quotedMsg,
+									visualReturnMessage: new ReturnMessage({
+										chatId,
+										content: pngMedia,
+										options: {
+											sendMediaAsDocument: true,
+											caption: "Sticker Transparente",
+											quotedMessageId: message.origin.id._serialized,
+											goReply: message.origin
+										}
+									})
+								});
+							}
+							// Opaque sem audio: cai para a mídia original
 						}
 					} catch (error) {
 						logger.error("Erro ao processar sticker especial:", error);
