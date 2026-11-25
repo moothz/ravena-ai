@@ -1437,10 +1437,37 @@ async function getStickerAudioMedia(quotedMsg) {
 			return null;
 		});
 		if (media && (media.data || media.url)) return media;
-		// Se o download embutido falhar, retorna null
+		// Se o download embutido falhar, tenta o áudio citado no contexto
 	}
 
-	return null;
+	// 2. Áudio citado no contexto (sticker respondendo a um áudio)
+	try {
+		const quoted =
+			typeof quotedMsg?.origin?.getQuotedMessage === "function"
+				? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+				: null;
+		if (!quoted) return null;
+		const qType = String(quoted.type || "").toLowerCase();
+		if (!["audio", "ptt", "voice", "document"].includes(qType)) return null;
+		const media =
+			quoted.content?.data || quoted.content?.url
+				? quoted.content
+				: typeof quoted.downloadMedia === "function"
+					? await quoted.downloadMedia().catch(() => null)
+					: null;
+		if (!media || (!media.data && !media.url)) return null;
+		const mime = String(media.mimetype || "").toLowerCase();
+		const isAudio =
+			qType !== "document" ||
+			mime.startsWith("audio/") ||
+			mime.includes("ogg") ||
+			mime.includes("mpeg") ||
+			mime.includes("opus");
+		if (!isAudio) return null;
+		return media;
+	} catch {
+		return null;
+	}
 }
 
 /**

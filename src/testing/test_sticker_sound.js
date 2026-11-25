@@ -288,6 +288,47 @@ async function runTests() {
 		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
 		console.log("✓ !s em sticker estático opaco com som enviou foto + audio separado");
 
+		// 3c. Sticker citado que tem quoted de audio -> retorna visual + audio citado
+		console.log("\n3c. Testando !s em sticker que tem quoted de audio...");
+		const stickerWithQuotedAudio = buildMockMsg({
+			type: "sticker",
+			author: "5511999990001@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "image/webp",
+				data: staticTransparentWebp.toString("base64")
+			}
+		});
+		const quotedAudioFromSticker = buildMockMsg({
+			type: "audio",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: { mimetype: "audio/ogg; codecs=opus", data: audioB64 }
+		});
+		// Sticker citado que tem um audio no contexto
+		stickerWithQuotedAudio.origin.getQuotedMessage = async () => quotedAudioFromSticker;
+		// Nenhum audio embutido — só o citado
+		const quotedAudioCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!s",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: stickerWithQuotedAudio
+		});
+
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, quotedAudioCmdMsg, "s", [], { name: "Grupo Teste" });
+
+		assert.strictEqual(
+			bot.capturedMessages.length,
+			2,
+			"Deve enviar foto + audio citado no contexto"
+		);
+		assert.strictEqual(bot.capturedMessages[0].content.mimetype, "image/png");
+		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
+		assert.strictEqual(bot.capturedMessages[1].content.data, audioB64);
+		console.log("✓ !s em sticker com quoted de audio enviou visual + audio citado");
+
 		// 4. Fluxo reverso em sticker animado com som: envia MP4 + audio
 		console.log("\n4. Testando !s em sticker animado com som (retorna MP4 + audio)...");
 		const animInputPath = path.join(tempDir, "anim_src.mp4");
