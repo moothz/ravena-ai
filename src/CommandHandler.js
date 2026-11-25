@@ -2564,7 +2564,7 @@ class CommandHandler {
 			const mediaMatch =
 				!context.hasQuotedText &&
 				processedResponse.match(
-					/^\{(audio|voice|image|video|gif|document|sticker|stickerGif)-([^}]+)\}\s*(.*)/s
+					/^\{(stickeraudio|audio|voice|image|video|gif|document|sticker|stickerGif)-([^}]+)\}\s*(.*)/s
 				);
 
 			if (mediaMatch) {
@@ -2573,7 +2573,56 @@ class CommandHandler {
 				this.logger.debug(`Enviando resposta de mídia (${mediaType}): ${fileName}`);
 
 				try {
-					if (mediaType === "stickerGif") {
+					if (mediaType === "stickeraudio") {
+						const [stickerFile, audioFile] = fileName.split(":");
+						if (!stickerFile || !audioFile) {
+							this.logger.warn(`[stickeraudio] Variável inválida: ${fileName}`);
+							return new ReturnMessage({
+								chatId: message.group,
+								content: `Erro: variável de sticker com som inválida (${fileName})`
+							});
+						}
+						const [stickerItem, audioItem] = await Promise.all([
+							storageService.get(stickerFile, {
+								groupId: group?.id || message.group,
+								category: "custom-commands"
+							}),
+							storageService.get(audioFile, {
+								groupId: group?.id || message.group,
+								category: "custom-commands"
+							})
+						]);
+						const stickerMedia =
+							typeof bot.createMediaFromBase64 === "function"
+								? await bot.createMediaFromBase64(
+										stickerItem.buffer.toString("base64"),
+										stickerItem.mimetype,
+										stickerFile
+									)
+								: {
+										mimetype: stickerItem.mimetype,
+										data: stickerItem.buffer.toString("base64"),
+										filename: stickerFile,
+										isMessageMedia: true
+									};
+
+						return new ReturnMessage({
+							chatId: message.group,
+							content: stickerMedia,
+							options: {
+								caption: caption ?? undefined,
+								sendMediaAsSticker: true,
+								stickerAudio: {
+									data: audioItem.buffer.toString("base64"),
+									mimetype: "audio/ogg; codecs=opus",
+									filename: audioFile
+								},
+								quotedMessageId: command.reply ? message.origin.id._serialized : undefined,
+								goReply: message.origin,
+								...options
+							}
+						});
+					} else if (mediaType === "stickerGif") {
 						this.logger.debug(`[stickerGif] URL? ${fileName}`);
 
 						return new ReturnMessage({
