@@ -1449,13 +1449,13 @@ async function getStickerAudioMedia(quotedMsg) {
 		if (!quoted) return null;
 		const qType = String(quoted.type || "").toLowerCase();
 		if (!["audio", "ptt", "voice", "document"].includes(qType)) return null;
-		const media =
-			quoted.content?.data || quoted.content?.url
-				? quoted.content
-				: typeof quoted.downloadMedia === "function"
-					? await quoted.downloadMedia().catch(() => null)
-					: null;
-		if (!media || (!media.data && !media.url)) return null;
+		if (quoted.isViewOnce || quoted.origin?.isViewOnce) return null;
+		const media = quoted.content?.data
+			? quoted.content
+			: typeof quoted.downloadMedia === "function"
+				? await quoted.downloadMedia().catch(() => null)
+				: null;
+		if (!media?.data) return null;
 		const mime = String(media.mimetype || "").toLowerCase();
 		const isAudio =
 			qType !== "document" ||
