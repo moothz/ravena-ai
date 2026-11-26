@@ -2728,7 +2728,7 @@ class WhatsAppBotGo {
 							groupInfoData.Promote ||
 							groupInfoData.Demote
 						) {
-							this._handleGroupParticipantsUpdate(groupInfoData);
+							await this._handleGroupParticipantsUpdate(groupInfoData);
 						}
 
 						// Evento de mudança de configuração de mensagens (abrir/fechar grupo)
@@ -2760,7 +2760,7 @@ class WhatsAppBotGo {
 								this._buildAndCacheGroupInfo(joinedData, joinedData.JID);
 							}
 						}
-						this._handleGroupParticipantsUpdate({
+						await this._handleGroupParticipantsUpdate({
 							JID: joinedData.JID,
 							Join: [this.phoneNumber],
 							Sender: joinedData.Sender ?? joinedData.OwnerJID, // Quando é adicionado sem ser por link, não vem o Sender/SenderPN
@@ -4541,7 +4541,7 @@ class WhatsAppBotGo {
 		// groupData: { JID, Join: [], Leave: [], Promote: [], Demote: [] }
 		//this.logger.debug(`[_handleGroupParticipantsUpdate] `, groupData);
 		const groupId = groupData.JID;
-		if (this.groupCache && groupId) {
+		if (this.groupCache && groupId && !groupData?._raw) {
 			this.groupCache.delete(groupId);
 		}
 

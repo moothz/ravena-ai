@@ -67,6 +67,7 @@ const ReportAnalyzerService = require("./services/ReportAnalyzerService");
 const AccountLinkService = require("./services/AccountLinkService");
 const PollVoteService = require("./services/PollVoteService");
 const PvSafetyService = require("./services/PvSafetyService");
+const PhoneUtils = require("./utils/PhoneUtils");
 
 // Comandos que precisam funcionar no PV mesmo com ignorePV (painéis, vínculo, anônimo, superadmin)
 const DEFAULT_CMD_WHITELIST = [
@@ -2634,500 +2635,600 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 	}
 
 	/**
+	 * Decide se o evento de saída pertence ao próprio bot sem confundir cache de skip list ou outro usuário.
+	 * @param {Object} bot
+	 * @param {Object} data
+	 * @param {Object|null} chatInfo
+	 * @returns {{ isBotLeaving: boolean, reason: string }}
+	 */
+	_resolveBotLeaveDecision(bot, data, chatInfo) {
+		if (data?.isBotLeaving) {
+			return { isBotLeaving: true, reason: "explicit" };
+		}
+
+		const userId = data?.user?.id ? String(data.user.id) : "";
+		const cleanUserId = PhoneUtils.cleanPhone(userId);
+		const cleanUserPhone = PhoneUtils.cleanPhone(data?.user?.phoneNumber);
+		const cleanBotPn = PhoneUtils.cleanPhone(bot?.phoneNumber);
+		const cleanBotLid = PhoneUtils.cleanPhone(bot?.myLid);
+
+		const discordBotId = bot?.discordClient?.user?.id ? String(bot.discordClient.user.id) : null;
+		const telegramBotId = bot?.telegramBotId || bot?.botInfo?.id;
+		const clientWid = bot?.client?.info?.wid?._serialized
+			? String(bot.client.info.wid._serialized)
+			: null;
+
+		const botNumber =
+			bot?.getLidFromPn && chatInfo ? bot.getLidFromPn(bot.phoneNumber, chatInfo) : cleanBotPn;
+		const cleanBotNumber = PhoneUtils.cleanPhone(botNumber);
+
+		if (
+			(discordBotId && userId === discordBotId) ||
+			(telegramBotId && userId === String(telegramBotId)) ||
+			(clientWid && userId === clientWid) ||
+			(cleanBotPn && cleanUserId && PhoneUtils.isSamePhone(cleanUserId, cleanBotPn)) ||
+			(cleanBotPn && cleanUserPhone && PhoneUtils.isSamePhone(cleanUserPhone, cleanBotPn)) ||
+			(cleanBotLid && cleanUserId && cleanUserId === cleanBotLid) ||
+			(cleanBotNumber &&
+				cleanUserId &&
+				(userId.startsWith(botNumber) || cleanUserId === cleanBotNumber))
+		) {
+			return { isBotLeaving: true, reason: "bot_id_match" };
+		}
+
+		if (cleanBotPn && cleanUserPhone && !PhoneUtils.isSamePhone(cleanUserPhone, cleanBotPn)) {
+			return { isBotLeaving: false, reason: "other_user_phone" };
+		}
+
+		if (
+			cleanBotPn &&
+			userId &&
+			!userId.includes("@lid") &&
+			cleanUserId &&
+			!PhoneUtils.isSamePhone(cleanUserId, cleanBotPn)
+		) {
+			return { isBotLeaving: false, reason: "other_user_pn_jid" };
+		}
+
+		if (userId.includes("@lid")) {
+			if (cleanBotLid && cleanUserId && cleanUserId !== cleanBotLid) {
+				return { isBotLeaving: false, reason: "other_user_lid" };
+			}
+			const resolvedPn =
+				typeof bot?.getPnFromLid === "function" ? bot.getPnFromLid(userId, chatInfo) : null;
+			const cleanResolvedPn = PhoneUtils.cleanPhone(resolvedPn);
+			if (
+				resolvedPn &&
+				!String(resolvedPn).includes("@lid") &&
+				cleanResolvedPn &&
+				cleanResolvedPn !== cleanUserId &&
+				cleanBotPn &&
+				!PhoneUtils.isSamePhone(cleanResolvedPn, cleanBotPn)
+			) {
+				return { isBotLeaving: false, reason: "other_user_resolved_pn" };
+			}
+		}
+
+		const liveGroupNotInGroup = Boolean(data?.group?.notInGroup && !data?.group?.fromSkipList);
+		const liveChatNotInGroup = Boolean(chatInfo?.notInGroup && !chatInfo?.fromSkipList);
+		if (liveGroupNotInGroup || liveChatNotInGroup) {
+			return { isBotLeaving: true, reason: "live_not_in_group" };
+		}
+
+		return { isBotLeaving: false, reason: "not_bot" };
+	}
+
+	/**
 	 * Processa saída do grupo
 	 * @param {WhatsAppBot} bot - A instância do bot
 	 * @param {Object} data - Dados do evento
 	 */
 	async processGroupLeave(bot, data) {
-		const eventStartTime = data?._eventTimestamp || Date.now();
-		//this.logger.info(`[processGroupLeave] `, { data });
+		return telemetry.withSpan(
+			"group leave.process",
+			{
+				attributes: {
+					"ravena.chat.id": telemetry.chatIdAttr(data?.group?.id),
+					"ravena.user.id": telemetry.userIdAttr(data?.user?.id),
+					"ravena.bot.id": bot?.id
+				}
+			},
+			async (span) => {
+				const eventStartTime = data?._eventTimestamp || Date.now();
+				//this.logger.info(`[processGroupLeave] `, { data });
 
-		this.logger.info(
-			`Usuário ${JSON.stringify(data.user.name)} (${data.user.id}) saiu do grupo ${data.group.name} (${data.group.id}). Quem removeu: ${data.responsavel.name}/${data.responsavel.id}`,
-			{ quemRemoveu: data.responsavel.name }
-		);
+				this.logger.info(
+					`Usuário ${JSON.stringify(data.user.name)} (${data.user.id}) saiu do grupo ${data.group.name} (${data.group.id}). Quem removeu: ${data.responsavel.name}/${data.responsavel.id}`,
+					{ quemRemoveu: data.responsavel.name }
+				);
 
-		try {
-			// Obtém grupo
-			const group =
-				this.groups[data.group.id] ||
-				(await this.database?.getGroup(data.group.id).catch(() => null));
-
-			// Por enquanto, a única maneira é pegar a info do grupo pra descobrir o LID do bot nele
-			const chatInfo = await bot.getChatDetails(data.group.id);
-
-			// 1° passo: descobrir o lid do bot nesse grupo (identificado via Whatsgo)
-			const botNumber =
-				bot.getLidFromPn && chatInfo
-					? bot.getLidFromPn(bot.phoneNumber, chatInfo)
-					: bot.phoneNumber?.replace(/\D/g, "");
-
-			// notInGroup é solução nova que coloquei da Go, quando falha ao retornar info do grupo pois o bot não participa
-			const cleanBotPn = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
-			const isBotLeaving =
-				data.isBotLeaving ||
-				data.group?.notInGroup ||
-				chatInfo?.notInGroup ||
-				(botNumber && data?.user?.id?.startsWith(botNumber)) ||
-				(cleanBotPn && data?.user?.id?.startsWith(cleanBotPn));
-
-			//this.logger.debug(`[processGroupLeave] isBotLeaving (${isBotLeaving}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${botNumber} | not in group? ${data.group?.notInGroup}`, { data, chatInfo });
-
-			if (isBotLeaving) this.database.setBotInGroup(data.group.id, bot.id, false);
-
-			// Envia notificação para o grupo de logs
-			if (bot.grupoLogs) {
 				try {
-					if (isBotLeaving) {
-						const groupId = data.group.id;
-						const dbGroup = await this.database?.getGroup(groupId).catch(() => null);
-						const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
-						const group = dbGroup || groupData.group;
-						this.groups[groupId] = group;
+					// Obtém grupo
+					const group =
+						this.groups[data.group.id] ||
+						(await this.database?.getGroup(data.group.id).catch(() => null));
 
-						if (bot.markNotInGroup) {
-							await bot.markNotInGroup(groupId);
-						} else if (bot.addSkipGroup) {
-							await bot.addSkipGroup(groupId);
-						}
+					// Por enquanto, a única maneira é pegar a info do grupo pra descobrir o LID do bot nele
+					const chatInfo = await bot.getChatDetails(data.group.id);
+					const leaveDecision = this._resolveBotLeaveDecision(bot, data, chatInfo);
+					const isBotLeaving = leaveDecision.isBotLeaving;
 
-						await this.database.recordGroupLeave(
-							groupId,
-							Date.now(),
-							data.responsavel,
-							bot?.id || null
-						);
+					telemetry.setAttrs({
+						"ravena.group.is_bot_leaving": isBotLeaving,
+						"ravena.group.leave_decision": leaveDecision.reason
+					});
 
-						// Limpeza das configurações de monitoramento de streams do grupo (Twitch, Kick, YouTube, TikTok)
-						let streamsRemovedText = "";
-						const oldTwitch = Array.isArray(group.twitch) ? [...group.twitch] : [];
-						const oldKick = Array.isArray(group.kick) ? [...group.kick] : [];
-						const oldYoutube = Array.isArray(group.youtube) ? [...group.youtube] : [];
-						const oldTiktok = Array.isArray(group.tiktok) ? [...group.tiktok] : [];
-						const totalStreams =
-							oldTwitch.length + oldKick.length + oldYoutube.length + oldTiktok.length;
+					//this.logger.debug(`[processGroupLeave] isBotLeaving (${isBotLeaving} / ${leaveDecision.reason})`, { data, chatInfo });
 
-						if (totalStreams > 0) {
-							group.twitch = [];
-							group.kick = [];
-							group.youtube = [];
-							group.tiktok = [];
+					if (isBotLeaving) this.database.setBotInGroup(data.group.id, bot.id, false);
 
-							const parts = [];
-							if (oldTwitch.length > 0) {
-								parts.push(
-									`${oldTwitch.length} Twitch (${oldTwitch.map((c) => c.channel).join(", ")})`
+					// Envia notificação para o grupo de logs
+					if (bot.grupoLogs) {
+						try {
+							if (isBotLeaving) {
+								const groupId = data.group.id;
+								const dbGroup = await this.database?.getGroup(groupId).catch(() => null);
+								const groupData = await this.getOrCreateGroup(groupId, null, bot.prefix, null, bot);
+								const group = dbGroup || groupData.group;
+								this.groups[groupId] = group;
+
+								if (bot.markNotInGroup) {
+									await bot.markNotInGroup(groupId);
+								} else if (bot.addSkipGroup) {
+									await bot.addSkipGroup(groupId);
+								}
+
+								await this.database.recordGroupLeave(
+									groupId,
+									Date.now(),
+									data.responsavel,
+									bot?.id || null
 								);
-							}
-							if (oldKick.length > 0) {
-								parts.push(`${oldKick.length} Kick (${oldKick.map((c) => c.channel).join(", ")})`);
-							}
-							if (oldYoutube.length > 0) {
-								parts.push(
-									`${oldYoutube.length} YouTube (${oldYoutube.map((c) => c.channel).join(", ")})`
-								);
-							}
-							if (oldTiktok.length > 0) {
-								parts.push(
-									`${oldTiktok.length} TikTok (${oldTiktok.map((c) => c.channel).join(", ")})`
-								);
-							}
-							streamsRemovedText = `\n📺 *Streams Removidas (${totalStreams}):* ${parts.join(" | ")}`;
 
-							this.logger.info(
-								`[processGroupLeave] Bot '${bot.id}' saiu do grupo '${group.name}' (${groupId}). Removidas configurações de streams: ${parts.join(" | ")}`
-							);
+								// Limpeza das configurações de monitoramento de streams do grupo (Twitch, Kick, YouTube, TikTok)
+								let streamsRemovedText = "";
+								const oldTwitch = Array.isArray(group.twitch) ? [...group.twitch] : [];
+								const oldKick = Array.isArray(group.kick) ? [...group.kick] : [];
+								const oldYoutube = Array.isArray(group.youtube) ? [...group.youtube] : [];
+								const oldTiktok = Array.isArray(group.tiktok) ? [...group.tiktok] : [];
+								const totalStreams =
+									oldTwitch.length + oldKick.length + oldYoutube.length + oldTiktok.length;
 
-							// Desinscreve canais do StreamMonitor caso não sejam usados por nenhum outro grupo
-							try {
-								const StreamSystem = require("./StreamSystem");
-								const streamSystem = StreamSystem.getInstance();
-								const streamMonitor = bot.streamMonitor || streamSystem?.streamMonitor;
+								if (totalStreams > 0) {
+									group.twitch = [];
+									group.kick = [];
+									group.youtube = [];
+									group.tiktok = [];
 
-								if (streamMonitor) {
-									const allGroups = await this.database.getGroups();
-									for (const ch of oldTwitch) {
-										const chName = ch.channel;
-										const stillUsed = allGroups.some(
-											(g) =>
-												g.id !== groupId &&
-												Array.isArray(g.twitch) &&
-												g.twitch.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+									const parts = [];
+									if (oldTwitch.length > 0) {
+										parts.push(
+											`${oldTwitch.length} Twitch (${oldTwitch.map((c) => c.channel).join(", ")})`
 										);
-										if (!stillUsed) {
-											streamMonitor.unsubscribe(chName, "twitch");
-											this.logger.debug(
-												`[processGroupLeave] Desinscrito canal Twitch sem grupos restantes: ${chName}`
-											);
-										}
 									}
-
-									for (const ch of oldKick) {
-										const chName = ch.channel;
-										const stillUsed = allGroups.some(
-											(g) =>
-												g.id !== groupId &&
-												Array.isArray(g.kick) &&
-												g.kick.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+									if (oldKick.length > 0) {
+										parts.push(
+											`${oldKick.length} Kick (${oldKick.map((c) => c.channel).join(", ")})`
 										);
-										if (!stillUsed) {
-											streamMonitor.unsubscribe(chName, "kick");
-											this.logger.debug(
-												`[processGroupLeave] Desinscrito canal Kick sem grupos restantes: ${chName}`
-											);
-										}
 									}
-
-									for (const ch of oldYoutube) {
-										const chName = ch.channel;
-										const stillUsed = allGroups.some(
-											(g) =>
-												g.id !== groupId &&
-												Array.isArray(g.youtube) &&
-												g.youtube.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+									if (oldYoutube.length > 0) {
+										parts.push(
+											`${oldYoutube.length} YouTube (${oldYoutube.map((c) => c.channel).join(", ")})`
 										);
-										if (!stillUsed) {
-											streamMonitor.unsubscribe(chName, "youtube");
-											this.logger.debug(
-												`[processGroupLeave] Desinscrito canal YouTube sem grupos restantes: ${chName}`
-											);
-										}
 									}
-
-									for (const ch of oldTiktok) {
-										const chName = ch.channel;
-										const stillUsed = allGroups.some(
-											(g) =>
-												g.id !== groupId &&
-												Array.isArray(g.tiktok) &&
-												g.tiktok.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+									if (oldTiktok.length > 0) {
+										parts.push(
+											`${oldTiktok.length} TikTok (${oldTiktok.map((c) => c.channel).join(", ")})`
 										);
-										if (!stillUsed) {
-											streamMonitor.unsubscribe(chName, "tiktok");
-											this.logger.debug(
-												`[processGroupLeave] Desinscrito perfil TikTok sem grupos restantes: ${chName}`
-											);
+									}
+									streamsRemovedText = `\n📺 *Streams Removidas (${totalStreams}):* ${parts.join(" | ")}`;
+
+									this.logger.info(
+										`[processGroupLeave] Bot '${bot.id}' saiu do grupo '${group.name}' (${groupId}). Removidas configurações de streams: ${parts.join(" | ")}`
+									);
+
+									// Desinscreve canais do StreamMonitor caso não sejam usados por nenhum outro grupo
+									try {
+										const StreamSystem = require("./StreamSystem");
+										const streamSystem = StreamSystem.getInstance();
+										const streamMonitor = bot.streamMonitor || streamSystem?.streamMonitor;
+
+										if (streamMonitor) {
+											const allGroups = await this.database.getGroups();
+											for (const ch of oldTwitch) {
+												const chName = ch.channel;
+												const stillUsed = allGroups.some(
+													(g) =>
+														g.id !== groupId &&
+														Array.isArray(g.twitch) &&
+														g.twitch.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+												);
+												if (!stillUsed) {
+													streamMonitor.unsubscribe(chName, "twitch");
+													this.logger.debug(
+														`[processGroupLeave] Desinscrito canal Twitch sem grupos restantes: ${chName}`
+													);
+												}
+											}
+
+											for (const ch of oldKick) {
+												const chName = ch.channel;
+												const stillUsed = allGroups.some(
+													(g) =>
+														g.id !== groupId &&
+														Array.isArray(g.kick) &&
+														g.kick.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+												);
+												if (!stillUsed) {
+													streamMonitor.unsubscribe(chName, "kick");
+													this.logger.debug(
+														`[processGroupLeave] Desinscrito canal Kick sem grupos restantes: ${chName}`
+													);
+												}
+											}
+
+											for (const ch of oldYoutube) {
+												const chName = ch.channel;
+												const stillUsed = allGroups.some(
+													(g) =>
+														g.id !== groupId &&
+														Array.isArray(g.youtube) &&
+														g.youtube.some(
+															(c) => c.channel?.toLowerCase() === chName?.toLowerCase()
+														)
+												);
+												if (!stillUsed) {
+													streamMonitor.unsubscribe(chName, "youtube");
+													this.logger.debug(
+														`[processGroupLeave] Desinscrito canal YouTube sem grupos restantes: ${chName}`
+													);
+												}
+											}
+
+											for (const ch of oldTiktok) {
+												const chName = ch.channel;
+												const stillUsed = allGroups.some(
+													(g) =>
+														g.id !== groupId &&
+														Array.isArray(g.tiktok) &&
+														g.tiktok.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+												);
+												if (!stillUsed) {
+													streamMonitor.unsubscribe(chName, "tiktok");
+													this.logger.debug(
+														`[processGroupLeave] Desinscrito perfil TikTok sem grupos restantes: ${chName}`
+													);
+												}
+											}
 										}
+									} catch (streamErr) {
+										this.logger.error(
+											`[processGroupLeave] Erro ao desinscrever canais de streams do grupo ${groupId}:`,
+											streamErr
+										);
 									}
 								}
-							} catch (streamErr) {
-								this.logger.error(
-									`[processGroupLeave] Erro ao desinscrever canais de streams do grupo ${groupId}:`,
-									streamErr
-								);
-							}
-						}
 
-						await this.database.saveGroup(group);
+								await this.database.saveGroup(group);
 
-						let membershipHistoryText = "";
-						let periods = [];
-						try {
-							periods = await this.database.getGroupMembershipPeriods(groupId);
-							if (periods && periods.length > 0) {
-								membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
-								periods.forEach((p, idx) => {
-									const joinDate = p.join_timestamp
-										? new Date(p.join_timestamp).toLocaleString("pt-BR")
-										: "Desconhecido";
-									const leaveDate = p.leave_timestamp
-										? new Date(p.leave_timestamp).toLocaleString("pt-BR")
-										: "Ainda no grupo";
+								let membershipHistoryText = "";
+								let periods = [];
+								try {
+									periods = await this.database.getGroupMembershipPeriods(groupId);
+									if (periods && periods.length > 0) {
+										membershipHistoryText = `\n🚪 *Histórico de Estadia no Grupo:*\n`;
+										periods.forEach((p, idx) => {
+											const joinDate = p.join_timestamp
+												? new Date(p.join_timestamp).toLocaleString("pt-BR")
+												: "Desconhecido";
+											const leaveDate = p.leave_timestamp
+												? new Date(p.leave_timestamp).toLocaleString("pt-BR")
+												: "Ainda no grupo";
 
-									let durationText = "";
-									if (p.duration) {
-										const sec = Math.floor(p.duration / 1000);
-										const days = Math.floor(sec / 86400);
-										const hours = Math.floor((sec % 86400) / 3600);
-										const minutes = Math.floor((sec % 3600) / 60);
+											let durationText = "";
+											if (p.duration) {
+												const sec = Math.floor(p.duration / 1000);
+												const days = Math.floor(sec / 86400);
+												const hours = Math.floor((sec % 86400) / 3600);
+												const minutes = Math.floor((sec % 3600) / 60);
 
-										const parts = [];
-										if (days > 0) parts.push(`${days}d`);
-										if (hours > 0) parts.push(`${hours}h`);
-										if (minutes > 0) parts.push(`${minutes}m`);
-										if (parts.length === 0) parts.push("menos de 1m");
-										durationText = ` (${parts.join(" ")})`;
-									} else if (p.join_timestamp && p.leave_timestamp) {
-										durationText = " (tempo desconhecido)";
+												const parts = [];
+												if (days > 0) parts.push(`${days}d`);
+												if (hours > 0) parts.push(`${hours}h`);
+												if (minutes > 0) parts.push(`${minutes}m`);
+												if (parts.length === 0) parts.push("menos de 1m");
+												durationText = ` (${parts.join(" ")})`;
+											} else if (p.join_timestamp && p.leave_timestamp) {
+												durationText = " (tempo desconhecido)";
+											}
+
+											const botTag = p.bot_id ? ` [🤖 ${p.bot_id}]` : "";
+											membershipHistoryText += `${idx + 1}.${botTag} 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
+										});
 									}
+								} catch (historyErr) {
+									this.logger.error(
+										"Erro ao carregar histórico de estadias para log de saída:",
+										historyErr
+									);
+								}
 
-									const botTag = p.bot_id ? ` [🤖 ${p.bot_id}]` : "";
-									membershipHistoryText += `${idx + 1}.${botTag} 🟢 ${joinDate} até 🔴 ${leaveDate}${durationText}\n`;
-								});
-							}
-						} catch (historyErr) {
-							this.logger.error(
-								"Erro ao carregar histórico de estadias para log de saída:",
-								historyErr
-							);
-						}
+								// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
+								// Aplica-se a bots normais e comunitários (apenas VIP e privado são isentos)
+								let blockLogsText = "";
+								const msgSubsequentCommands = "";
+								const shouldPunishRemoval = !bot.vip && !bot.privado;
 
-						// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
-						// Aplica-se a bots normais e comunitários (apenas VIP e privado são isentos)
-						let blockLogsText = "";
-						const msgSubsequentCommands = "";
-						const shouldPunishRemoval = !bot.vip && !bot.privado;
+								const currentPeriod =
+									periods && periods.length > 0 ? periods[periods.length - 1] : null;
+								const durationMs =
+									currentPeriod?.duration ??
+									(currentPeriod?.join_timestamp
+										? Date.now() - currentPeriod.join_timestamp
+										: null);
+								const isLessThan24Hours =
+									durationMs !== null
+										? durationMs < 24 * 60 * 60 * 1000
+										: group.date
+											? Date.now() - group.date < 24 * 60 * 60 * 1000
+											: false;
+								const isLessThan7Days =
+									durationMs !== null
+										? durationMs < 7 * 24 * 60 * 60 * 1000
+										: group.date
+											? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
+											: false;
 
-						const currentPeriod =
-							periods && periods.length > 0 ? periods[periods.length - 1] : null;
-						const durationMs =
-							currentPeriod?.duration ??
-							(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
-						const isLessThan24Hours =
-							durationMs !== null
-								? durationMs < 24 * 60 * 60 * 1000
-								: group.date
-									? Date.now() - group.date < 24 * 60 * 60 * 1000
+								const removerId = data.responsavel?.id || null;
+								const cleanRemoverPhone = removerId
+									? removerId.replace(/\D/g, "").split("@")[0]
+									: null;
+								const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
+								const botNumbers = [
+									botCleanPhone,
+									bot.id ? String(bot.id).replace(/\D/g, "") : null,
+									bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : null,
+									bot.myLid ? String(bot.myLid).replace(/\D/g, "") : null
+								].filter(Boolean);
+
+								const isRemovedBySelf = Boolean(
+									cleanRemoverPhone &&
+									(botNumbers.includes(cleanRemoverPhone) ||
+										(botCleanPhone && cleanRemoverPhone === botCleanPhone))
+								);
+
+								const cleanRespPhone = bot.numeroResponsavel
+									? String(bot.numeroResponsavel).replace(/\D/g, "").split("@")[0]
+									: null;
+								const isRemovedByAdminComunitaria = Boolean(
+									bot.comunitario &&
+									cleanRespPhone &&
+									cleanRemoverPhone &&
+									(cleanRemoverPhone === cleanRespPhone ||
+										cleanRemoverPhone.endsWith(cleanRespPhone) ||
+										cleanRespPhone.endsWith(cleanRemoverPhone))
+								);
+
+								const isRemoverSuperAdmin = removerId
+									? this.adminUtils.isSuperAdmin(removerId)
 									: false;
-						const isLessThan7Days =
-							durationMs !== null
-								? durationMs < 7 * 24 * 60 * 60 * 1000
-								: group.date
-									? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
-									: false;
+								const isAmigavel = !!(group.removidoAmigavel || group.saidaAmigavel);
 
-						const removerId = data.responsavel?.id || null;
-						const cleanRemoverPhone = removerId ? removerId.replace(/\D/g, "").split("@")[0] : null;
-						const botCleanPhone = bot.phoneNumber ? bot.phoneNumber.replace(/\D/g, "") : null;
-						const botNumbers = [
-							botCleanPhone,
-							bot.id ? String(bot.id).replace(/\D/g, "") : null,
-							bot.phoneNumber ? String(bot.phoneNumber).replace(/\D/g, "") : null,
-							bot.myLid ? String(bot.myLid).replace(/\D/g, "") : null
-						].filter(Boolean);
+								let isRemoverDonator = false;
+								let donations = [];
+								if (
+									isLessThan7Days &&
+									cleanRemoverPhone &&
+									!isRemovedBySelf &&
+									!isRemovedByAdminComunitaria &&
+									!isRemoverSuperAdmin &&
+									!isAmigavel
+								) {
+									try {
+										donations = (await this.database.getDonations()) || [];
+										if (donations && donations.length > 0) {
+											isRemoverDonator = donations.some((donation) => {
+												if (donation.numero) {
+													const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
+													if (cleanDonorNumber.length > 10) {
+														return (
+															cleanDonorNumber.includes(cleanRemoverPhone) ||
+															cleanRemoverPhone.includes(cleanDonorNumber)
+														);
+													}
+												}
+												return false;
+											});
+										}
+									} catch (donErr) {
+										this.logger.error("Erro ao verificar doador para quem removeu o bot:", donErr);
+									}
+								}
 
-						const isRemovedBySelf = Boolean(
-							cleanRemoverPhone &&
-							(botNumbers.includes(cleanRemoverPhone) ||
-								(botCleanPhone && cleanRemoverPhone === botCleanPhone))
-						);
-
-						const cleanRespPhone = bot.numeroResponsavel
-							? String(bot.numeroResponsavel).replace(/\D/g, "").split("@")[0]
-							: null;
-						const isRemovedByAdminComunitaria = Boolean(
-							bot.comunitario &&
-							cleanRespPhone &&
-							cleanRemoverPhone &&
-							(cleanRemoverPhone === cleanRespPhone ||
-								cleanRemoverPhone.endsWith(cleanRespPhone) ||
-								cleanRespPhone.endsWith(cleanRemoverPhone))
-						);
-
-						const isRemoverSuperAdmin = removerId ? this.adminUtils.isSuperAdmin(removerId) : false;
-						const isAmigavel = !!(group.removidoAmigavel || group.saidaAmigavel);
-
-						let isRemoverDonator = false;
-						let donations = [];
-						if (
-							isLessThan7Days &&
-							cleanRemoverPhone &&
-							!isRemovedBySelf &&
-							!isRemovedByAdminComunitaria &&
-							!isRemoverSuperAdmin &&
-							!isAmigavel
-						) {
-							try {
-								donations = (await this.database.getDonations()) || [];
-								if (donations && donations.length > 0) {
-									isRemoverDonator = donations.some((donation) => {
+								const isDonorNumber = (phone) => {
+									if (!phone || !donations || donations.length === 0) return false;
+									const clean = String(phone).replace(/\D/g, "");
+									return donations.some((donation) => {
 										if (donation.numero) {
-											const cleanDonorNumber = donation.numero.replace(/[^0-9]/g, "");
-											if (cleanDonorNumber.length > 10) {
-												return (
-													cleanDonorNumber.includes(cleanRemoverPhone) ||
-													cleanRemoverPhone.includes(cleanDonorNumber)
-												);
+											const cleanDonor = donation.numero.replace(/\D/g, "");
+											if (cleanDonor.length > 10) {
+												return cleanDonor.includes(clean) || clean.includes(cleanDonor);
 											}
 										}
 										return false;
 									});
-								}
-							} catch (donErr) {
-								this.logger.error("Erro ao verificar doador para quem removeu o bot:", donErr);
-							}
-						}
+								};
 
-						const isDonorNumber = (phone) => {
-							if (!phone || !donations || donations.length === 0) return false;
-							const clean = String(phone).replace(/\D/g, "");
-							return donations.some((donation) => {
-								if (donation.numero) {
-									const cleanDonor = donation.numero.replace(/\D/g, "");
-									if (cleanDonor.length > 10) {
-										return cleanDonor.includes(clean) || clean.includes(cleanDonor);
-									}
-								}
-								return false;
-							});
-						};
+								if (
+									shouldPunishRemoval &&
+									isLessThan7Days &&
+									cleanRemoverPhone &&
+									!isRemovedBySelf &&
+									!isRemovedByAdminComunitaria &&
+									!isRemoverSuperAdmin &&
+									!isRemoverDonator &&
+									!isAmigavel
+								) {
+									this.logger.info(
+										`[processGroupLeave] Bot '${bot.id}' (comunitário: ${Boolean(bot.comunitario)}) removido em <7d (${durationMs}ms, <24h: ${isLessThan24Hours}) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
+									);
 
-						if (
-							shouldPunishRemoval &&
-							isLessThan7Days &&
-							cleanRemoverPhone &&
-							!isRemovedBySelf &&
-							!isRemovedByAdminComunitaria &&
-							!isRemoverSuperAdmin &&
-							!isRemoverDonator &&
-							!isAmigavel
-						) {
-							this.logger.info(
-								`[processGroupLeave] Bot '${bot.id}' (comunitário: ${Boolean(bot.comunitario)}) removido em <7d (${durationMs}ms, <24h: ${isLessThan24Hours}) por não-doador (${cleanRemoverPhone}) do grupo ${groupId}. Executando bloqueios...`
-							);
+									// 1. Busca código de convite e autor do convite
+									let inviteCode = group.inviteCode || null;
+									let inviterId = group.addedBy || null;
 
-							// 1. Busca código de convite e autor do convite
-							let inviteCode = group.inviteCode || null;
-							let inviterId = group.addedBy || null;
-
-							try {
-								const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
-								if (inviteHistory && inviteHistory.length > 0) {
-									const latestInvite = inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
-									if (latestInvite) {
-										if (!inviteCode && latestInvite.invite_code) {
-											inviteCode = latestInvite.invite_code;
-										}
-										if (!inviterId && latestInvite.author_id) {
-											inviterId = latestInvite.author_id;
-										}
-									}
-								}
-							} catch (invErr) {
-								this.logger.error("Erro ao buscar histórico de convites para auto-block:", invErr);
-							}
-
-							const cleanInviterPhone = inviterId
-								? inviterId.replace(/\D/g, "").split("@")[0]
-								: null;
-
-							const blockLogParts = [];
-
-							if (isLessThan24Hours) {
-								// Nova punição (< 24 horas): Block geral (sa-block) em quem convidou, quem removeu e todos os admins do grupo
-								const targetNumbersSet = new Set();
-								if (cleanRemoverPhone) targetNumbersSet.add(cleanRemoverPhone);
-								if (cleanInviterPhone) targetNumbersSet.add(cleanInviterPhone);
-
-								let adminEntries = [];
-								if (Array.isArray(group.admins)) {
-									adminEntries = group.admins;
-								} else if (typeof group.admins === "string") {
 									try {
-										adminEntries = JSON.parse(group.admins);
-									} catch (e) {
-										adminEntries = [];
-									}
-								}
-
-								for (const adminEntry of adminEntries) {
-									if (!adminEntry) continue;
-									const adminClean = String(adminEntry).replace(/\D/g, "").split("@")[0];
-									if (adminClean && adminClean.length >= 8) {
-										targetNumbersSet.add(adminClean);
-									}
-								}
-
-								const filteredTargets = Array.from(targetNumbersSet).filter((num) => {
-									if (!num) return false;
-									if (botNumbers.includes(num)) return false;
-									if (this.adminUtils.isSuperAdmin(num)) return false;
-									if (isDonorNumber(num)) return false;
-									return true;
-								});
-
-								if (filteredTargets.length > 0) {
-									const blockCmd = `!sa-blockList ${filteredTargets.join(", ")}`;
-									try {
-										const blockRes = await this.commandHandler.superAdmin.blockList(
-											bot,
-											{ group: groupId, author: cleanRemoverPhone || "system", isSystem: true },
-											[filteredTargets.join(", ")]
+										const inviteHistory = await this.database.getInviteHistoryByGroup(groupId);
+										if (inviteHistory && inviteHistory.length > 0) {
+											const latestInvite =
+												inviteHistory.find((r) => r.invite_code) || inviteHistory[0];
+											if (latestInvite) {
+												if (!inviteCode && latestInvite.invite_code) {
+													inviteCode = latestInvite.invite_code;
+												}
+												if (!inviterId && latestInvite.author_id) {
+													inviterId = latestInvite.author_id;
+												}
+											}
+										}
+									} catch (invErr) {
+										this.logger.error(
+											"Erro ao buscar histórico de convites para auto-block:",
+											invErr
 										);
-										if (blockRes && blockRes.content) {
-											blockLogParts.push(`> *${blockCmd}*\n${blockRes.content}`);
+									}
+
+									const cleanInviterPhone = inviterId
+										? inviterId.replace(/\D/g, "").split("@")[0]
+										: null;
+
+									const blockLogParts = [];
+
+									if (isLessThan24Hours) {
+										// Nova punição (< 24 horas): Block geral (sa-block) em quem convidou, quem removeu e todos os admins do grupo
+										const targetNumbersSet = new Set();
+										if (cleanRemoverPhone) targetNumbersSet.add(cleanRemoverPhone);
+										if (cleanInviterPhone) targetNumbersSet.add(cleanInviterPhone);
+
+										let adminEntries = [];
+										if (Array.isArray(group.admins)) {
+											adminEntries = group.admins;
+										} else if (typeof group.admins === "string") {
+											try {
+												adminEntries = JSON.parse(group.admins);
+											} catch (e) {
+												adminEntries = [];
+											}
 										}
-									} catch (cmdErr) {
-										this.logger.error("Erro ao rodar blockList (<24h):", cmdErr);
+
+										for (const adminEntry of adminEntries) {
+											if (!adminEntry) continue;
+											const adminClean = String(adminEntry).replace(/\D/g, "").split("@")[0];
+											if (adminClean && adminClean.length >= 8) {
+												targetNumbersSet.add(adminClean);
+											}
+										}
+
+										const filteredTargets = Array.from(targetNumbersSet).filter((num) => {
+											if (!num) return false;
+											if (botNumbers.includes(num)) return false;
+											if (this.adminUtils.isSuperAdmin(num)) return false;
+											if (isDonorNumber(num)) return false;
+											return true;
+										});
+
+										if (filteredTargets.length > 0) {
+											const blockCmd = `!sa-blockList ${filteredTargets.join(", ")}`;
+											try {
+												const blockRes = await this.commandHandler.superAdmin.blockList(
+													bot,
+													{ group: groupId, author: cleanRemoverPhone || "system", isSystem: true },
+													[filteredTargets.join(", ")]
+												);
+												if (blockRes && blockRes.content) {
+													blockLogParts.push(`> *${blockCmd}*\n${blockRes.content}`);
+												}
+											} catch (cmdErr) {
+												this.logger.error("Erro ao rodar blockList (<24h):", cmdErr);
+											}
+										}
+
+										// Invalida convites do grupo e do convidador
+										if (cleanInviterPhone || inviteCode) {
+											const inviteArgs = [];
+											if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
+											if (inviteCode) inviteArgs.push(inviteCode);
+
+											const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
+											try {
+												const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
+													bot,
+													{ group: groupId, author: cleanInviterPhone, isSystem: true },
+													inviteArgs
+												);
+												if (inviteBlockRes && inviteBlockRes.content) {
+													blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
+												}
+											} catch (cmdErr) {
+												this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
+											}
+										}
+
+										if (blockLogParts.length > 0) {
+											blockLogsText = `\n\n🛡️ *Bloqueio GERAL (< 24h & não doador - Admins + Remover + Inviter):*\n${blockLogParts.join("\n\n")}`;
+										}
+									} else {
+										// Punição padrão (24h a 7 dias): Apenas bloqueio de invites
+										// 2. Executa block no convite
+										if (cleanInviterPhone || inviteCode) {
+											const inviteArgs = [];
+											if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
+											if (inviteCode) inviteArgs.push(inviteCode);
+
+											const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
+											try {
+												const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
+													bot,
+													{ group: groupId, author: cleanInviterPhone, isSystem: true },
+													inviteArgs
+												);
+												if (inviteBlockRes && inviteBlockRes.content) {
+													blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
+												}
+											} catch (cmdErr) {
+												this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
+											}
+										}
+
+										// 3. Executa block em quem removeu
+										if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
+											const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
+											try {
+												const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
+													bot,
+													{ group: groupId, author: cleanRemoverPhone, isSystem: true },
+													[cleanRemoverPhone]
+												);
+												if (removerBlockRes && removerBlockRes.content) {
+													blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
+												}
+											} catch (cmdErr) {
+												this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
+											}
+										}
+
+										if (blockLogParts.length > 0) {
+											blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
+										}
 									}
 								}
 
-								// Invalida convites do grupo e do convidador
-								if (cleanInviterPhone || inviteCode) {
-									const inviteArgs = [];
-									if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
-									if (inviteCode) inviteArgs.push(inviteCode);
+								const saidaAmigavelText =
+									group.removidoAmigavel || group.saidaAmigavel
+										? `\n- 🕊️ *Tipo:* Saída amigável (!g-sair${group.saidaAmigavel?.author ? ` por ${group.saidaAmigavel.author.replace(/\D/g, "").split("@")[0]}` : ""})`
+										: "";
 
-									const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
-									try {
-										const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
-											bot,
-											{ group: groupId, author: cleanInviterPhone, isSystem: true },
-											inviteArgs
-										);
-										if (inviteBlockRes && inviteBlockRes.content) {
-											blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
-										}
-									} catch (cmdErr) {
-										this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
-									}
-								}
-
-								if (blockLogParts.length > 0) {
-									blockLogsText = `\n\n🛡️ *Bloqueio GERAL (< 24h & não doador - Admins + Remover + Inviter):*\n${blockLogParts.join("\n\n")}`;
-								}
-							} else {
-								// Punição padrão (24h a 7 dias): Apenas bloqueio de invites
-								// 2. Executa block no convite
-								if (cleanInviterPhone || inviteCode) {
-									const inviteArgs = [];
-									if (cleanInviterPhone) inviteArgs.push(cleanInviterPhone);
-									if (inviteCode) inviteArgs.push(inviteCode);
-
-									const inviteCmd = `!sa-blockInvites ${inviteArgs.join(" ")}`.trim();
-									try {
-										const inviteBlockRes = await this.commandHandler.superAdmin.blockInvites(
-											bot,
-											{ group: groupId, author: cleanInviterPhone, isSystem: true },
-											inviteArgs
-										);
-										if (inviteBlockRes && inviteBlockRes.content) {
-											blockLogParts.push(`> *${inviteCmd}*\n${inviteBlockRes.content}`);
-										}
-									} catch (cmdErr) {
-										this.logger.error("Erro ao rodar blockInvites no convite:", cmdErr);
-									}
-								}
-
-								// 3. Executa block em quem removeu
-								if (cleanRemoverPhone && cleanRemoverPhone !== cleanInviterPhone) {
-									const removerCmd = `!sa-blockInvites ${cleanRemoverPhone}`;
-									try {
-										const removerBlockRes = await this.commandHandler.superAdmin.blockInvites(
-											bot,
-											{ group: groupId, author: cleanRemoverPhone, isSystem: true },
-											[cleanRemoverPhone]
-										);
-										if (removerBlockRes && removerBlockRes.content) {
-											blockLogParts.push(`> *${removerCmd}*\n${removerBlockRes.content}`);
-										}
-									} catch (cmdErr) {
-										this.logger.error("Erro ao rodar blockInvites em quem removeu:", cmdErr);
-									}
-								}
-
-								if (blockLogParts.length > 0) {
-									blockLogsText = `\n\n🛡️ *Bloqueio de convites (< 7 dias & não doador):*\n${blockLogParts.join("\n\n")}`;
-								}
-							}
-						}
-
-						const saidaAmigavelText =
-							group.removidoAmigavel || group.saidaAmigavel
-								? `\n- 🕊️ *Tipo:* Saída amigável (!g-sair${group.saidaAmigavel?.author ? ` por ${group.saidaAmigavel.author.replace(/\D/g, "").split("@")[0]}` : ""})`
-								: "";
-
-						const msgLeave = `🚪🔴 *${bot.id}* saiu do grupo:
+								const msgLeave = `🚪🔴 *${bot.id}* saiu do grupo:
 - 🆔 *ID:* \`${group.id}\`
 - 📃 *Nome:* \`${group.name}\`
 - 👷‍♂️ *Responsável:*
@@ -3135,8 +3236,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 - 👨‍💻 *Raw Data*:
 \`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${streamsRemovedText}${blockLogsText}`;
 
-						// Remove o responsável do bot comunitário dos admins adicionais
-						/* por enquanto desabilitado
+								// Remove o responsável do bot comunitário dos admins adicionais
+								/* por enquanto desabilitado
 						if (bot.comunitario && bot.numeroResponsavel) {
 							const respNum = bot.numeroResponsavel.replace(/\D/g, "");
 							if (group.additionalAdmins && Array.isArray(group.additionalAdmins)) {
@@ -3155,156 +3256,161 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 						}
 						*/
 
-						bot
-							.sendMessage(bot.grupoLogs, msgLeave)
-							.then(() => {
-								if (msgSubsequentCommands) {
-									return bot.sendMessage(bot.grupoLogs, msgSubsequentCommands);
-								}
-							})
-							.catch((error) => {
-								this.logger.error(
-									"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
-									error
-								);
-							});
-					}
-				} catch (error) {
-					this.logger.error(
-						"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
-						error
-					);
-				}
-			}
-
-			if (!isBotLeaving) {
-				const isSpammer = await this.isSpammerUser(bot, data.user, data.group.id, null, group);
-				if (isSpammer) {
-					// 1. Tenta resolver o telefone real do spammer (inclusive se data.user for LID)
-					let cleanPhone = await this.resolveSpammerPhone(bot, data.user);
-					if (!cleanPhone && data.origin?.getChat) {
-						try {
-							const chat = await data.origin.getChat();
-							cleanPhone = await this.resolveSpammerPhone(bot, data.user, chat);
-						} catch (chatErr) {
-							// Ignora erro ao buscar chat
-						}
-					}
-					if (!cleanPhone) {
-						cleanPhone =
-							this.extractPhoneNumber(data.user) || this.extractPhoneNumber(data.user?.id) || "";
-					}
-
-					this.logger.info(
-						`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo monitorado ${data.group.id} (telefone: ${cleanPhone || "não identificado"}). Enviando aviso de spammer e suprimindo despedida padrão.`
-					);
-
-					const userName = this.extractUserName(data.user);
-					const reason = this.getSpammerReason(data.user, cleanPhone, userName);
-					this.logSpammerBan({
-						groupId: data.group.id,
-						groupName: data.group.name || group?.name,
-						userId: data.user?.id,
-						phone: cleanPhone,
-						name: userName,
-						reason,
-						step: "leave",
-						action: "Aviso de Spammer Enviado (Despedida Suprimida)"
-					});
-
-					const noticeKey = `${data.group.id}:${cleanPhone || data.user?.id}`;
-					const now = Date.now();
-					const lastSent = this.recentSpammerLeaveNotices.get(noticeKey) || 0;
-
-					if (now - lastSent >= 30000) {
-						this.recentSpammerLeaveNotices.set(noticeKey, now);
-						if (this.recentSpammerLeaveNotices.size > 200) {
-							for (const [k, ts] of this.recentSpammerLeaveNotices.entries()) {
-								if (now - ts > 60000) this.recentSpammerLeaveNotices.delete(k);
+								bot
+									.sendMessage(bot.grupoLogs, msgLeave)
+									.then(() => {
+										if (msgSubsequentCommands) {
+											return bot.sendMessage(bot.grupoLogs, msgSubsequentCommands);
+										}
+									})
+									.catch((error) => {
+										this.logger.error(
+											"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
+											error
+										);
+									});
 							}
-						}
-
-						const prefix = group?.prefix || bot.prefix || "!";
-						const displayTarget =
-							cleanPhone ||
-							(data.user?.name && !data.user.name.includes("@") ? data.user.name : "") ||
-							(data.user?.id ? data.user.id.split("@")[0] : "");
-						const cmdArg = cleanPhone || (data.user?.id ? data.user.id.split("@")[0] : "");
-
-						const mentionJid = cleanPhone
-							? `${cleanPhone}@s.whatsapp.net`
-							: data.user?.id && data.user.id.includes("@")
-								? data.user.id
-								: `${displayTarget}@s.whatsapp.net`;
-
-						const mentions = [mentionJid];
-						if (data.user?.id && data.user.id.includes("@") && data.user.id !== mentionJid) {
-							mentions.push(data.user.id);
-						}
-
-						const spammerMsg = `🚫 Spammer @${displayTarget} detectado removido do grupo.\n> Se deseja permitir que este numero entre no grupo, envie ${prefix}g-permitirSpammer ${cmdArg}`;
-
-						await bot
-							.sendMessage(data.group.id, spammerMsg, {
-								mentions
-							})
-							.catch((err) => {
-								this.logger.error(
-									"Erro ao enviar mensagem de despedida personalizada de spammer:",
-									err
-								);
-							});
-					}
-
-					return;
-				}
-			}
-
-			// this.logger.debug(`[groupLeave] Outra pessoa saiu, farewell? `, {
-			// 	farewells: group?.farewells
-			// });
-			if (group && group.farewells && !isBotLeaving) {
-				try {
-					const farewellUsers = await this.getAccumulatedGreetingUsers(
-						bot,
-						group,
-						"farewell",
-						data.user
-					);
-					if (!farewellUsers) return;
-					const farewells = await this.processFarewellMessage(group, farewellUsers, bot);
-					if (farewells && Array.isArray(farewells) && farewells.length > 0) {
-						const memberLeaveDelay = this.getGreetingDelay(bot);
-						if (memberLeaveDelay > 0) {
-							this.logger.info(
-								`[processGroupLeave] Aguardando delay orgânico de ${Math.round(memberLeaveDelay / 1000)}s para despedida de membro no grupo ${data.group.id}...`
+						} catch (error) {
+							this.logger.error(
+								"Erro ao enviar notificação de saída do grupo para o grupo de logs:",
+								error
 							);
 						}
-						await this.waitRemainingGreetingDelay(eventStartTime, memberLeaveDelay, bot);
+					}
 
-						// Verifica se o grupo ainda possui despedidas ativas e não está pausado
-						const currentGroup =
-							this.groups[data.group.id] || (await this.database.getGroup(data.group.id));
-						if (!currentGroup?.farewells || currentGroup.paused) return;
-
-						for (const farewell of farewells) {
-							const options = farewell.options ?? {};
-							if (farewell.mentions) options.mentions = farewell.mentions;
-
-							try {
-								await bot.sendMessage(data.group.id, farewell.message, options);
-							} catch (error) {
-								this.logger.error("Erro ao enviar mensagem de despedida:", error);
+					if (!isBotLeaving) {
+						const isSpammer = await this.isSpammerUser(bot, data.user, data.group.id, null, group);
+						if (isSpammer) {
+							// 1. Tenta resolver o telefone real do spammer (inclusive se data.user for LID)
+							let cleanPhone = await this.resolveSpammerPhone(bot, data.user);
+							if (!cleanPhone && data.origin?.getChat) {
+								try {
+									const chat = await data.origin.getChat();
+									cleanPhone = await this.resolveSpammerPhone(bot, data.user, chat);
+								} catch (chatErr) {
+									// Ignora erro ao buscar chat
+								}
 							}
+							if (!cleanPhone) {
+								cleanPhone =
+									this.extractPhoneNumber(data.user) ||
+									this.extractPhoneNumber(data.user?.id) ||
+									"";
+							}
+
+							this.logger.info(
+								`[processGroupLeave] Usuário ${data.user?.id} identificado como spammer no grupo monitorado ${data.group.id} (telefone: ${cleanPhone || "não identificado"}). Enviando aviso de spammer e suprimindo despedida padrão.`
+							);
+
+							const userName = this.extractUserName(data.user);
+							const reason = this.getSpammerReason(data.user, cleanPhone, userName);
+							this.logSpammerBan({
+								groupId: data.group.id,
+								groupName: data.group.name || group?.name,
+								userId: data.user?.id,
+								phone: cleanPhone,
+								name: userName,
+								reason,
+								step: "leave",
+								action: "Aviso de Spammer Enviado (Despedida Suprimida)"
+							});
+
+							const noticeKey = `${data.group.id}:${cleanPhone || data.user?.id}`;
+							const now = Date.now();
+							const lastSent = this.recentSpammerLeaveNotices.get(noticeKey) || 0;
+
+							if (now - lastSent >= 30000) {
+								this.recentSpammerLeaveNotices.set(noticeKey, now);
+								if (this.recentSpammerLeaveNotices.size > 200) {
+									for (const [k, ts] of this.recentSpammerLeaveNotices.entries()) {
+										if (now - ts > 60000) this.recentSpammerLeaveNotices.delete(k);
+									}
+								}
+
+								const prefix = group?.prefix || bot.prefix || "!";
+								const displayTarget =
+									cleanPhone ||
+									(data.user?.name && !data.user.name.includes("@") ? data.user.name : "") ||
+									(data.user?.id ? data.user.id.split("@")[0] : "");
+								const cmdArg = cleanPhone || (data.user?.id ? data.user.id.split("@")[0] : "");
+
+								const mentionJid = cleanPhone
+									? `${cleanPhone}@s.whatsapp.net`
+									: data.user?.id && data.user.id.includes("@")
+										? data.user.id
+										: `${displayTarget}@s.whatsapp.net`;
+
+								const mentions = [mentionJid];
+								if (data.user?.id && data.user.id.includes("@") && data.user.id !== mentionJid) {
+									mentions.push(data.user.id);
+								}
+
+								const spammerMsg = `🚫 Spammer @${displayTarget} detectado removido do grupo.\n> Se deseja permitir que este numero entre no grupo, envie ${prefix}g-permitirSpammer ${cmdArg}`;
+
+								await bot
+									.sendMessage(data.group.id, spammerMsg, {
+										mentions
+									})
+									.catch((err) => {
+										this.logger.error(
+											"Erro ao enviar mensagem de despedida personalizada de spammer:",
+											err
+										);
+									});
+							}
+
+							return;
+						}
+					}
+
+					// this.logger.debug(`[groupLeave] Outra pessoa saiu, farewell? `, {
+					// 	farewells: group?.farewells
+					// });
+					if (group && group.farewells && !isBotLeaving) {
+						try {
+							const farewellUsers = await this.getAccumulatedGreetingUsers(
+								bot,
+								group,
+								"farewell",
+								data.user
+							);
+							if (!farewellUsers) return;
+							const farewells = await this.processFarewellMessage(group, farewellUsers, bot);
+							if (farewells && Array.isArray(farewells) && farewells.length > 0) {
+								const memberLeaveDelay = this.getGreetingDelay(bot);
+								if (memberLeaveDelay > 0) {
+									this.logger.info(
+										`[processGroupLeave] Aguardando delay orgânico de ${Math.round(memberLeaveDelay / 1000)}s para despedida de membro no grupo ${data.group.id}...`
+									);
+								}
+								await this.waitRemainingGreetingDelay(eventStartTime, memberLeaveDelay, bot);
+
+								// Verifica se o grupo ainda possui despedidas ativas e não está pausado
+								const currentGroup =
+									this.groups[data.group.id] || (await this.database.getGroup(data.group.id));
+								if (!currentGroup?.farewells || currentGroup.paused) return;
+
+								for (const farewell of farewells) {
+									const options = farewell.options ?? {};
+									if (farewell.mentions) options.mentions = farewell.mentions;
+
+									try {
+										await bot.sendMessage(data.group.id, farewell.message, options);
+									} catch (error) {
+										this.logger.error("Erro ao enviar mensagem de despedida:", error);
+									}
+								}
+							}
+						} catch (error) {
+							this.logger.error("Erro ao gerar mensagem de despedida:", error);
 						}
 					}
 				} catch (error) {
-					this.logger.error("Erro ao gerar mensagem de despedida:", error);
+					telemetry.recordError(span, error);
+					this.logger.error("Erro ao processar saída do grupo:", error);
 				}
 			}
-		} catch (error) {
-			this.logger.error("Erro ao processar saída do grupo:", error);
-		}
+		);
 	}
 	/**
 	 * Localiza a melhor instância de bot conectada para envio em um grupo.

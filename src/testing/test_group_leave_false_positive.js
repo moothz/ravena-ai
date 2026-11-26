@@ -112,7 +112,9 @@ async function runTests() {
 	// -------------------------------------------------------------------------
 	// Caso 1: Reprodução fiel do bug (JoinedGroup + /group/info 500 + Leave de outro @lid)
 	// -------------------------------------------------------------------------
-	console.log("[1] JoinedGroup com skipGroupInfo prévio + /group/info 500 + Leave de outro @lid...");
+	console.log(
+		"[1] JoinedGroup com skipGroupInfo prévio + /group/info 500 + Leave de outro @lid..."
+	);
 	const group1 = "120363000000099001@g.us";
 	const bot1Phone = "5511999990001";
 	const bot1Lid = "111111111111111@lid";
@@ -155,8 +157,18 @@ async function runTests() {
 					IsParent: false,
 					IsAnnounce: false,
 					Participants: [
-						{ JID: bot1Lid, LID: bot1Lid, PhoneNumber: `${bot1Phone}@s.whatsapp.net`, IsAdmin: false },
-						{ JID: oldBotLid, LID: oldBotLid, PhoneNumber: `${oldBotPhone}@s.whatsapp.net`, IsAdmin: false }
+						{
+							JID: bot1Lid,
+							LID: bot1Lid,
+							PhoneNumber: `${bot1Phone}@s.whatsapp.net`,
+							IsAdmin: false
+						},
+						{
+							JID: oldBotLid,
+							LID: oldBotLid,
+							PhoneNumber: `${oldBotPhone}@s.whatsapp.net`,
+							IsAdmin: false
+						}
 					]
 				}
 			}
@@ -188,7 +200,12 @@ async function runTests() {
 					IsParent: false,
 					IsAnnounce: false,
 					Participants: [
-						{ JID: bot1Lid, LID: bot1Lid, PhoneNumber: `${bot1Phone}@s.whatsapp.net`, IsAdmin: false }
+						{
+							JID: bot1Lid,
+							LID: bot1Lid,
+							PhoneNumber: `${bot1Phone}@s.whatsapp.net`,
+							IsAdmin: false
+						}
 					]
 				}
 			};
@@ -211,7 +228,11 @@ async function runTests() {
 	);
 	await flushOps();
 
-	assert.strictEqual(leaveRecords.length, 0, "Saída de outro @lid não pode gravar recordGroupLeave");
+	assert.strictEqual(
+		leaveRecords.length,
+		0,
+		"Saída de outro @lid não pode gravar recordGroupLeave"
+	);
 	assert.strictEqual(blockCalls, 0, "Saída de outro @lid não pode acionar bloqueios");
 	assert.strictEqual(
 		(bot1.sentLogMessages || []).filter((m) => m.content.includes("saiu do grupo")).length,
@@ -250,20 +271,37 @@ async function runTests() {
 		participants: []
 	});
 	await eventHandler.processGroupLeave(fakeBot, {
-		group: { id: "120363000000099002@g.us", name: "Grupo Skip", notInGroup: true, fromSkipList: true },
+		group: {
+			id: "120363000000099002@g.us",
+			name: "Grupo Skip",
+			notInGroup: true,
+			fromSkipList: true
+		},
 		user: { id: "777777777777777@lid", name: "OutroSemMap" },
 		responsavel: { id: adminPhone, name: "Admin" }
 	});
-	assert.strictEqual(leaveRecords.length, 0, "2a: notInGroup de skipList não pode marcar saída do bot");
+	assert.strictEqual(
+		leaveRecords.length,
+		0,
+		"2a: notInGroup de skipList não pode marcar saída do bot"
+	);
 
 	// 2b: chatInfo.notInGroup = true (sem fromSkipList), mas bot.myLid é conhecido e difere de data.user.id
-	fakeBot.getChatDetails = async (id) => ({ id: { _serialized: id }, notInGroup: true, participants: [] });
+	fakeBot.getChatDetails = async (id) => ({
+		id: { _serialized: id },
+		notInGroup: true,
+		participants: []
+	});
 	await eventHandler.processGroupLeave(fakeBot, {
 		group: { id: "120363000000099003@g.us", name: "Grupo Live" },
 		user: { id: "666666666666666@lid", name: "OutroComMap" },
 		responsavel: { id: adminPhone, name: "Admin" }
 	});
-	assert.strictEqual(leaveRecords.length, 0, "2b: LID diferente de myLid / PN resolvido diferente não pode marcar saída do bot");
+	assert.strictEqual(
+		leaveRecords.length,
+		0,
+		"2b: LID diferente de myLid / PN resolvido diferente não pode marcar saída do bot"
+	);
 
 	// 2c: data.user.id é PN diferente do bot
 	await eventHandler.processGroupLeave(fakeBot, {
@@ -271,7 +309,11 @@ async function runTests() {
 		user: { id: "5511999990088@s.whatsapp.net", name: "OutroPN" },
 		responsavel: { id: adminPhone, name: "Admin" }
 	});
-	assert.strictEqual(leaveRecords.length, 0, "2c: PN diferente do bot não pode marcar saída do bot");
+	assert.strictEqual(
+		leaveRecords.length,
+		0,
+		"2c: PN diferente do bot não pode marcar saída do bot"
+	);
 
 	// -------------------------------------------------------------------------
 	// Caso 3: Saída legítima do próprio bot continua funcionando (com e sem myLid)
@@ -302,7 +344,11 @@ async function runTests() {
 	);
 	await flushOps();
 
-	assert.strictEqual(leaveRecords.length, 1, "Saída legítima com myLid deve gravar recordGroupLeave");
+	assert.strictEqual(
+		leaveRecords.length,
+		1,
+		"Saída legítima com myLid deve gravar recordGroupLeave"
+	);
 	assert.strictEqual(bot2.isParticipating(group2), false, "Bot deve ser marcado fora do grupo");
 	assert.strictEqual(
 		(bot2.sentLogMessages || []).filter((m) => m.content.includes("saiu do grupo")).length,
@@ -335,8 +381,16 @@ async function runTests() {
 	);
 	await flushOps();
 
-	assert.strictEqual(leaveRecords.length, 1, "Saída legítima sem myLid (cold-start) deve gravar recordGroupLeave");
-	assert.strictEqual(bot3.isParticipating(group3), false, "Bot sem myLid deve ser marcado fora do grupo");
+	assert.strictEqual(
+		leaveRecords.length,
+		1,
+		"Saída legítima sem myLid (cold-start) deve gravar recordGroupLeave"
+	);
+	assert.strictEqual(
+		bot3.isParticipating(group3),
+		false,
+		"Bot sem myLid deve ser marcado fora do grupo"
+	);
 
 	console.log("=== TODOS OS TESTES PASSARAM! ===");
 	fs.rmSync(dataDir, { recursive: true, force: true });
