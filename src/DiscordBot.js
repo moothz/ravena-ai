@@ -329,6 +329,7 @@ class DiscordBot {
 		// Simula o evento de saída do grupo
 		if (this.eventHandler && typeof this.eventHandler.onGroupLeave === "function") {
 			const mockGroupNotification = {
+				isBotLeaving: true,
 				group: {
 					id: guild.id,
 					name: guild.name,
