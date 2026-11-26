@@ -1306,7 +1306,8 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 			description: `Mostra comandos da categoria ${category}`,
 			category: "geral",
 			hidden: true,
-			method: showCommandsByCategory
+			method: async (bot, message, args, group) =>
+				await showCommandsByCategory(bot, message, args, group)
 		})
 	);
 });
