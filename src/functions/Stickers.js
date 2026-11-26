@@ -2341,6 +2341,28 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			const mediaType = quotedMsg.type.toLowerCase();
 
 			if (mediaType === "sticker") {
+				const parentAudioMsg =
+					typeof quotedMsg.origin?.getQuotedMessage === "function"
+						? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+						: null;
+				const parentAudioType = String(parentAudioMsg?.type || "").toLowerCase();
+				const parentAudioViewOnce = Boolean(
+					parentAudioMsg?.isViewOnce || parentAudioMsg?.origin?.isViewOnce
+				);
+				if ((parentAudioType === "audio" || parentAudioType === "ptt") && !parentAudioViewOnce) {
+					return await createAudioStickerFromAudioAndSticker({
+						bot,
+						message,
+						args,
+						group,
+						chatId,
+						audioMsg: parentAudioMsg,
+						quotedStickerMsg: quotedMsg,
+						cropType: stickerOptions.cropMode,
+						stickerOptions
+					});
+				}
+
 				// Baixa o sticker original para extrair a mídia
 				const stickerMedia = await quotedMsg.downloadMedia();
 				if (!stickerMedia || !stickerMedia.data || !stickerMedia.mimetype) {
