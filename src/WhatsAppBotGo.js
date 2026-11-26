@@ -2728,7 +2728,7 @@ class WhatsAppBotGo {
 							groupInfoData.Promote ||
 							groupInfoData.Demote
 						) {
-							this._handleGroupParticipantsUpdate(groupInfoData);
+							await this._handleGroupParticipantsUpdate(groupInfoData);
 						}
 
 						// Evento de mudança de configuração de mensagens (abrir/fechar grupo)
@@ -2754,7 +2754,13 @@ class WhatsAppBotGo {
 					// Neste objeto chat dá pra detectar se é comunidade de 2 maneiras:
 					// IsParent === true ou LinkedParentJID === ''
 					if (joinedData) {
-						this._handleGroupParticipantsUpdate({
+						if (joinedData.JID) {
+							await this.markInGroup(joinedData.JID);
+							if (Array.isArray(joinedData.Participants) || joinedData.Name) {
+								this._buildAndCacheGroupInfo(joinedData, joinedData.JID);
+							}
+						}
+						await this._handleGroupParticipantsUpdate({
 							JID: joinedData.JID,
 							Join: [this.phoneNumber],
 							Sender: joinedData.Sender ?? joinedData.OwnerJID, // Quando é adicionado sem ser por link, não vem o Sender/SenderPN
@@ -4535,7 +4541,7 @@ class WhatsAppBotGo {
 		// groupData: { JID, Join: [], Leave: [], Promote: [], Demote: [] }
 		//this.logger.debug(`[_handleGroupParticipantsUpdate] `, groupData);
 		const groupId = groupData.JID;
-		if (this.groupCache && groupId) {
+		if (this.groupCache && groupId && !groupData?._raw) {
 			this.groupCache.delete(groupId);
 		}
 
@@ -4543,7 +4549,12 @@ class WhatsAppBotGo {
 		const processAction = async (groupData, participants, action) => {
 			if (!participants || !participants.length) return;
 
-			const groupDetails = await this.getChatDetails(groupId);
+			const isJoinEvent = action === "add" || action === "join";
+			const isLeaveEvent = action === "remove" || action === "leave";
+			const groupDetails = await this.getChatDetails(
+				groupId,
+				isLeaveEvent && !this.isParticipating(groupId) ? { bypassSkipList: true } : {}
+			);
 			const groupName = groupDetails?.name ?? groupId;
 
 			for (const participant of participants) {
@@ -4577,13 +4588,15 @@ class WhatsAppBotGo {
 						id: groupId,
 						name: groupName,
 						notInGroup: groupDetails.notInGroup,
-						isBotJoining: isParticipantBot,
+						fromSkipList: Boolean(groupDetails.fromSkipList),
+						isBotJoining: isJoinEvent ? isParticipantBot : false,
 						isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
 						isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce
 					},
 					isCommunity: groupData.isCommunity ?? groupData.IsParent ?? groupDetails.isCommunity,
 					isAnnounce: groupData.isAnnounce ?? groupData.IsAnnounce ?? groupDetails.isAnnounce,
-					isBotJoining: isParticipantBot,
+					isBotJoining: isJoinEvent ? isParticipantBot : false,
+					isBotLeaving: isLeaveEvent ? isParticipantBot : false,
 					user: {
 						id: participant,
 						name: contact?.name ?? participant.split("@")[0],
@@ -4858,10 +4871,89 @@ class WhatsAppBotGo {
 		return await this.setGroupName(groupId, title);
 	}
 
+	_buildAndCacheGroupInfo(groupInfo, fallbackChatId = null) {
+		const chatId = groupInfo?.JID || fallbackChatId;
+		if (!groupInfo || !chatId) return null;
+
+		const participants = Array.isArray(groupInfo.Participants) ? groupInfo.Participants : [];
+		participants.forEach((p) => {
+			const pJid = p.JID || p.id?._serialized;
+			const pLid = p.LID || p.lid;
+			const pPhone = p.PhoneNumber || p.phoneNumber;
+			if (pLid && pPhone) {
+				const cleanPhone = String(pPhone).split("@")[0].replace(/\D/g, "");
+				const cleanLid = String(pLid).split("@")[0].replace(/\D/g, "");
+				if (cleanPhone && cleanLid && this.lidToPnCache) {
+					this.lidToPnCache.set(cleanLid, cleanPhone);
+					this.lidToPnCache.set(`${cleanLid}@lid`, cleanPhone);
+					this.lidToPnCache.set(String(pLid), cleanPhone);
+				}
+			}
+			if (pLid) {
+				this.cacheManager.putContactInCache({ id: { _serialized: pJid }, lid: pLid });
+			}
+			if (
+				this.phoneNumber &&
+				(PhoneUtils.matchesParticipant(p, this.phoneNumber) ||
+					(pJid && pJid.includes(this.phoneNumber)))
+			) {
+				this.myLid = pLid;
+			}
+		});
+
+		const chatResult = {
+			id: { _serialized: chatId },
+			name: groupInfo.Name ?? chatId,
+			isGroup: true,
+			isCommunity: groupInfo.IsParent,
+			isAnnounce: groupInfo.IsAnnounce,
+			linkedParentJid: groupInfo.LinkedParentJID,
+			notInGroup: false,
+			isParticipating: true,
+			groupMetadata: { desc: groupInfo.Topic },
+			participants: participants.map((p) => ({
+				id: { _serialized: p.JID || p.id?._serialized },
+				isAdmin: p.IsAdmin,
+				isSuperAdmin: p.IsSuperAdmin,
+				phoneNumber: p.PhoneNumber,
+				lid: p.LID
+			})),
+			_raw: groupInfo,
+
+			// Métodos do wwebjs
+			setSubject: async (title) => await this.setGroupName(chatId, title),
+			addParticipants: async (parts) => await this.addToGroup(chatId, parts),
+			removeParticipants: async (parts) => await this.removeFromGroup(chatId, parts),
+			fetchMessages: async (limit = 30) => false,
+			setMessagesAdminsOnly: async (adminOnly) => {
+				try {
+					const response = await this.apiClient.post(`/group/announce`, {
+						groupJid: chatId,
+						announce: adminOnly
+					});
+					return response.data;
+				} catch (err) {
+					this.logger.error(`[chat] setMessagesAdminsOnly failed:`, err);
+					throw err;
+				}
+			},
+			setPicture: async (picture) => await this.setGroupPhoto(chatId, picture)
+		};
+
+		if (this.groupCache) {
+			this.groupCache.set(chatId, chatResult);
+		}
+		if (this.groupFallbackCache) {
+			this.groupFallbackCache.set(chatId, chatResult);
+		}
+
+		return chatResult;
+	}
+
 	async getChatDetails(chatId, options = {}) {
 		if (!chatId) return null;
 
-		if (chatId.includes("@g.us") && !this.isParticipating(chatId)) {
+		if (chatId.includes("@g.us") && !options?.bypassSkipList && !this.isParticipating(chatId)) {
 			this.logger.info(
 				`[getChatDetails] Skipping fetch for ${chatId} as it is in skipGroupInfo list.`
 			);
@@ -4870,6 +4962,7 @@ class WhatsAppBotGo {
 				name: chatId,
 				isGroup: true,
 				notInGroup: true,
+				fromSkipList: true,
 				isParticipating: false,
 				participants: [],
 				setSubject: async (title) => await this.setGroupName(chatId, title)
@@ -4889,82 +4982,10 @@ class WhatsAppBotGo {
 				const groupInfo = groupInfoResponse.data;
 
 				if (groupInfo) {
-					// Cache LIDs
-					if (groupInfo.Participants) {
-						groupInfo.Participants.forEach((p) => {
-							const pJid = p.JID || p.id?._serialized;
-							const pLid = p.LID || p.lid;
-							const pPhone = p.PhoneNumber || p.phoneNumber;
-							if (pLid && pPhone) {
-								const cleanPhone = String(pPhone).split("@")[0].replace(/\D/g, "");
-								const cleanLid = String(pLid).split("@")[0].replace(/\D/g, "");
-								if (cleanPhone && cleanLid && this.lidToPnCache) {
-									this.lidToPnCache.set(cleanLid, cleanPhone);
-									this.lidToPnCache.set(`${cleanLid}@lid`, cleanPhone);
-									this.lidToPnCache.set(String(pLid), cleanPhone);
-								}
-							}
-							if (p.LID)
-								this.cacheManager.putContactInCache({ id: { _serialized: p.JID }, lid: p.LID });
-							// Check if it's me to store my LID
-							if (
-								this.phoneNumber &&
-								(PhoneUtils.matchesParticipant(p, this.phoneNumber) ||
-									(p.JID && p.JID.includes(this.phoneNumber)))
-							) {
-								this.myLid = p.LID || p.lid;
-							}
-						});
+					if (options?.bypassSkipList && !this.isParticipating(chatId)) {
+						await this.markInGroup(chatId);
 					}
-
-					const chatResult = {
-						id: { _serialized: groupInfo.JID },
-						name: groupInfo.Name ?? chatId,
-						isGroup: true,
-						isCommunity: groupInfo.IsParent,
-						isAnnounce: groupInfo.IsAnnounce,
-						linkedParentJid: groupInfo.LinkedParentJID,
-						notInGroup: false,
-						isParticipating: true,
-						groupMetadata: { desc: groupInfo.Topic },
-						participants: groupInfo.Participants.map((p) => ({
-							id: { _serialized: p.JID },
-							isAdmin: p.IsAdmin,
-							isSuperAdmin: p.IsSuperAdmin,
-							phoneNumber: p.PhoneNumber,
-							lid: p.LID
-						})),
-						_raw: groupInfo,
-
-						// Métodos do wwebjs
-						setSubject: async (title) => await this.setGroupName(chatId, title),
-						addParticipants: async (participants) => await this.addToGroup(chatId, participants),
-						removeParticipants: async (participants) =>
-							await this.removeFromGroup(chatId, participants),
-						fetchMessages: async (limit = 30) => false,
-						setMessagesAdminsOnly: async (adminOnly) => {
-							try {
-								const response = await this.apiClient.post(`/group/announce`, {
-									groupJid: chatId,
-									announce: adminOnly
-								});
-								return response.data;
-							} catch (err) {
-								this.logger.error(`[chat] setMessagesAdminsOnly failed:`, err);
-								throw err;
-							}
-						},
-						setPicture: async (picture) => await this.setGroupPhoto(chatId, picture)
-					};
-
-					if (this.groupCache) {
-						this.groupCache.set(chatId, chatResult);
-					}
-					if (this.groupFallbackCache) {
-						this.groupFallbackCache.set(chatId, chatResult);
-					}
-
-					return chatResult;
+					return this._buildAndCacheGroupInfo(groupInfo, chatId);
 				}
 			} else {
 				const contact = await this.getContactDetails(chatId);
@@ -5032,6 +5053,7 @@ class WhatsAppBotGo {
 			name: chatId,
 			isGroup: chatId.includes("@g.us"),
 			notInGroup: !this.isParticipating(chatId),
+			fromSkipList: chatId.includes("@g.us") && !this.isParticipating(chatId),
 			isParticipating: this.isParticipating(chatId),
 			participants: [],
 			setSubject: chatId.includes("@g.us")
