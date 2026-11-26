@@ -5053,6 +5053,7 @@ class WhatsAppBotGo {
 			name: chatId,
 			isGroup: chatId.includes("@g.us"),
 			notInGroup: !this.isParticipating(chatId),
+			fromSkipList: chatId.includes("@g.us") && !this.isParticipating(chatId),
 			isParticipating: this.isParticipating(chatId),
 			participants: [],
 			setSubject: chatId.includes("@g.us")

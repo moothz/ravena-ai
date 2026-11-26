@@ -392,6 +392,67 @@ async function runTests() {
 		"Bot sem myLid deve ser marcado fora do grupo"
 	);
 
+	console.log("[4] Skip list + /group/info em timeout + bot sem myLid + saída de outro @lid...");
+	const group4 = "120363000000099007@g.us";
+	const bot4 = makeBot("rav-teste-4", "5511999990040", eventHandler, async (url) => {
+		if (url === "/group/info") {
+			const err = new Error("timeout of 10000ms exceeded");
+			err.code = "ECONNABORTED";
+			throw err;
+		}
+		return { data: {} };
+	});
+	await eventHandler.database.saveGroup(new Group({ id: group4, name: "Grupo Timeout" }));
+	await bot4.markNotInGroup(group4);
+	assert.strictEqual(bot4.myLid ?? null, null, "Pré-condição: bot sem myLid");
+	assert.ok(
+		String(bot4.getPnFromLid("444444444444444@lid") ?? "@lid").includes("@lid"),
+		"Pré-condição: sem mapa lid->pn"
+	);
+
+	const skipDetails = await bot4.getChatDetails(group4);
+	assert.strictEqual(skipDetails.notInGroup, true);
+	assert.strictEqual(
+		skipDetails.fromSkipList,
+		true,
+		"getChatDetails de grupo na skip list deve marcar fromSkipList"
+	);
+	const transientDetails = await bot4.getChatDetails(group4, { bypassSkipList: true });
+	assert.strictEqual(transientDetails.notInGroup, true);
+	assert.strictEqual(
+		transientDetails.fromSkipList,
+		true,
+		"Falha transitória sem cache deve marcar notInGroup como vindo da skip list"
+	);
+
+	leaveRecords.length = 0;
+	blockCalls = 0;
+	bot4.sentLogMessages = [];
+	await bot4._handleWebhook(
+		{
+			body: {
+				event: "GroupInfo",
+				data: { JID: group4, SenderPN: adminPhone, Leave: ["444444444444444@lid"] }
+			}
+		},
+		makeRes()
+	);
+	await flushOps();
+	await new Promise((resolve) => setTimeout(resolve, 200));
+	await flushOps();
+
+	assert.strictEqual(
+		leaveRecords.length,
+		0,
+		"Timeout no /group/info com grupo na skip list não pode gravar recordGroupLeave"
+	);
+	assert.strictEqual(blockCalls, 0, "Timeout no /group/info não pode acionar bloqueios");
+	assert.strictEqual(
+		(bot4.sentLogMessages || []).filter((m) => m.content.includes("saiu do grupo")).length,
+		0,
+		"Timeout no /group/info não pode enviar log de saída do bot"
+	);
+
 	console.log("=== TODOS OS TESTES PASSARAM! ===");
 	fs.rmSync(dataDir, { recursive: true, force: true });
 	process.exit(0);
