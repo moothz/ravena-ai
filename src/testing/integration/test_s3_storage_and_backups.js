@@ -10,8 +10,8 @@ process.env.S3_LOCAL_CACHE = "false";
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const storageService = require("../services/StorageService");
-const Database = require("../utils/Database");
+const storageService = require("../../services/StorageService");
+const Database = require("../../utils/Database");
 
 async function run() {
 	console.log("=== 1. Testando StorageService e Configurações S3 ===");

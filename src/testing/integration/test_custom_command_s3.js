@@ -1,11 +1,11 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
-const FakeBot = require("./FakeBot");
-const CommandHandler = require("../CommandHandler");
-const AdminUtils = require("../utils/AdminUtils");
-const storageService = require("../services/StorageService");
-const { createMessage } = require("./FakeMessage");
+const FakeBot = require("../FakeBot");
+const CommandHandler = require("../../CommandHandler");
+const AdminUtils = require("../../utils/AdminUtils");
+const storageService = require("../../services/StorageService");
+const { createMessage } = require("../FakeMessage");
 const assert = require("assert");
 
 async function main() {

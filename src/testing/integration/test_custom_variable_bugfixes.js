@@ -5,8 +5,8 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
-const CustomVariableProcessor = require("../utils/CustomVariableProcessor");
-const FakeBot = require("./FakeBot");
+const CustomVariableProcessor = require("../../utils/CustomVariableProcessor");
+const FakeBot = require("../FakeBot");
 
 async function main() {
 	console.log("Iniciando testes de correções de bugs no CustomVariableProcessor...");

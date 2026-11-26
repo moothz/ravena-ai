@@ -4,8 +4,8 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
-const Database = require("../utils/Database");
-const bankService = require("../services/BankService");
+const Database = require("../../utils/Database");
+const bankService = require("../../services/BankService");
 
 async function runTests() {
 	console.log("=== Iniciando Testes: RavenaBank Undo & Segunda Chance ===");
