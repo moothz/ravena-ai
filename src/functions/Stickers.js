@@ -1163,11 +1163,6 @@ async function transcodeToOpusOgg(inputPath, outputPath) {
 		parseFfprobeDuration(probeData?.format?.duration) ??
 		parseFfprobeDuration(audioStream.duration) ??
 		0;
-	if (duration > 240) {
-		const err = new Error("Áudio muito longo para figurinha com som");
-		err.code = "VIDEO_TOO_LONG";
-		throw err;
-	}
 
 	await acquireFFmpegSlot();
 	try {
@@ -1179,6 +1174,8 @@ async function transcodeToOpusOgg(inputPath, outputPath) {
 				.audioFrequency(48000)
 				.audioChannels(1)
 				.format("ogg")
+				// Corta áudio longo a 240s em vez de rejeitar
+				.outputOptions(["-t", "240"])
 				.output(outputPath)
 				.on("end", resolve)
 				.on("error", reject)
@@ -1199,7 +1196,7 @@ async function transcodeToOpusOgg(inputPath, outputPath) {
 		err.code = "AUDIO_EMPTY";
 		throw err;
 	}
-	return { audioBuffer, duration };
+	return { audioBuffer, duration: Math.min(duration, 240) };
 }
 
 /**
@@ -1287,21 +1284,6 @@ async function createAudioStickerFromAudioAndSticker({
 					chatId,
 					content:
 						"Para criar uma figurinha com som, responda a uma figurinha com um áudio (ou arquivo de áudio) e use !s (ou use !sa em um vídeo)."
-				});
-			}
-
-			const audioSeconds = Number(
-				audioMsg?.content?.seconds || audioMsg?.content?._mediaDetails?.seconds || 0
-			);
-			if (audioSeconds > 240) {
-				telemetry.setAttrs({
-					"app.outcome": "rejected",
-					"app.reject.reason": "audio_too_long"
-				});
-				await message.origin.react("❌");
-				return new ReturnMessage({
-					chatId,
-					content: "❌ O áudio é muito longo (máximo de 4 minutos para figurinhas com som)."
 				});
 			}
 
