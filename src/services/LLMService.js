@@ -263,6 +263,25 @@ class LLMService {
 			{
 				type: "function",
 				function: {
+					name: "search_game",
+					description:
+						"Pesquisa informações detalhadas sobre jogos eletrônicos e videogames no IGDB (ano de lançamento, plataformas, desenvolvedores, gêneros, avaliação agregada e sinopse).",
+					parameters: {
+						type: "object",
+						properties: {
+							name: {
+								type: "string",
+								description:
+									"Nome do jogo a pesquisar (ex: 'The Witcher 3', 'Elden Ring', 'Chrono Trigger', 'Hollow Knight')"
+							}
+						},
+						required: ["name"]
+					}
+				}
+			},
+			{
+				type: "function",
+				function: {
 					name: "query_vehicle_plate",
 					description:
 						"Consulta dados cadastrais, modelo, ano de fabricação, cor, município e histórico de preços na Tabela FIPE de um veículo brasileiro através de sua placa (antiga ou Mercosul).",
@@ -973,6 +992,14 @@ class LLMService {
 				return res;
 			}
 
+			if (normalizedName === "search_game" || normalizedName === "search_igdb") {
+				const gameName = args.name || args.title || args.query;
+				this.logger.info(`[LLMService] Executando search_game para: "${gameName}"`);
+				const res = await this.searchGame(gameName);
+				this.logger.info(`[LLMService] Resultado de search_game (${res.length} caracteres)`);
+				return res;
+			}
+
 			if (normalizedName === "query_vehicle_plate") {
 				const plate = args.plate || args.placa || args.query;
 				this.logger.info(`[LLMService] Executando query_vehicle_plate para: "${plate}"`);
@@ -1436,6 +1463,24 @@ class LLMService {
 		} catch (error) {
 			this.logger.error(`[searchImdb] Erro ao consultar IMDb para ${title}:`, error.message);
 			return `Erro ao consultar IMDb: ${error.message}`;
+		}
+	}
+
+	/**
+	 * Consulta jogos eletrônicos via GameCommands (IGDB)
+	 * @param {string} name - Nome do jogo
+	 * @returns {Promise<string>}
+	 */
+	async searchGame(name) {
+		try {
+			if (!name || typeof name !== "string" || name.trim().length === 0) {
+				return "Por favor, informe o nome do jogo para pesquisar no IGDB.";
+			}
+			const { fetchGameInfo } = require("../functions/GameCommands");
+			return await fetchGameInfo(name);
+		} catch (error) {
+			this.logger.error(`[searchGame] Erro ao consultar IGDB para ${name}:`, error.message);
+			return `Erro ao consultar IGDB: ${error.message}`;
 		}
 	}
 

@@ -931,6 +931,19 @@ class Management {
 				// 2 casos: sticker animado ou resto
 				// Sticker animado preciso salvar o gif na pasta public pra poder ser enviado
 
+				// Sticker com áudio: detectar áudio embutido para salvar junto
+				let stickerAudioMedia = null;
+				if (quotedMsg.type.toLowerCase() == "sticker" && !media.stickerGif) {
+					const hasEmbeddedAudio = Boolean(
+						quotedMsg?.content?.audioMessage ||
+						quotedMsg?.content?._mediaDetails?.Audio?.AudioMessage ||
+						quotedMsg?.content?._mediaDetails?.audioMessage
+					);
+					if (hasEmbeddedAudio && typeof quotedMsg.downloadStickerAudio === "function") {
+						stickerAudioMedia = await quotedMsg.downloadStickerAudio().catch(() => null);
+					}
+				}
+
 				if (media.stickerGif) {
 					this.logger.info(`Arquivo de mídia já existia como stickerGIF: ${media.stickerGif}`);
 					responseContent = `{stickerGif-${media.stickerGif}}`;
@@ -952,9 +965,26 @@ class Management {
 						`Arquivo de mídia salvo no storage para comando: ${fileName} (${group.id})`
 					);
 
+					// Sticker com áudio: salvar o áudio e usar o formato {stickeraudio-sticker:audio}
+					let stickerAudioFileName = null;
+					if (stickerAudioMedia && (stickerAudioMedia.data || stickerAudioMedia.url)) {
+						const audioBuffer = Buffer.from(
+							String(stickerAudioMedia.data).replace(/^data:[^;]+;base64,/, ""),
+							"base64"
+						);
+						stickerAudioFileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.ogg`;
+						await storageService.upload(audioBuffer, stickerAudioFileName, {
+							groupId: group.id,
+							category: "custom-commands",
+							mimetype: "audio/ogg; codecs=opus"
+						});
+					}
+
 					// Formata a resposta adequadamente para sendCustomCommandResponse
 					// Este é o formato: {mediaType-fileName} Caption
-					responseContent = `{${mediaType}-${fileName}}${caption ? " " + caption : ""}`;
+					responseContent = stickerAudioFileName
+						? `{stickeraudio-${fileName}:${stickerAudioFileName}}${caption ? " " + caption : ""}`
+						: `{${mediaType}-${fileName}}${caption ? " " + caption : ""}`;
 				}
 			} catch (error) {
 				this.logger.error("Erro ao salvar mídia para comando personalizado:", error);
@@ -1130,6 +1160,19 @@ class Management {
 					mediaType = "gif";
 				}
 
+				// Sticker com áudio: detectar áudio embutido para salvar junto
+				let stickerAudioMedia = null;
+				if (quotedMsg.type.toLowerCase() == "sticker" && !media.stickerGif) {
+					const hasEmbeddedAudio = Boolean(
+						quotedMsg?.content?.audioMessage ||
+						quotedMsg?.content?._mediaDetails?.Audio?.AudioMessage ||
+						quotedMsg?.content?._mediaDetails?.audioMessage
+					);
+					if (hasEmbeddedAudio && typeof quotedMsg.downloadStickerAudio === "function") {
+						stickerAudioMedia = await quotedMsg.downloadStickerAudio().catch(() => null);
+					}
+				}
+
 				if (media.stickerGif) {
 					this.logger.info(`Arquivo de mídia já existia como stickerGIF: ${media.stickerGif}`);
 					responseContent = `{stickerGif-${media.stickerGif}}`;
@@ -1151,8 +1194,25 @@ class Management {
 						`Arquivo de mídia salvo no storage para resposta de comando: ${fileName} (${group.id})`
 					);
 
+					// Sticker com áudio: salvar o áudio e usar o formato {stickeraudio-sticker:audio}
+					let stickerAudioFileName = null;
+					if (stickerAudioMedia && (stickerAudioMedia.data || stickerAudioMedia.url)) {
+						const audioBuffer = Buffer.from(
+							String(stickerAudioMedia.data).replace(/^data:[^;]+;base64,/, ""),
+							"base64"
+						);
+						stickerAudioFileName = `${Date.now()}-${Math.floor(Math.random() * 1000)}.ogg`;
+						await storageService.upload(audioBuffer, stickerAudioFileName, {
+							groupId: group.id,
+							category: "custom-commands",
+							mimetype: "audio/ogg; codecs=opus"
+						});
+					}
+
 					// Formata a resposta adequadamente para sendCustomCommandResponse
-					responseContent = `{${mediaType}-${fileName}}${quotedMsg.caption ? " " + quotedMsg.caption : ""}`;
+					responseContent = stickerAudioFileName
+						? `{stickeraudio-${fileName}:${stickerAudioFileName}}${quotedMsg.caption ? " " + quotedMsg.caption : ""}`
+						: `{${mediaType}-${fileName}}${quotedMsg.caption ? " " + quotedMsg.caption : ""}`;
 				}
 			} catch (error) {
 				this.logger.error("Erro ao salvar mídia para resposta de comando personalizado:", error);

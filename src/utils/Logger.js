@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const util = require("util");
+const maskTelegramToken = require("./maskTelegramToken");
 
 let _telemetry = null;
 function telemetryLogIds() {
@@ -146,6 +147,8 @@ class Logger {
 				logMessage += " " + data;
 			}
 		}
+
+		logMessage = maskTelegramToken(logMessage);
 
 		// Registra no console
 		const consoleMethod = level === "error" ? "error" : level === "warn" ? "warn" : "log";

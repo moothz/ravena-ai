@@ -296,7 +296,7 @@ async function runTests() {
 		const rollText =
 			rollResult.options?.caption || rollResult.content?.caption || rollResult.content;
 		assert.ok(
-			rollText.includes("60s de exclusividade para casar"),
+			rollText.includes("(60s 🔐)"),
 			`Legenda do roll deve mencionar 60s de exclusividade. Texto: ${rollText}`
 		);
 		assert.ok(
@@ -304,8 +304,8 @@ async function runTests() {
 			"Legenda do roll deve mencionar o @ do usuário que rolou"
 		);
 		assert.ok(
-			rollText.includes("ficará livre"),
-			"Legenda do roll deve informar que depois ficará livre"
+			rollText.includes("em até 300s para casar"),
+			"Legenda do roll deve informar a janela total para casar"
 		);
 		assert.ok(rollText.includes("💍"), "Legenda do roll deve sugerir usar a reação 💍 para casar");
 		assert.deepStrictEqual(

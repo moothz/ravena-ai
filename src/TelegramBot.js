@@ -176,8 +176,11 @@ class WhatsAppBotTelegram {
 					this.webhookApp.set("trust proxy", true);
 					this.webhookApp.use(express.json());
 
-					const webhookPath = `/webhook/telegram/${this.telegramBotToken}`;
+					const webhookPath = "/webhook/telegram/:token";
 					this.webhookApp.post(webhookPath, this._handleWebhook.bind(this));
+					this.webhookApp.use((err, req, res, next) =>
+						err instanceof URIError ? res.sendStatus(400) : next(err)
+					);
 
 					await new Promise((resolve, reject) => {
 						this.webhookServer = this.webhookApp
@@ -363,6 +366,8 @@ class WhatsAppBotTelegram {
 	}
 
 	_handleWebhook(req, res) {
+		if (req.params.token !== this.telegramBotToken) return res.sendStatus(404);
+
 		// Validar o secret token se estiver configurado
 		if (
 			this.telegramSecretToken &&

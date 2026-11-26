@@ -561,13 +561,25 @@ async function runTests() {
 		assert.ok(String(bot.capturedMessages[0].content).includes("não tem faixa de áudio"));
 		console.log("✓ !sa rejeitou video sem audio com orientacao");
 
-		// 8. Audio > 4 min deve ser recusado antes de enviar
-		console.log("\n8. Testando recusa de audio > 4 minutos...");
+		// 8. Audio > 4 min deve ser cortado com ffmpeg (em vez de rejeitar)
+		console.log("\n8. Testando corte de audio acima de 4 minutos...");
+		const longAudioPath = path.join(tempDir, "long_audio.wav");
+		await new Promise((resolve, reject) => {
+			ffmpeg()
+				.input("sine=frequency=440:duration=250")
+				.inputFormat("lavfi")
+				.outputOptions(["-y", "-ar", "16000", "-ac", "1"])
+				.output(longAudioPath)
+				.on("end", resolve)
+				.on("error", reject)
+				.run();
+		});
+		const longAudioB64 = (await fs.readFile(longAudioPath)).toString("base64");
 		const longAudioMsg = buildMockMsg({
 			type: "audio",
 			author: "5511999990002@s.whatsapp.net",
 			group: "120363000000000099@g.us",
-			content: { mimetype: "audio/ogg", data: audioB64, seconds: 300 },
+			content: { mimetype: "audio/wav", data: longAudioB64, seconds: 250 },
 			quotedMessage: quotedStickerMsg
 		});
 		const longAudioCmdMsg = buildMockMsg({
@@ -580,8 +592,85 @@ async function runTests() {
 		resetCase(bot, cmdHandler);
 		await cmdHandler.processCommand(bot, longAudioCmdMsg, "s", [], { name: "Grupo Teste" });
 		assert.strictEqual(bot.capturedMessages.length, 1);
-		assert.ok(String(bot.capturedMessages[0].content).includes("muito longo"));
-		console.log("✓ Audio acima de 4 min recusado com aviso");
+		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+		assert.ok(bot.capturedMessages[0].options.stickerAudio?.data);
+		const cutAudioPath = path.join(tempDir, "cut_check.ogg");
+		await fs.writeFile(
+			cutAudioPath,
+			Buffer.from(bot.capturedMessages[0].options.stickerAudio.data, "base64")
+		);
+		const cutMeta = await new Promise((resolve, reject) =>
+			ffmpeg.ffprobe(cutAudioPath, (err, m) => (err ? reject(err) : resolve(m)))
+		);
+		const cutDuration = parseFloat(cutMeta?.format?.duration || "0");
+		assert.ok(
+			cutDuration > 200 && cutDuration <= 245,
+			`Audio cortado deve ter no máximo ~240s (obteve ${cutDuration}s)`
+		);
+		console.log("✓ Audio acima de 4 min foi cortado para ~240s e virando sticker com som");
+
+		console.log("\n8b. Testando audio sem duracao no cabecalho (webm gerado via pipe)...");
+		const pipedAudioPath = path.join(tempDir, "piped_audio.webm");
+		await new Promise((resolve, reject) => {
+			const out = require("fs").createWriteStream(pipedAudioPath);
+			out.on("finish", resolve);
+			ffmpeg()
+				.input("sine=frequency=440:duration=10")
+				.inputFormat("lavfi")
+				.audioCodec("libopus")
+				.format("webm")
+				.on("error", reject)
+				.pipe(out, { end: true });
+		});
+		const pipedMeta = await new Promise((resolve, reject) =>
+			ffmpeg.ffprobe(pipedAudioPath, (err, m) => (err ? reject(err) : resolve(m)))
+		);
+		assert.ok(
+			!(parseFloat(pipedMeta?.format?.duration) > 0),
+			`Entrada deveria ficar sem duracao no cabecalho (obteve ${pipedMeta?.format?.duration})`
+		);
+		const pipedAudioMsg = buildMockMsg({
+			type: "audio",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: {
+				mimetype: "audio/webm",
+				data: (await fs.readFile(pipedAudioPath)).toString("base64")
+			},
+			quotedMessage: quotedStickerMsg
+		});
+		const pipedCmdMsg = buildMockMsg({
+			type: "text",
+			content: "!s",
+			author: "5511999990003@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			quotedMessage: pipedAudioMsg
+		});
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, pipedCmdMsg, "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+		const pipedOgg = Buffer.from(
+			bot.capturedMessages[0].options.stickerAudio?.data || "",
+			"base64"
+		);
+		assert.ok(
+			pipedOgg.length > 4096,
+			`Ogg convertido deve ter varios KB (obteve ${pipedOgg.length} bytes)`
+		);
+		const pipedOggPath = path.join(tempDir, "piped_check.ogg");
+		await fs.writeFile(pipedOggPath, pipedOgg);
+		const pipedOggMeta = await new Promise((resolve, reject) =>
+			ffmpeg.ffprobe(pipedOggPath, (err, m) => (err ? reject(err) : resolve(m)))
+		);
+		const pipedOggDuration = parseFloat(pipedOggMeta?.format?.duration || "0");
+		assert.ok(
+			pipedOggDuration > 9 && pipedOggDuration < 11,
+			`Ogg convertido deve ter ~10s (obteve ${pipedOggDuration}s)`
+		);
+		console.log(
+			`✓ Audio sem duracao no cabecalho virou Ogg de ${pipedOgg.length} bytes e ${pipedOggDuration}s`
+		);
 
 		// 9. Regressao: !s em audio que cita imagem continua criando sticker da imagem
 		console.log("\n9. Testando !s em audio que responde a imagem (sem regressao)...");

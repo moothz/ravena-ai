@@ -12,6 +12,7 @@
 "use strict";
 
 const api = require("@opentelemetry/api");
+const maskTelegramToken = require("../utils/maskTelegramToken");
 
 const { trace, context, SpanStatusCode, SpanKind, ROOT_CONTEXT } = api;
 const tracer = trace.getTracer("ravena-ai");
@@ -41,7 +42,12 @@ function cleanAttrs(attrs) {
 function recordError(span, err, errorType) {
 	if (!span || !span.isRecording()) return;
 	const e = err instanceof Error ? err : new Error(String(err));
-	span.recordException(e);
+	span.recordException({
+		name: e.name,
+		code: e.code,
+		message: maskTelegramToken(String(e.message)),
+		stack: maskTelegramToken(String(e.stack ?? ""))
+	});
 	span.setAttribute("error.type", errorType || e.code || e.name || "Error");
 	span.setStatus({ code: SpanStatusCode.ERROR, message: e.name });
 }

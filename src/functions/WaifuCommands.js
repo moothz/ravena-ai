@@ -506,6 +506,7 @@ function recordRollMessage(
 				const charClaim = {
 					isMultiRoll: true,
 					characterId: s.characterId,
+					numericId: s.numericId ?? null,
 					characterName: s.characterName,
 					groupId,
 					rollerUserId: finalRollerUserId,
@@ -1161,6 +1162,59 @@ function getCharacterWebUrl(characterIdOrChar) {
 			: characterIdOrChar;
 	if (!shortId) return null;
 	return `${WAIFULETES_WEB_URL}/c/${encodeURIComponent(String(shortId).trim())}`;
+}
+
+const rollTextSegmenter = new Intl.Segmenter("pt-BR", { granularity: "grapheme" });
+
+/**
+ * Trunca texto em no máximo `max` caracteres visíveis para legendas compactas de roll
+ * @param {string} str
+ * @param {number} [max=20]
+ * @returns {string}
+ */
+function truncateRollText(str, max = 20) {
+	if (!str || typeof str !== "string") return "";
+	const graphemes = Array.from(rollTextSegmenter.segment(str), (g) => g.segment);
+	if (graphemes.length <= max) return str;
+	return `${graphemes
+		.slice(0, max - 1)
+		.join("")
+		.trimEnd()}…`;
+}
+
+function normalizeRollName(str) {
+	return String(str || "")
+		.replace(/…$/, "")
+		.trim()
+		.toLowerCase();
+}
+
+function claimMatchesRef(claim, ref) {
+	const lowerRef = String(ref).trim().toLowerCase();
+	if (claim.characterId && String(claim.characterId).toLowerCase() === lowerRef) return true;
+	if (claim.numericId != null && String(claim.numericId) === lowerRef) return true;
+	const nameRef = normalizeRollName(ref);
+	if (!nameRef || !claim.characterName) return false;
+	return normalizeRollName(claim.characterName) === nameRef;
+}
+
+function claimMatchesTruncatedName(claim, ref) {
+	const nameRef = normalizeRollName(ref);
+	if (!nameRef || !claim.characterName) return false;
+	return normalizeRollName(truncateRollText(claim.characterName)) === nameRef;
+}
+
+function findActiveClaim(groupId, ref) {
+	if (!groupId || !ref) return null;
+	const direct = activeClaimsByCharGroup.get(`${groupId}:${ref}`);
+	if (direct) return direct;
+	const truncated = [];
+	for (const [key, claim] of activeClaimsByCharGroup.entries()) {
+		if (!key.startsWith(`${groupId}:`)) continue;
+		if (claimMatchesRef(claim, ref)) return claim;
+		if (claimMatchesTruncatedName(claim, ref)) truncated.push(claim);
+	}
+	return truncated.length === 1 ? truncated[0] : null;
 }
 
 /**
@@ -2322,7 +2376,7 @@ function makeRollHandler(genderFilter) {
 				const exclusiveMs = available ? getExclusiveClaimWindowMs(rarity) : 0;
 				const isSpecialRarity = exclusiveMs > 0;
 
-				let text = `🎲 *${character.name}* — _${character.series}_\n`;
+				let text = `🎲 *${truncateRollText(character.name, 20)}* — _${truncateRollText(character.series, 20)}_\n`;
 				if (firstRollData?.marketNotification) {
 					text += `${firstRollData.marketNotification}\n`;
 				}
@@ -2387,6 +2441,7 @@ function makeRollHandler(genderFilter) {
 					exclusiveUntil = isSpecialRarity ? now + exclusiveMs : null;
 					const claimData = {
 						characterId: character.id,
+						numericId: character.numericId ?? null,
 						characterName: character.name,
 						rollerUserId: userId,
 						rollerUserName: name,
@@ -2412,9 +2467,9 @@ function makeRollHandler(genderFilter) {
 
 					if (isSpecialRarity) {
 						const exclSecs = Math.round(exclusiveMs / 1000);
-						text += `🔒 *EXCLUSIVO!* ${rollerMention} tem ${exclSecs}s de exclusividade para casar! Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`).\n⏳ Após ${exclSecs}s, ficará livre para qualquer jogador casar (janela total de 300s).`;
+						text += `🔒 *EXCLUSIVO!* ${rollerMention} (${exclSecs}s 🔐)\n💍 Reaja com 💍 ou use \`!mu-casar\` em até 300s para casar!`;
 					} else {
-						text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` (ou \`!mu-casar ${character.id}\`) em até 300s para casar!`;
+						text += `💍 *LIVRE!* Reaja com 💍 ou use \`!mu-casar\` em até 300s para casar!`;
 					}
 				} else if (isOwner) {
 					if (isMythic) {
@@ -2704,6 +2759,7 @@ function makeRollHandler(genderFilter) {
 					const claimData = {
 						isMultiRoll: true,
 						characterId: s.characterId,
+						numericId: s.numericId ?? null,
 						characterName: s.characterName,
 						groupId,
 						rollerUserId: userId,
@@ -2790,7 +2846,7 @@ function makeRollHandler(genderFilter) {
 					const emojiNum = NUMBER_EMOJIS[s.slot - 1] || `${s.slot}️⃣`;
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""} (🎉 Casado com você sem cooldown!)\n`;
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)} (🎉 Casado com você sem cooldown!)\n`;
 				});
 				text += "\n";
 			}
@@ -2802,14 +2858,14 @@ function makeRollHandler(genderFilter) {
 					const normRarity = String(s.rarity).toUpperCase();
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					if (s.isMythic) {
-						text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""} (🔮 Criação Mítica — Vínculo Sagrado)\n`;
+						text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)} (🔮 Criação Mítica — Vínculo Sagrado)\n`;
 					} else {
 						const keysCount = s.keyProgress?.currentKeys || 1;
 						const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
 						const soulmateTag = isSoulmateNow
 							? " (💖 SOULMATE ALCANÇADO! 10/10)"
 							: ` (🔑 Chaves: ${keysCount}/10)`;
-						text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${soulmateTag}\n`;
+						text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${soulmateTag}\n`;
 						if (isSoulmateNow) {
 							notifySoulmateAchievement(
 								bot,
@@ -2842,9 +2898,8 @@ function makeRollHandler(genderFilter) {
 						s.exclusiveUntil && s.exclusiveUntil > now
 							? Math.ceil((s.exclusiveUntil - now) / 1000)
 							: 0;
-					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
-					text += `> !mu-casar ${s.characterId}\n`;
+					const exclTag = exclSecs > 0 ? ` (${exclSecs}s 🔐)` : "";
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${exclTag}\n`;
 					const wishSlotWebUrl = getCharacterWebUrl(s.numericId || s.characterId);
 					if (wishSlotWebUrl) {
 						text += `> ${wishSlotWebUrl}\n`;
@@ -2863,9 +2918,8 @@ function makeRollHandler(genderFilter) {
 						s.exclusiveUntil && s.exclusiveUntil > now
 							? Math.ceil((s.exclusiveUntil - now) / 1000)
 							: 0;
-					const exclTag = exclSecs > 0 ? ` (🔒 ${exclSecs}s exclusivo)` : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${exclTag}\n`;
-					text += `> !mu-casar ${s.characterId}\n`;
+					const exclTag = exclSecs > 0 ? ` (${exclSecs}s 🔐)` : "";
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${exclTag}\n`;
 					const singleSlotWebUrl = getCharacterWebUrl(s.numericId || s.characterId);
 					if (singleSlotWebUrl) {
 						text += `> ${singleSlotWebUrl}\n`;
@@ -2875,7 +2929,7 @@ function makeRollHandler(genderFilter) {
 			}
 
 			if (hasFreeSlots) {
-				text += `*Para Casar*: Reagir com o emoji do número, responder a mensagem com !mu-c # (número do personagem) ou usar !mu-casar <nome>\n\n`;
+				text += `*Para Casar*: Reagir com o emoji do número ou responder com !mu-c # (número do personagem)\n\n`;
 			}
 
 			if (casadosSlots.length > 0) {
@@ -2886,7 +2940,7 @@ function makeRollHandler(genderFilter) {
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const ownerInfo = s.owner?.name ? ` (${s.owner.name})` : "";
 					const mythicTag = s.isMythic ? " 🔮 [Mítico]" : "";
-					text += `${emojiNum} ${emojiRarity} ${s.characterName} — ${s.series || ""}${ownerInfo}${mythicTag}\n`;
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${ownerInfo}${mythicTag}\n`;
 				});
 				text += "\n";
 			}
@@ -3344,9 +3398,10 @@ async function casarWaifu(bot, message, args) {
 			}
 			const extractedChar = extractCharacterFromRollText(text);
 			if (extractedChar) {
-				characterId = extractedChar;
+				const extractedClaim = findActiveClaim(groupId, extractedChar);
+				characterId = extractedClaim?.characterId || extractedChar;
 				matchedRoll =
-					activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+					extractedClaim ||
 					(pendingClaims.get(groupId)?.characterId === characterId
 						? pendingClaims.get(groupId)
 						: null);
@@ -3472,27 +3527,8 @@ async function casarWaifu(bot, message, args) {
 			}
 		} else {
 			// Busca por ID ou Nome em activeClaimsByCharGroup do grupo
-			let matchedActive =
-				activeClaimsByCharGroup.get(`${groupId}:${fullInput}`) ||
-				activeClaimsByCharGroup.get(`${groupId}:${firstArg}`);
-
-			if (!matchedActive) {
-				const lowerFull = fullInput.toLowerCase();
-				const lowerFirst = firstArg.toLowerCase();
-				for (const [key, claim] of activeClaimsByCharGroup.entries()) {
-					if (key.startsWith(`${groupId}:`)) {
-						if (
-							claim.characterId?.toLowerCase() === lowerFull ||
-							claim.characterName?.toLowerCase() === lowerFull ||
-							claim.characterId?.toLowerCase() === lowerFirst ||
-							claim.characterName?.toLowerCase() === lowerFirst
-						) {
-							matchedActive = claim;
-							break;
-						}
-					}
-				}
-			}
+			const matchedActive =
+				findActiveClaim(groupId, fullInput) || findActiveClaim(groupId, firstArg);
 
 			if (matchedActive) {
 				characterId = matchedActive.characterId;
@@ -3517,8 +3553,8 @@ async function casarWaifu(bot, message, args) {
 						const found = extracted.find(
 							(s) =>
 								s.characterId?.toLowerCase() === characterId.toLowerCase() ||
-								s.characterName?.toLowerCase() === characterId.toLowerCase() ||
-								s.characterName?.toLowerCase() === fullInput.toLowerCase()
+								normalizeRollName(s.characterName) === normalizeRollName(characterId) ||
+								normalizeRollName(s.characterName) === normalizeRollName(fullInput)
 						);
 						if (found) {
 							matchedRoll = found;
@@ -3591,9 +3627,10 @@ async function casarWaifu(bot, message, args) {
 				} else {
 					const extractedChar = extractCharacterFromRollText(text);
 					if (extractedChar) {
-						characterId = extractedChar;
+						const extractedClaim = findActiveClaim(groupId, extractedChar);
+						characterId = extractedClaim?.characterId || extractedChar;
 						matchedRoll =
-							activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+							extractedClaim ||
 							(pendingClaims.get(groupId)?.characterId === characterId
 								? pendingClaims.get(groupId)
 								: null);
@@ -3648,7 +3685,7 @@ async function casarWaifu(bot, message, args) {
 
 	if (!matchedRoll) {
 		matchedRoll =
-			activeClaimsByCharGroup.get(`${groupId}:${characterId}`) ||
+			findActiveClaim(groupId, characterId) ||
 			(pendingClaims.get(groupId)?.characterId === characterId ? pendingClaims.get(groupId) : null);
 	}
 
@@ -6556,7 +6593,7 @@ function detectRarityFromRollLine(rawLine) {
  */
 function extractCharacterIdFromWebLink(rawLine) {
 	if (!rawLine) return null;
-	const match = rawLine.match(/\/character\/([^/\s"'<>|]+)/i);
+	const match = rawLine.match(/\/(?:character|c)\/([^/\s"'<>|]+)/i);
 	if (!match || !match[1]) return null;
 	try {
 		return decodeURIComponent(match[1]);
@@ -6610,7 +6647,7 @@ function extractMultiRollSlotsFromText(text) {
 		/🎲\s*Waifuletes!\s*\*?\d+\*?\s*rolls:/i.test(text) ||
 		(text.match(/!mu-casar\s+([a-zA-Z0-9_-]+)/gi) || []).length > 1 ||
 		(text.match(/[1-9](?:️⃣|\uFE0F?\u20E3)/g) || []).length > 1 ||
-		(text.match(/\/character\//gi) || []).length > 1;
+		(text.match(/\/(?:character|c)\//gi) || []).length > 1;
 
 	if (!isMulti) return [];
 
@@ -6624,7 +6661,7 @@ function extractMultiRollSlotsFromText(text) {
 
 		// Verifica se a linha indica um slot numerado: ex: 1️⃣ ⚪ Nome — Serie
 		const slotMatch = rawLine.match(
-			/^([1-9])(?:️⃣|\uFE0F?\u20E3)\s*(?:[^\s[*]*\s*)?(?:\[([^\]]+)\]\s*)?\*?([^*\n—–-]+?)\*?\s*(?:[—–-]\s*([^\n(]+))?(?:\s*\((.*)\))?$/
+			/^([1-9])(?:️⃣|\uFE0F?\u20E3)\s*(?:[^\s[*]*\s*)?(?:\[([^\]]+)\]\s*)?\*?([^*\n—–-]+?)\*?\s*(?:[—–-]\s*([^\n]*?))?(?:\s*\(([^()]*)\))?$/
 		);
 
 		if (slotMatch) {
@@ -6643,6 +6680,11 @@ function extractMultiRollSlotsFromText(text) {
 				characterId: null
 			};
 			slots.push(currentSlot);
+			continue;
+		}
+
+		if (/^[1-9](?:️⃣|\uFE0F?\u20E3)/.test(rawLine)) {
+			currentSlot = null;
 			continue;
 		}
 
@@ -11360,6 +11402,7 @@ module.exports = {
 	isUserActiveInGroup,
 	escapeXml,
 	getCharacterWebUrl,
+	truncateRollText,
 	resolveWaifuImageUrl,
 	generateSingleRollPlaceholderBuffer,
 	infoCriacaoMitico,
