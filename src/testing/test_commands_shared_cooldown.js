@@ -7,6 +7,7 @@ const assert = require("assert");
 const FakeBot = require("./FakeBot");
 const CommandHandler = require("../CommandHandler");
 const Command = require("../models/Command");
+const { createMessage } = require("./FakeMessage");
 
 async function main() {
 	console.log("=== Iniciando teste de cooldown compartilhado entre aliases ===");
@@ -178,6 +179,116 @@ async function main() {
 	);
 
 	console.log("✓ Teste 4 passou: cooldownKey explícito funciona perfeitamente.");
+
+	console.log("\n[Teste 5] Categorias do menu não dividem cooldown...");
+	const cmdIa = commandHandler.fixedCommands.getCommand("cmd-ia");
+	const cmdJogos = commandHandler.fixedCommands.getCommand("cmd-jogos");
+	assert.ok(cmdIa && cmdJogos, "cmd-ia e cmd-jogos devem existir");
+	await commandHandler.updateCooldown(cmdIa, groupId, bot.id, "5511999990005", false);
+	assert.strictEqual(
+		(await commandHandler.checkCooldown(cmdIa, groupId, bot.id, "5511999990005", false)).inCooldown,
+		true,
+		"cmd-ia deve entrar em cooldown"
+	);
+	assert.strictEqual(
+		(await commandHandler.checkCooldown(cmdJogos, groupId, bot.id, "5511999990005", false))
+			.inCooldown,
+		false,
+		"cmd-jogos não deve entrar em cooldown após cmd-ia"
+	);
+	console.log("✓ Teste 5 passou.");
+
+	console.log("\n[Teste 6] Perfil do Wild Rift não divide cooldown com wr-build...");
+	const cmdWrBuild = commandHandler.fixedCommands.getCommand("wr-build");
+	const profileCommands = commandHandler.fixedCommands
+		.getAllCommands()
+		.filter((c) => ["wr", "wildrift"].includes(c.name) && c.method !== cmdWrBuild.method);
+	const cmdWrProfile = profileCommands.find((c) => c.name === "wr");
+	const cmdWildriftProfile = profileCommands.find((c) => c.name === "wildrift");
+	assert.ok(
+		cmdWrBuild && cmdWrProfile && cmdWildriftProfile,
+		"wr, wildrift e wr-build devem existir"
+	);
+	const userWr = "5511999990006";
+	await commandHandler.updateCooldown(cmdWrProfile, groupId, bot.id, userWr, false);
+	assert.strictEqual(
+		(await commandHandler.checkCooldown(cmdWildriftProfile, groupId, bot.id, userWr, false))
+			.inCooldown,
+		true,
+		"wildrift (perfil) deve dividir cooldown com wr (perfil)"
+	);
+	assert.strictEqual(
+		(await commandHandler.checkCooldown(cmdWrBuild, groupId, bot.id, userWr, false)).inCooldown,
+		false,
+		"wr-build não deve entrar em cooldown após wr (perfil)"
+	);
+	const userBuild = "5511999990007";
+	await commandHandler.updateCooldown(cmdWrBuild, groupId, bot.id, userBuild, false);
+	assert.strictEqual(
+		(await commandHandler.checkCooldown(cmdWrProfile, groupId, bot.id, userBuild, false))
+			.inCooldown,
+		false,
+		"wr (perfil) não deve entrar em cooldown após wr-build"
+	);
+	console.log("✓ Teste 6 passou.");
+
+	console.log("\n[Teste 7] Comando personalizado com nome de alias fixo tem cooldown próprio...");
+	const customPesca = { name: "pesca", startsWith: "pesca", cooldown: 20, cooldownGrupo: false };
+	const cmdPescar = commandHandler.fixedCommands.getCommand("pescar");
+	assert.strictEqual(commandHandler.getCooldownCommandName(customPesca), "pesca");
+	const userCustom = "5511999990008";
+	await commandHandler.updateCooldown(cmdPescar, groupId, bot.id, userCustom, false);
+	assert.strictEqual(
+		(await commandHandler.checkCooldown(customPesca, groupId, bot.id, userCustom, false))
+			.inCooldown,
+		false,
+		"Comando personalizado 'pesca' não deve herdar o cooldown do fixo 'pescar'"
+	);
+	console.log("✓ Teste 7 passou.");
+
+	console.log("\n[Teste 8] Cooldown persistido pelo alias usa o nome canônico...");
+	const userSqlite = "5511999990009";
+	const persisted = new Map();
+	const { dbRun, dbGet } = commandHandler.database;
+	commandHandler.database.dbRun = async (dbName, sql, params) => {
+		if (dbName === "cooldowns") persisted.set(`${params[0]}|${params[1]}`, params[2]);
+		return { lastID: 0, changes: 1 };
+	};
+	commandHandler.database.dbGet = async (dbName, sql, params) => {
+		const timestamp = persisted.get(`${params[0]}|${params[1]}`);
+		return timestamp === undefined ? undefined : { timestamp };
+	};
+	try {
+		await commandHandler.updateCooldown(cmdRf, groupId, bot.id, userSqlite, false);
+		commandHandler.cooldownCache.clear();
+		assert.strictEqual(
+			(await commandHandler.checkCooldown(cmdRollF, groupId, bot.id, userSqlite, false)).inCooldown,
+			true,
+			"mu-rollf deve achar no banco o cooldown gravado por mu-rf"
+		);
+	} finally {
+		commandHandler.database.dbRun = dbRun;
+		commandHandler.database.dbGet = dbGet;
+	}
+	console.log("✓ Teste 8 passou.");
+
+	console.log("\n[Teste 9] Aviso de cooldown é um só para os aliases...");
+	bot.resetCapture();
+	const noticeGroup = "120363000000000002@g.us";
+	const noticeMsg = () =>
+		createMessage({
+			content: "!mu-rf",
+			group: noticeGroup,
+			author: "5511999990010@s.whatsapp.net"
+		});
+	await commandHandler.handleCooldownMessage(bot, noticeMsg(), cmdRollF, noticeGroup, {
+		formattedTime: "10s"
+	});
+	await commandHandler.handleCooldownMessage(bot, noticeMsg(), cmdRf, noticeGroup, {
+		formattedTime: "9s"
+	});
+	assert.strictEqual(bot.capturedMessages.length, 1, "Só um aviso para mu-rollf e mu-rf");
+	console.log("✓ Teste 9 passou.");
 
 	console.log("\n=== TODOS OS TESTES PASSARAM COM SUCESSO! ===");
 	process.exit(0);

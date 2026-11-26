@@ -37,7 +37,7 @@ class CommandHandler {
 		this.commandLimitTracker = CommandLimitTracker.getInstance();
 		this.customCommands = {}; // Agrupados por groupId
 		this.cooldownCache = new Map(); // "botId_groupId|comando" -> timestamp do ultimo uso
-		this.cooldownCanonicalMap = new Map(); // Mapeia comando/alias para nome canônico de cooldown
+		this.cooldownCanonicalMap = new WeakMap();
 		this.privateManagement = {}; // Para gerenciar grupos a partir de chats privados
 		this.cooldownMessages = {}; // Rastreia quando o último aviso (cooldown/limite) foi enviado
 
@@ -169,29 +169,19 @@ class CommandHandler {
 	 * Constrói o mapa de nomes canônicos de cooldown para comandos e seus aliases
 	 */
 	buildCooldownCanonicalMap() {
-		this.cooldownCanonicalMap = new Map();
+		this.cooldownCanonicalMap = new WeakMap();
 		if (!this.fixedCommands || typeof this.fixedCommands.getAllCommands !== "function") {
 			return;
 		}
 
-		const allCommands = this.fixedCommands.getAllCommands();
-
-		// Agrupa comandos por method para mapear comandos irmãos/aliases
 		const methodGroups = new Map();
-		for (const cmd of allCommands) {
-			if (typeof cmd.method === "function") {
-				if (!methodGroups.has(cmd.method)) {
-					methodGroups.set(cmd.method, []);
-				}
-				methodGroups.get(cmd.method).push(cmd);
-			}
+		for (const cmd of this.fixedCommands.getAllCommands()) {
+			if (typeof cmd.method !== "function") continue;
+			if (!methodGroups.has(cmd.method)) methodGroups.set(cmd.method, []);
+			methodGroups.get(cmd.method).push(cmd);
 		}
 
-		for (const [, siblings] of methodGroups.entries()) {
-			// Encontra o comando principal canônico:
-			// 1. Comando que define cooldownKey explícito
-			// 2. Comando visível que não tenha 'alias' na descrição
-			// 3. Primeiro comando registrado
+		for (const siblings of methodGroups.values()) {
 			const primary =
 				siblings.find((c) => Boolean(c.cooldownKey)) ||
 				siblings.find((c) => {
@@ -201,33 +191,8 @@ class CommandHandler {
 				siblings[0];
 
 			const canonicalName = primary.cooldownKey || primary.name || primary.startsWith;
-
 			for (const cmd of siblings) {
-				if (cmd.name) this.cooldownCanonicalMap.set(cmd.name, canonicalName);
-				if (cmd.startsWith) this.cooldownCanonicalMap.set(cmd.startsWith, canonicalName);
-				if (Array.isArray(cmd.aliases)) {
-					for (const alias of cmd.aliases) {
-						this.cooldownCanonicalMap.set(alias, canonicalName);
-					}
-				}
-			}
-		}
-
-		// Registra comandos restantes e seus aliases individuais
-		for (const cmd of allCommands) {
-			const canonicalName = cmd.cooldownKey || cmd.name || cmd.startsWith;
-			if (cmd.name && !this.cooldownCanonicalMap.has(cmd.name)) {
-				this.cooldownCanonicalMap.set(cmd.name, canonicalName);
-			}
-			if (cmd.startsWith && !this.cooldownCanonicalMap.has(cmd.startsWith)) {
-				this.cooldownCanonicalMap.set(cmd.startsWith, canonicalName);
-			}
-			if (Array.isArray(cmd.aliases)) {
-				for (const alias of cmd.aliases) {
-					if (!this.cooldownCanonicalMap.has(alias)) {
-						this.cooldownCanonicalMap.set(alias, canonicalName);
-					}
-				}
+				this.cooldownCanonicalMap.set(cmd, canonicalName);
 			}
 		}
 	}
@@ -240,54 +205,22 @@ class CommandHandler {
 	getCooldownCommandName(command) {
 		if (!command) return "";
 
-		if (!this.cooldownCanonicalMap || this.cooldownCanonicalMap.size === 0) {
+		if (typeof command === "string") {
+			const cmdObj = this.fixedCommands?.getCommand?.(command);
+			return cmdObj ? this.getCooldownCommandName(cmdObj) : command;
+		}
+
+		if (typeof command !== "object") return "";
+		if (command.cooldownKey) return command.cooldownKey;
+
+		if (
+			!this.cooldownCanonicalMap.has(command) &&
+			this.fixedCommands?.getAllCommands?.().includes(command)
+		) {
 			this.buildCooldownCanonicalMap();
 		}
 
-		if (typeof command === "object" && command !== null) {
-			if (command.cooldownKey) return command.cooldownKey;
-
-			const name = command.name ?? command.startsWith;
-			if (name && this.cooldownCanonicalMap?.has(name)) {
-				return this.cooldownCanonicalMap.get(name);
-			}
-
-			// Se a instância do comando não estiver no mapa pré-computado (ex: testes unitários isolados)
-			if (typeof command.method === "function" && this.fixedCommands?.getAllCommands) {
-				const siblings = this.fixedCommands
-					.getAllCommands()
-					.filter((c) => c.method === command.method);
-				if (siblings.length > 1) {
-					const primary =
-						siblings.find((c) => Boolean(c.cooldownKey)) ||
-						siblings.find((c) => {
-							const desc = (c.description || "").toLowerCase();
-							return !desc.includes("alias") && !c.hidden;
-						}) ||
-						siblings[0];
-					return primary.cooldownKey || primary.name || primary.startsWith || name;
-				}
-			}
-
-			return name || "";
-		}
-
-		if (typeof command === "string") {
-			if (this.cooldownCanonicalMap?.has(command)) {
-				return this.cooldownCanonicalMap.get(command);
-			}
-
-			if (this.fixedCommands?.getCommand) {
-				const cmdObj = this.fixedCommands.getCommand(command);
-				if (cmdObj) {
-					return this.getCooldownCommandName(cmdObj);
-				}
-			}
-
-			return command;
-		}
-
-		return "";
+		return this.cooldownCanonicalMap.get(command) ?? command.name ?? command.startsWith ?? "";
 	}
 
 	/**
