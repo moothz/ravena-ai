@@ -67,7 +67,7 @@ const { registerAdminRoutes } = require("./BotAPI/routes/adminRoutes");
  * Arquitetura Modular:
  * - src/BotAPI/middleware/auth.js: Autenticação de admin, sessão via cookie, Basic Auth e UPS Secret
  * - src/BotAPI/middleware/rateLimiters.js: Limitadores de taxa geral e restrito
- * - src/BotAPI/middleware/security.js: frame-ancestors e checagem de origem nas escritas
+ * - src/BotAPI/middleware/security.js: frame-ancestors, CSP do /admin e checagem de origem nas escritas
  * - src/BotAPI/middleware/upload.js: Configuração de upload via Multer (geral e fotos NSFW)
  * - src/BotAPI/services/analyticsHelper.js: Agregação analítica, estatísticas e cache de comandos
  * - src/BotAPI/services/webhookManager.js: Servidor de webhooks de grupos e fila de bufferização
@@ -293,7 +293,7 @@ class BotAPI {
 	 *    - GET  /api/stream                        -> SSE: Stream de eventos e status de serviços
 	 *    - GET  /restart/:botId                    -> Reinicialização do bot (Basic Auth)
 	 *    - GET  /logout/:botId                     -> Desconectar sessão do WhatsApp (Basic Auth)
-	 *    - GET  /recreate/:botId                   -> Recriar instância na WhatsGoAPI (Basic Auth)
+	 *    - GET  /recreate/:botId                   -> Recriar instância na WhatsGoAPI (Basic Auth); ?onlyIfMissing=1 só cria, nunca apaga
 	 *    - POST /passkey/respond/:botId            -> Responder desafio de passkey
 	 *    - POST /passkey/confirm/:botId            -> Confirmar pareamento de passkey
 	 *    - GET  /api/bot-stats                     -> Estatísticas e métricas de todos os bots
@@ -572,21 +572,7 @@ class BotAPI {
 			});
 		}
 
-		let allGroups = [];
-		try {
-			allGroups = await this.database.getGroups();
-		} catch (e) {
-			this.logger.warn("Erro ao buscar grupos para runtime status:", e);
-		}
-
-		const groupsCountMap = {};
-		if (Array.isArray(allGroups)) {
-			allGroups.forEach((g) => {
-				if (g && g.botId) {
-					groupsCountMap[g.botId] = (groupsCountMap[g.botId] || 0) + 1;
-				}
-			});
-		}
+		const knownGroups = this.database.getGroupIdsByBot();
 
 		const botGroupPromises = this.bots.map(async (bot) => {
 			if (bot.isConnected && typeof bot.listGroups === "function") {
@@ -602,7 +588,7 @@ class BotAPI {
 					// Fallback para o banco
 				}
 			}
-			return { botId: bot.id, count: groupsCountMap[bot.id] || 0 };
+			return { botId: bot.id, count: knownGroups[bot.id]?.length ?? 0 };
 		});
 
 		const resolvedGroupCounts = await Promise.all(botGroupPromises);
@@ -628,10 +614,7 @@ class BotAPI {
 					avg: avgResponseTime,
 					max: maxResponseTime
 				},
-				groupsCount:
-					finalGroupsCountMap[bot.id] !== undefined
-						? finalGroupsCountMap[bot.id]
-						: groupsCountMap[bot.id] || 0
+				groupsCount: finalGroupsCountMap[bot.id]
 			});
 		});
 

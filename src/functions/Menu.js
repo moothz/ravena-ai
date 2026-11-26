@@ -513,8 +513,15 @@ function groupRelatedCommands(commands) {
 	// Adiciona os grupos de comandos à lista final
 	for (const groupName in groups) {
 		if (groups[groupName].length > 0) {
-			// Ordena comandos dentro do grupo pelo nome
-			groups[groupName].sort((a, b) => a.name.localeCompare(b.name));
+			// Ordena comandos dentro do grupo respeitando COMMAND_ORDER primeiro e ordem alfabética depois
+			groups[groupName].sort((a, b) => {
+				const indexA = COMMAND_ORDER.indexOf(a.name);
+				const indexB = COMMAND_ORDER.indexOf(b.name);
+				if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+				if (indexA !== -1) return -1;
+				if (indexB !== -1) return 1;
+				return a.name.localeCompare(b.name);
+			});
 			groupedCommands.push(groups[groupName]);
 		}
 	}
@@ -559,17 +566,20 @@ function formatCommandGroup(cmdGroup, prefix) {
 	// Usando o primeiro comando para a descrição
 	const mainCmd = cmdGroup[0];
 
-	// Formata os nomes de comando com prefixo
-	const cmdNames = cmdGroup.map((cmd) => {
-		let cmdText = `${prefix}${cmd.name}`;
-
-		// Adiciona aliases se disponíveis
-		if (cmd.aliases && Array.isArray(cmd.aliases) && cmd.aliases.length > 0) {
-			cmdText += `, ${prefix}${cmd.aliases.join(`, ${prefix}`)}`;
+	// Formata os nomes de comando com prefixo (sem duplicar aliases já listados no grupo)
+	const seenTokens = new Set();
+	const cmdNames = [];
+	for (const cmd of cmdGroup) {
+		const tokens = [cmd.name, ...(Array.isArray(cmd.aliases) ? cmd.aliases : [])];
+		for (const token of tokens) {
+			const clean = String(token || "").trim();
+			const lower = clean.toLowerCase();
+			if (clean && !seenTokens.has(lower)) {
+				seenTokens.add(lower);
+				cmdNames.push(`${prefix}${clean}`);
+			}
 		}
-
-		return cmdText;
-	});
+	}
 
 	// Junta todos os nomes de comando
 	let result = `• *${cmdNames.join(", ")}*`;
@@ -1296,7 +1306,8 @@ Object.keys(CATEGORY_EMOJIS).forEach((category, v) => {
 			description: `Mostra comandos da categoria ${category}`,
 			category: "geral",
 			hidden: true,
-			method: showCommandsByCategory
+			method: async (bot, message, args, group) =>
+				await showCommandsByCategory(bot, message, args, group)
 		})
 	);
 });

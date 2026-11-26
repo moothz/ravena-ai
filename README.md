@@ -75,6 +75,8 @@ http://localhost:5001/qrcode/<nome-do-bot>
 ```
 *(Utilize o usuário e senha definidos em `managementUser` e `managementPW` no `bots.json`)*.
 
+Na primeira vez, ou se a instância tiver sido apagada por inatividade, use o botão **Criar** antes de ler o QR Code.
+
 ---
 
 ## 🔌 Dependências Externas & APIs

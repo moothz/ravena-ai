@@ -41,7 +41,7 @@ async function runTests() {
 	console.log("\n[2] Verificando comandos exportados de Stickers e ImageManipulation...");
 	const stickerCommands = Stickers.commands || [];
 	assert(stickerCommands.length > 0, "Deve haver comandos em Stickers.js");
-	const testStickerNames = ["sticker", "s", "fig", "sqi", "shq"];
+	const testStickerNames = ["sticker", "s", "fig", "sqi", "shq", "slongo", "slongohq"];
 	for (const name of testStickerNames) {
 		const found = stickerCommands.find((c) => c.name === name);
 		assert(found, `Comando '${name}' deve existir em Stickers.js`);

@@ -1,3 +1,4 @@
+const os = require("os");
 const path = require("path");
 const Logger = require("../utils/Logger");
 const fs = require("fs").promises;
@@ -6,9 +7,11 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const sharp = require("sharp");
 const ffmpeg = require("fluent-ffmpeg");
+const { createCanvas } = require("canvas");
 
 const CmdUsage = require("../utils/CmdUsage");
 const LLMService = require("../services/LLMService");
+const telemetry = require("../telemetry");
 
 const logger = new Logger("sticker-commands");
 const database = Database.getInstance();
@@ -46,24 +49,29 @@ async function cleanupTempFiles() {
 	}
 }
 
-// Padrões recomendados do WhatsApp para figurinhas (stickers)
+// Padrões recomendados do WhatsApp/whatsmeow para figurinhas (stickers)
 const WHATSAPP_STICKER = {
 	MAX_SIZE: 512, // Dimensão padrão do WhatsApp: 512x512 pixels
-	MAX_DURATION: 15, // Duração máxima padrão de até 15s
-	FPS: 8, // 8 FPS
-	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança (< 500 KB) do WhatsApp
+	MAX_DURATION: 18, // Duração máxima padrão de até 18s
+	// whatsmeow não impõe corte de duração no protobuf StickerMessage, mas clientes WhatsApp
+	// exigem < 500 KB por sticker; 60s é o teto prático antes de degradar FPS/resolução demais.
+	MAX_LONG_DURATION: 60,
+	FPS: 12, // 12 FPS padrão para animações mais fluidas
+	MAX_FILE_SIZE: 490 * 1024, // Limite de segurança (< 500 KB) do WhatsApp (margem p/ metadados EXIF)
 	STATIC_QUALITY: 80, // Qualidade WebP para imagens estáticas
-	ANIMATED_QUALITY: 28, // Qualidade inicial para 15s a 8 FPS
-	COMPRESSION_LEVEL: 6 // Nível de compressão máximo da libwebp (0-6)
+	ANIMATED_QUALITY: 30, // Qualidade inicial para 18s a 12 FPS
+	COMPRESSION_LEVEL: 6, // Nível de compressão máximo da libwebp (0-6)
+	LONG_COMPRESSION_LEVEL: 4 // Equilíbrio velocidade/compressão em vídeos longos
 };
 
 // Perfis sequenciais de fallback para figurinhas animadas (interrompe assim que tamanho <= 490 KB)
 const ANIMATED_FALLBACK_PROFILES = [
-	{ duration: 15, fps: 8, qv: 28, desc: "15s @ 8fps (q:28)" },
-	{ duration: 15, fps: 8, qv: 18, desc: "15s @ 8fps menor q:v (q:18)" },
-	{ duration: 10, fps: 8, qv: 22, desc: "10s @ 8fps (q:22)" },
-	{ duration: 5, fps: 8, qv: 25, desc: "5s @ 8fps (q:25)" },
-	{ duration: 3.5, fps: 8, qv: 20, desc: "3.5s @ 8fps (q:20)" }
+	{ duration: 18, fps: 12, qv: 30, desc: "18s @ 12fps (q:30)" },
+	{ duration: 15, fps: 12, qv: 24, desc: "15s @ 12fps (q:24)" },
+	{ duration: 15, fps: 10, qv: 20, desc: "15s @ 10fps menor q:v (q:20)" },
+	{ duration: 10, fps: 10, qv: 22, desc: "10s @ 10fps (q:22)" },
+	{ duration: 6, fps: 12, qv: 24, desc: "6s @ 12fps (q:24)" },
+	{ duration: 3.5, fps: 10, qv: 20, desc: "3.5s @ 10fps (q:20)" }
 ];
 
 // Perfis sequenciais de fallback para figurinhas animadas em alta taxa de quadros (HQ: 22-25 FPS)
@@ -73,6 +81,429 @@ const ANIMATED_HQ_PROFILES = [
 	{ duration: 5, fps: 22, qv: 18, desc: "5s @ 22fps (q:18)" },
 	{ duration: 4.5, fps: 22, qv: 14, desc: "4.5s @ 22fps (q:14)" }
 ];
+
+// Tabela de perfis longos (!slongo e !slongohq): preservam duração até MAX_LONG_DURATION,
+// reduzindo resolução, FPS e q:v antes de recorrer a cortes de duração como último recurso.
+const LONG_PROFILE_TIERS = {
+	long: [
+		{
+			maxUpTo: 22,
+			fps: 8,
+			maxSize: 512,
+			qv: 26,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: 38,
+			fps: 8,
+			maxSize: 384,
+			qv: 20,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: Infinity,
+			fps: 6,
+			maxSize: 320,
+			qv: 18,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: Infinity,
+			fps: 5,
+			maxSize: 256,
+			qv: 16,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: Infinity,
+			fps: 4,
+			maxSize: 256,
+			qv: 14,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{ maxUpTo: Infinity, fps: 3, maxSize: 192, qv: 10, compressionLevel: 5 }
+	],
+	longhq: [
+		{
+			maxUpTo: 18,
+			fps: 22,
+			maxSize: 512,
+			qv: 24,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: 26,
+			fps: 15,
+			maxSize: 512,
+			qv: 20,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{
+			maxUpTo: 35,
+			fps: 14,
+			maxSize: 384,
+			qv: 18,
+			compressionLevel: WHATSAPP_STICKER.LONG_COMPRESSION_LEVEL
+		},
+		{ maxUpTo: 50, fps: 12, maxSize: 320, qv: 16, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 10, maxSize: 256, qv: 14, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 8, maxSize: 224, qv: 12, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 6, maxSize: 200, qv: 10, compressionLevel: 5 },
+		{ maxUpTo: Infinity, fps: 5, maxSize: 192, qv: 10, compressionLevel: 5 }
+	]
+};
+
+/**
+ * Converte duração numérica ou no formato HH:MM:SS(.ms) retornada pelo ffprobe para segundos.
+ * @param {string|number|undefined|null} rawValue
+ * @returns {number|null}
+ */
+function parseFfprobeDuration(rawValue) {
+	if (typeof rawValue === "number") {
+		return Number.isFinite(rawValue) && rawValue > 0 ? rawValue : null;
+	}
+	if (typeof rawValue !== "string") {
+		return null;
+	}
+	const trimmed = rawValue.trim();
+	if (!trimmed || trimmed === "N/A") {
+		return null;
+	}
+	if (/^\d+(?:\.\d+)?$/.test(trimmed)) {
+		const numeric = parseFloat(trimmed);
+		return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+	}
+	const hmsMatch = trimmed.match(/^(\d+):(\d{1,2}):(\d{1,2}(?:\.\d+)?)$/);
+	if (hmsMatch) {
+		const seconds = Number(hmsMatch[1]) * 3600 + Number(hmsMatch[2]) * 60 + parseFloat(hmsMatch[3]);
+		return Number.isFinite(seconds) && seconds > 0 ? seconds : null;
+	}
+	return null;
+}
+
+/**
+ * Obtém a duração de um arquivo de mídia em segundos via ffprobe, priorizando a trilha de vídeo.
+ * @param {string} inputPath
+ * @returns {Promise<number|null>}
+ */
+function getMediaDuration(inputPath) {
+	return new Promise((resolve) => {
+		ffmpeg.ffprobe(inputPath, (err, metadata) => {
+			if (err || !metadata) {
+				return resolve(null);
+			}
+			const streams = Array.isArray(metadata.streams) ? metadata.streams : [];
+			const videoDuration = streams
+				.filter((s) => s.codec_type === "video")
+				.map((s) => parseFfprobeDuration(s.duration) ?? parseFfprobeDuration(s.tags?.DURATION))
+				.find((d) => d !== null);
+			if (videoDuration !== undefined) {
+				return resolve(videoDuration);
+			}
+
+			const formatDuration = parseFfprobeDuration(metadata.format?.duration);
+			if (formatDuration !== null) {
+				return resolve(formatDuration);
+			}
+
+			const anyStreamDuration = streams
+				.map((s) => parseFfprobeDuration(s.duration) ?? parseFfprobeDuration(s.tags?.DURATION))
+				.find((d) => d !== null);
+			return resolve(anyStreamDuration ?? null);
+		});
+	});
+}
+
+/**
+ * Monta perfis adaptativos para vídeos longos (!slongo / !slongohq) limitados a MAX_LONG_DURATION.
+ * @param {"long"|"longhq"} mode
+ * @param {number|null} mediaDuration
+ * @returns {Array<Object>}
+ */
+function buildLongAnimatedProfiles(mode, mediaDuration) {
+	const hasValidDuration =
+		typeof mediaDuration === "number" && Number.isFinite(mediaDuration) && mediaDuration > 0;
+	const targetDuration = hasValidDuration
+		? Number(Math.max(1, Math.min(mediaDuration, WHATSAPP_STICKER.MAX_LONG_DURATION)).toFixed(2))
+		: WHATSAPP_STICKER.MAX_LONG_DURATION;
+	// Sem duração conhecida (ex.: WebM sem metadados), inicia dos perfis mais altos porque -t 60 encerra no EOS
+	const tierCheckDuration = hasValidDuration ? targetDuration : 1;
+	const tiers = LONG_PROFILE_TIERS[mode] || LONG_PROFILE_TIERS.long;
+
+	const selected = tiers
+		.filter((t) => tierCheckDuration <= t.maxUpTo)
+		.map((t) => ({
+			duration: targetDuration,
+			fps: t.fps,
+			maxSize: t.maxSize,
+			qv: t.qv,
+			compressionLevel: t.compressionLevel,
+			desc: `${targetDuration}s @ ${t.fps}fps (${t.maxSize}px, q:${t.qv})`
+		}));
+
+	// Garante fallbacks de corte de duração apenas como último recurso para entropia extrema
+	const trimDur1 = Number(Math.min(targetDuration, 35).toFixed(2));
+	const trimDur2 = Number(Math.min(targetDuration, 20).toFixed(2));
+	const trimDur3 = Number(Math.min(targetDuration, 10).toFixed(2));
+	const trimFps = mode === "longhq" ? 6 : 4;
+	selected.push(
+		{
+			duration: trimDur1,
+			fps: trimFps,
+			maxSize: 224,
+			qv: 12,
+			compressionLevel: 5,
+			desc: `${trimDur1}s @ ${trimFps}fps fallback (224px, q:12)`
+		},
+		{
+			duration: trimDur2,
+			fps: trimFps,
+			maxSize: 192,
+			qv: 10,
+			compressionLevel: WHATSAPP_STICKER.COMPRESSION_LEVEL,
+			desc: `${trimDur2}s @ ${trimFps}fps mínimo (192px, q:10)`
+		},
+		{
+			duration: trimDur3,
+			fps: 3,
+			maxSize: 160,
+			qv: 8,
+			compressionLevel: 6,
+			desc: `${trimDur3}s @ 3fps compacto extremo (160px, q:8)`
+		}
+	);
+
+	return selected;
+}
+
+const STICKER_CROP_FLAG_MAP = {
+	q: "center",
+	c: "center",
+	centro: "center",
+	center: "center",
+	qc: "top",
+	cima: "top",
+	top: "top",
+	topo: "top",
+	qb: "bottom",
+	baixo: "bottom",
+	bottom: "bottom",
+	base: "bottom",
+	qe: "stretch",
+	esticar: "stretch",
+	stretch: "stretch",
+	qi: "llm",
+	ia: "llm",
+	llm: "llm"
+};
+
+const STICKER_TRANSFORM_FLAG_MAP = {
+	fh: "flipH",
+	fliph: "flipH",
+	hflip: "flipH",
+	inv: "flipH",
+	invh: "flipH",
+	espelhar: "flipH",
+	mirror: "flipH",
+	fv: "flipV",
+	flipv: "flipV",
+	vflip: "flipV",
+	invv: "flipV",
+	90: "rot90",
+	"+90": "rot90",
+	r90: "rot90",
+	g90: "rot90",
+	rot90: "rot90",
+	horario: "rot90",
+	"-90": "rot270",
+	270: "rot270",
+	"r-90": "rot270",
+	r270: "rot270",
+	l90: "rot270",
+	antihorario: "rot270",
+	ah: "rot270"
+};
+
+/**
+ * Interpreta argumentos combináveis de comandos de figurinha (!s, !sa, !shq, etc.).
+ * @param {Array<string>} args
+ * @param {Object} [baseOptions={}]
+ * @returns {{ cropMode: string, qualityMode: string, transforms: { flipH: boolean, flipV: boolean, rotation: number }, remainingArgs: Array<string>, hasExplicitVisualChanges: boolean }}
+ */
+function parseStickerArgs(args = [], baseOptions = {}) {
+	let explicitCrop = baseOptions.cropMode || null;
+	let hq = Boolean(baseOptions.hq);
+	let longo = Boolean(baseOptions.longo);
+	let flipH = Boolean(baseOptions.transforms?.flipH);
+	let flipV = Boolean(baseOptions.transforms?.flipV);
+	let rotation = Number(baseOptions.transforms?.rotation || 0) % 360;
+	const remainingArgs = [];
+
+	for (const rawArg of Array.isArray(args) ? args : []) {
+		const normalized = String(rawArg || "")
+			.trim()
+			.toLowerCase()
+			.normalize("NFD")
+			.replace(/[\u0300-\u036f]/g, "")
+			.replace(/[°º]/g, "");
+
+		if (!normalized) continue;
+
+		if (normalized === "hq") {
+			hq = true;
+		} else if (normalized === "longo" || normalized === "long") {
+			longo = true;
+		} else if (STICKER_CROP_FLAG_MAP[normalized]) {
+			explicitCrop = STICKER_CROP_FLAG_MAP[normalized];
+		} else if (STICKER_TRANSFORM_FLAG_MAP[normalized]) {
+			const action = STICKER_TRANSFORM_FLAG_MAP[normalized];
+			if (action === "flipH") flipH = !flipH;
+			else if (action === "flipV") flipV = !flipV;
+			else if (action === "rot90") rotation = (rotation + 90) % 360;
+			else if (action === "rot270") rotation = (rotation + 270) % 360;
+		} else {
+			remainingArgs.push(rawArg);
+		}
+	}
+
+	let qualityMode = "normal";
+	if (hq && longo) qualityMode = "longhq";
+	else if (longo) qualityMode = "long";
+	else if (hq) qualityMode = "hq";
+
+	const cropMode =
+		explicitCrop ||
+		(qualityMode === "hq" || qualityMode === "longhq" ? "hq_aspect" : "transparent");
+
+	const hasExplicitVisualChanges = Boolean(
+		explicitCrop || hq || longo || flipH || flipV || rotation !== 0
+	);
+
+	return {
+		cropMode,
+		qualityMode,
+		transforms: { flipH, flipV, rotation },
+		remainingArgs,
+		hasExplicitVisualChanges
+	};
+}
+
+/**
+ * Normaliza opções de sticker (aceita string legada de cropType ou objeto completo).
+ * @param {string|Object} optionsOrCropType
+ * @returns {{ cropMode: string, qualityMode: string, transforms: { flipH: boolean, flipV: boolean, rotation: number } }}
+ */
+function normalizeStickerOptions(optionsOrCropType) {
+	if (optionsOrCropType && typeof optionsOrCropType === "object") {
+		return {
+			cropMode: optionsOrCropType.cropMode || "transparent",
+			qualityMode: optionsOrCropType.qualityMode || "normal",
+			transforms: {
+				flipH: Boolean(optionsOrCropType.transforms?.flipH),
+				flipV: Boolean(optionsOrCropType.transforms?.flipV),
+				rotation: Number(optionsOrCropType.transforms?.rotation || 0) % 360
+			}
+		};
+	}
+
+	const raw = String(optionsOrCropType || "transparent");
+	if (raw === "hq") {
+		return {
+			cropMode: "hq_aspect",
+			qualityMode: "hq",
+			transforms: { flipH: false, flipV: false, rotation: 0 }
+		};
+	}
+	if (raw === "long") {
+		return {
+			cropMode: "transparent",
+			qualityMode: "long",
+			transforms: { flipH: false, flipV: false, rotation: 0 }
+		};
+	}
+	if (raw === "longhq") {
+		return {
+			cropMode: "hq_aspect",
+			qualityMode: "longhq",
+			transforms: { flipH: false, flipV: false, rotation: 0 }
+		};
+	}
+
+	return {
+		cropMode: raw,
+		qualityMode: "normal",
+		transforms: { flipH: false, flipV: false, rotation: 0 }
+	};
+}
+
+/**
+ * Monta o filtro FFmpeg para conversão animada conforme cropMode, resolução, FPS e transformações.
+ * @param {string|Object} optionsOrCropType
+ * @param {number} size
+ * @param {number} fps
+ * @returns {string}
+ */
+function buildAnimatedVideoFilter(optionsOrCropType, size, fps) {
+	const { cropMode, transforms } = normalizeStickerOptions(optionsOrCropType);
+	const filters = [`fps=${fps}`];
+
+	if (transforms.rotation === 90) {
+		filters.push("transpose=1");
+	} else if (transforms.rotation === 180) {
+		filters.push("transpose=1,transpose=1");
+	} else if (transforms.rotation === 270) {
+		filters.push("transpose=2");
+	}
+	if (transforms.flipH) {
+		filters.push("hflip");
+	}
+	if (transforms.flipV) {
+		filters.push("vflip");
+	}
+
+	const percentage = parseFloat(cropMode);
+	if (!isNaN(percentage)) {
+		filters.push(
+			`crop=min(iw\\,ih):min(iw\\,ih):clip((iw*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,iw-min(iw\\,ih)):clip((ih*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,ih-min(iw\\,ih))`,
+			`scale=${size}:${size}`,
+			"format=yuva420p"
+		);
+	} else if (cropMode === "center") {
+		filters.push(
+			"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2",
+			`scale=${size}:${size}`,
+			"format=yuva420p"
+		);
+	} else if (cropMode === "top") {
+		filters.push(
+			"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:0",
+			`scale=${size}:${size}`,
+			"format=yuva420p"
+		);
+	} else if (cropMode === "bottom") {
+		filters.push(
+			"crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:ih-min(iw\\,ih)",
+			`scale=${size}:${size}`,
+			"format=yuva420p"
+		);
+	} else if (cropMode === "stretch") {
+		filters.push(`scale=${size}:${size}`, "format=yuva420p");
+	} else if (cropMode === "hq_aspect" || cropMode === "hq" || cropMode === "longhq") {
+		filters.push(
+			`scale=${size}:${size}:force_original_aspect_ratio=decrease`,
+			"scale=trunc(iw/2)*2:trunc(ih/2)*2"
+		);
+	} else {
+		// Padrão ("transparent"): ajusta dentro de size x size com bordas 100% transparentes
+		filters.push(
+			`scale=${size}:${size}:force_original_aspect_ratio=decrease`,
+			"format=yuva420p",
+			`pad=${size}:${size}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`
+		);
+	}
+
+	return filters.join(",");
+}
 
 // Semáforo de concorrência: limita FFmpegs paralelos para evitar contenção de CPU
 // Quando todos os slots estão ocupados, novas requisições aguardam na fila
@@ -111,132 +542,262 @@ function isVideo(mimeType) {
 	return mimeType.startsWith("video/") || mimeType === "image/gif";
 }
 
+const MIME_TO_EXTENSION = {
+	"image/gif": "gif",
+	"image/webp": "webp",
+	"image/png": "png",
+	"image/jpeg": "jpg",
+	"image/jpg": "jpg",
+	"video/mp4": "mp4",
+	"video/webm": "webm",
+	"video/quicktime": "mov",
+	"audio/ogg": "ogg",
+	"audio/opus": "opus",
+	"audio/mpeg": "mp3",
+	"audio/mp3": "mp3",
+	"audio/mp4": "m4a",
+	"audio/x-m4a": "m4a",
+	"audio/aac": "aac",
+	"audio/wav": "wav",
+	"audio/x-wav": "wav",
+	"audio/flac": "flac"
+};
+
 // Função para salvar o buffer de mídia temporariamente
-async function saveTempMedia(mediaBuffer, mimeType) {
+async function saveTempMedia(mediaBuffer, mimeType, filename = "") {
 	await ensureTempDir();
 
-	let extension = "mp4";
-	if (mimeType.includes("gif")) {
-		extension = "gif";
-	} else if (mimeType.includes("webp")) {
-		extension = "webp";
+	const cleanMime = String(mimeType || "")
+		.split(";")[0]
+		.trim()
+		.toLowerCase();
+	let extension = MIME_TO_EXTENSION[cleanMime];
+	if (!extension && filename) {
+		const extMatch = String(filename)
+			.toLowerCase()
+			.match(/\.([a-z0-9]{2,5})$/);
+		if (extMatch) extension = extMatch[1];
+	}
+	if (!extension) {
+		if (cleanMime.includes("gif")) extension = "gif";
+		else if (cleanMime.includes("webp")) extension = "webp";
+		else if (cleanMime.startsWith("audio/")) extension = "audio";
+		else extension = "mp4";
 	}
 
-	const tempFileName = `temp-${Date.now()}.${extension}`;
+	const tempFileName = `temp-${Date.now()}-${Math.random().toString(36).substring(2, 8)}.${extension}`;
 	const tempFilePath = path.join(TEMP_DIR, tempFileName);
 
 	await fs.writeFile(tempFilePath, mediaBuffer);
 	return tempFilePath;
 }
 
+const DOCUMENT_EXTENSION_MIME_MAP = {
+	".png": { kind: "image", mime: "image/png" },
+	".jpg": { kind: "image", mime: "image/jpeg" },
+	".jpeg": { kind: "image", mime: "image/jpeg" },
+	".webp": { kind: "image", mime: "image/webp" },
+	".bmp": { kind: "image", mime: "image/bmp" },
+	".tif": { kind: "image", mime: "image/tiff" },
+	".tiff": { kind: "image", mime: "image/tiff" },
+	".avif": { kind: "image", mime: "image/avif" },
+	".heic": { kind: "image", mime: "image/heic" },
+	".heif": { kind: "image", mime: "image/heif" },
+	".gif": { kind: "video", mime: "image/gif" },
+	".mp4": { kind: "video", mime: "video/mp4" },
+	".mov": { kind: "video", mime: "video/quicktime" },
+	".webm": { kind: "video", mime: "video/webm" },
+	".mkv": { kind: "video", mime: "video/x-matroska" },
+	".avi": { kind: "video", mime: "video/x-msvideo" },
+	".m4v": { kind: "video", mime: "video/x-m4v" },
+	".3gp": { kind: "video", mime: "video/3gpp" },
+	".mp3": { kind: "audio", mime: "audio/mpeg" },
+	".ogg": { kind: "audio", mime: "audio/ogg" },
+	".oga": { kind: "audio", mime: "audio/ogg" },
+	".opus": { kind: "audio", mime: "audio/opus" },
+	".m4a": { kind: "audio", mime: "audio/mp4" },
+	".aac": { kind: "audio", mime: "audio/aac" },
+	".wav": { kind: "audio", mime: "audio/wav" },
+	".flac": { kind: "audio", mime: "audio/flac" },
+	".amr": { kind: "audio", mime: "audio/amr" },
+	".weba": { kind: "audio", mime: "audio/webm" }
+};
+
 /**
- * Executa ffmpeg com múltiplos fallbacks em cascata para figurinhas animadas:
- * 1. 15s e 8 fps
- * 2. 15s e 8 fps menor q:v
- * 3. 10s e 8 fps
- * 4. 5s e 8 fps
- * 5. 3.5s e 8 fps
+ * Classifica um anexo do tipo document em audio, video, image ou unsupported.
+ * @param {Object} msg
+ * @param {Object|null} downloadedMedia
+ * @returns {{ kind: "audio"|"video"|"image"|"unsupported", mimeType: string, filename: string }}
+ */
+function classifyDocumentMedia(msg, downloadedMedia = null) {
+	const rawMime = String(
+		downloadedMedia?.mimetype ||
+			msg?.content?.mimetype ||
+			msg?.content?._mediaDetails?.mimetype ||
+			""
+	)
+		.split(";")[0]
+		.trim()
+		.toLowerCase();
+	const filename = String(
+		downloadedMedia?.filename ||
+			msg?.content?.filename ||
+			msg?.content?.title ||
+			msg?.content?._mediaDetails?.fileName ||
+			""
+	).trim();
+	const extMatch = filename.toLowerCase().match(/(\.[a-z0-9]{2,5})$/);
+	const extEntry = extMatch ? DOCUMENT_EXTENSION_MIME_MAP[extMatch[1]] : null;
+
+	if (rawMime === "image/gif") {
+		return { kind: "video", mimeType: "image/gif", filename };
+	}
+	if (rawMime.startsWith("audio/")) {
+		return { kind: "audio", mimeType: rawMime, filename };
+	}
+	if (rawMime.startsWith("video/")) {
+		return { kind: "video", mimeType: rawMime, filename };
+	}
+	if (rawMime.startsWith("image/")) {
+		return { kind: "image", mimeType: rawMime, filename };
+	}
+	if (extEntry) {
+		return { kind: extEntry.kind, mimeType: extEntry.mime, filename };
+	}
+	return { kind: "unsupported", mimeType: rawMime || "application/octet-stream", filename };
+}
+
+/**
+ * Executa ffmpeg com múltiplos fallbacks em cascata para figurinhas animadas.
  *
  * @param {string} inputPath - Caminho do vídeo/gif de entrada
- * @param {string} filterCommand - Filtro de vídeo (crop, scale, yuva420p, pad)
+ * @param {string|Function} filterCommand - Filtro de vídeo ou função (profile) => filtro
  * @param {Array} [profiles=ANIMATED_FALLBACK_PROFILES] - Perfis sequenciais de fallback
+ * @param {string} [cropType="transparent"] - Modo de recorte para telemetria
  * @returns {Promise<Buffer>} - Buffer WebP animado
  */
 async function encodeAnimatedWebPWithFallback(
 	inputPath,
 	filterCommand,
-	profiles = ANIMATED_FALLBACK_PROFILES
+	profiles = ANIMATED_FALLBACK_PROFILES,
+	cropType = "transparent"
 ) {
 	await ensureTempDir();
 
-	const fnStart = Date.now();
-
-	// Aguarda slot disponível no semáforo (limita FFmpegs paralelos)
+	// Aguarda slot no semáforo antes de abrir o span para não inflar o tempo real de encoding
+	const queueStart = Date.now();
 	await acquireFFmpegSlot();
-
-	const runFfmpeg = (options, filter, output) =>
-		new Promise((resolve, reject) => {
-			ffmpeg(inputPath)
-				.outputOptions(options)
-				.videoFilters(filter)
-				.toFormat("webp")
-				.save(output)
-				.on("end", resolve)
-				.on("error", reject);
-		});
-
-	let bestBuffer = null;
-	let bestSize = Infinity;
-	const tempFilesToClean = [];
+	const queueWaitMs = Date.now() - queueStart;
 
 	try {
-		for (let i = 0; i < profiles.length; i++) {
-			const profile = profiles[i];
-			const currentOutput = path.join(
-				TEMP_DIR,
-				`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
-			);
-			tempFilesToClean.push(currentOutput);
+		return await telemetry.withSpan(
+			"sticker encode.animated",
+			{
+				attributes: {
+					"ravena.sticker.crop_type": String(cropType),
+					"ravena.sticker.profile_count": profiles.length,
+					"ravena.sticker.queue_wait_ms": queueWaitMs
+				}
+			},
+			async (span) => {
+				const runFfmpeg = (options, filter, output) =>
+					new Promise((resolve, reject) => {
+						ffmpeg(inputPath)
+							.outputOptions(options)
+							.videoFilters(filter)
+							.toFormat("webp")
+							.save(output)
+							.on("end", resolve)
+							.on("error", reject);
+					});
 
-			const currentFilter = filterCommand.includes("fps=")
-				? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
-				: `fps=${profile.fps},${filterCommand}`;
+				let bestBuffer = null;
+				let bestSize = Infinity;
+				let bestDesc = profiles[0]?.desc || "";
+				let attempts = 0;
+				const tempFilesToClean = [];
 
-			const attemptStart = Date.now();
-			await runFfmpeg(
-				[
-					"-y",
-					"-t",
-					String(profile.duration),
-					"-c:v",
-					"libwebp",
-					"-lossless",
-					"0",
-					"-compression_level",
-					String(WHATSAPP_STICKER.COMPRESSION_LEVEL),
-					"-q:v",
-					String(profile.qv),
-					"-loop",
-					"0",
-					"-an"
-				],
-				currentFilter,
-				currentOutput
-			);
-			const attemptMs = Date.now() - attemptStart;
+				try {
+					for (let i = 0; i < profiles.length; i++) {
+						const profile = profiles[i];
+						attempts = i + 1;
+						const currentOutput = path.join(
+							TEMP_DIR,
+							`anim-${Date.now()}-${i}-${Math.random().toString(36).substring(7)}.webp`
+						);
+						tempFilesToClean.push(currentOutput);
 
-			const stats = await fs.stat(currentOutput);
-			const sizeKb = (stats.size / 1024).toFixed(1);
-			// logger.info(
-			// 	`[encodeAnimatedWebP] Tentativa ${i + 1}/${ANIMATED_FALLBACK_PROFILES.length} [${profile.desc}]: ${sizeKb} KB em ${attemptMs}ms`
-			// );
+						let currentFilter;
+						if (typeof filterCommand === "function") {
+							currentFilter = filterCommand(profile);
+						} else {
+							currentFilter = filterCommand.includes("fps=")
+								? filterCommand.replace(/fps=\d+/, `fps=${profile.fps}`)
+								: `fps=${profile.fps},${filterCommand}`;
+						}
 
-			if (stats.size < bestSize) {
-				bestSize = stats.size;
-				bestBuffer = await fs.readFile(currentOutput);
+						const compressionLevel = profile.compressionLevel ?? WHATSAPP_STICKER.COMPRESSION_LEVEL;
+
+						await runFfmpeg(
+							[
+								"-y",
+								"-t",
+								String(profile.duration),
+								"-c:v",
+								"libwebp",
+								"-lossless",
+								"0",
+								"-compression_level",
+								String(compressionLevel),
+								"-q:v",
+								String(profile.qv),
+								"-loop",
+								"0",
+								"-an"
+							],
+							currentFilter,
+							currentOutput
+						);
+
+						const stats = await fs.stat(currentOutput);
+
+						if (stats.size < bestSize) {
+							bestSize = stats.size;
+							bestDesc = profile.desc || bestDesc;
+							bestBuffer = await fs.readFile(currentOutput);
+						}
+
+						if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
+							telemetry.setAttrs(
+								{
+									"ravena.sticker.attempts": attempts,
+									"ravena.sticker.profile_desc": profile.desc,
+									"ravena.sticker.size_bytes": stats.size,
+									"ravena.sticker.approved": true
+								},
+								span
+							);
+							return bestBuffer;
+						}
+					}
+
+					telemetry.setAttrs(
+						{
+							"ravena.sticker.attempts": attempts,
+							"ravena.sticker.profile_desc": bestDesc,
+							"ravena.sticker.size_bytes": bestSize,
+							"ravena.sticker.approved": false
+						},
+						span
+					);
+					return bestBuffer;
+				} finally {
+					await Promise.all(tempFilesToClean.map((file) => fs.unlink(file).catch(() => {})));
+				}
 			}
-
-			if (stats.size <= WHATSAPP_STICKER.MAX_FILE_SIZE) {
-				// logger.info(
-				// 	`[encodeAnimatedWebP] ✓ Perfil '${profile.desc}' aprovado (${sizeKb} KB <= 490 KB). Total: ${Date.now() - fnStart}ms`
-				// );
-				return bestBuffer;
-			}
-
-			// logger.warn(
-			// 	`[encodeAnimatedWebP] Perfil '${profile.desc}' excedeu limite (${sizeKb} KB > 490 KB). Tentando próximo fallback...`
-			// );
-		}
-
-		// logger.warn(
-		// 	`[encodeAnimatedWebP] Todos os perfis excederam o limite. Usando menor (${(bestSize / 1024).toFixed(1)} KB). Total: ${Date.now() - fnStart}ms`
-		// );
-		return bestBuffer;
+		);
 	} finally {
 		releaseFFmpegSlot();
-		for (const file of tempFilesToClean) {
-			fs.unlink(file).catch(() => {});
-		}
 	}
 }
 
@@ -326,9 +887,404 @@ Responda APENAS com um objeto JSON seguindo este schema: { "percentage": número
 	}
 }
 
+const TEXT_STICKER = {
+	SIZE: WHATSAPP_STICKER.MAX_SIZE,
+	MAX_CHARS: 280,
+	BUBBLE_MAX_WIDTH: 460,
+	BUBBLE_MIN_WIDTH: 290,
+	BUBBLE_MAX_HEIGHT: 456,
+	PADDING_X: 20,
+	PADDING_Y: 16,
+	RADIUS: 16,
+	TAIL_SIZE: 12,
+	BG_COLOR: "#1F2C34",
+	BORDER_COLOR: "#2A3942",
+	TEXT_COLOR: "#E9EDEF",
+	META_COLOR: "#8696A0",
+	FONT_FAMILY: '"DejaVu Sans", "Nimbus Sans", sans-serif',
+	NAME_COLORS: [
+		"#FF8A65",
+		"#4FC3F7",
+		"#81C784",
+		"#FFD54F",
+		"#BA68C8",
+		"#4DB6AC",
+		"#F06292",
+		"#AED581",
+		"#FFB74D",
+		"#64B5F6",
+		"#E57373",
+		"#7986CB"
+	]
+};
+
+/**
+ * Formata um JID/ID de telefone para exibição amigável mascarando os últimos 4 dígitos (+55 (DD) NNNNN-####).
+ * @param {string} jid
+ * @returns {string}
+ */
+function formatPhoneFromJid(jid) {
+	if (!jid || typeof jid !== "string") return "";
+	const raw = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
+	if (!raw || raw.length < 8 || raw.length > 15 || jid.includes("@lid")) {
+		return "";
+	}
+	if (raw.startsWith("55") && raw.length === 13) {
+		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 9)}-####`;
+	}
+	if (raw.startsWith("55") && raw.length === 12) {
+		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 8)}-####`;
+	}
+	return `+${raw.slice(0, -4)}####`;
+}
+
+/**
+ * Resolve apelido na ravena, nome do contato e número mascarado de uma mensagem citada.
+ * Quando há nome ou apelido, o número não é exibido.
+ * @param {Object} quotedMsg
+ * @param {Object|null} group
+ * @returns {{displayName: string, formattedPhone: string}}
+ */
+function resolveQuotedSenderInfo(quotedMsg, group = null) {
+	const candidates = [quotedMsg?.author, quotedMsg?.quotedParticipant, quotedMsg?.from].filter(
+		(v) => typeof v === "string" && v.trim()
+	);
+	const primaryId = candidates[0] || "";
+	const maskedPhone = candidates.map((id) => formatPhoneFromJid(id)).find((p) => Boolean(p)) || "";
+
+	// 1. Apelido configurado no grupo (group.nicks)
+	let groupNick = "";
+	if (group && Array.isArray(group.nicks)) {
+		const candidateBases = new Set(
+			candidates.flatMap((id) => {
+				const base = id.split("@")[0].split(":")[0];
+				return base ? [id, base] : [id];
+			})
+		);
+		const nickEntry = group.nicks.find((n) => {
+			if (!n?.apelido || !n?.numero) return false;
+			const numBase = String(n.numero).split("@")[0].split(":")[0];
+			return candidateBases.has(n.numero) || candidateBases.has(numBase);
+		});
+		if (nickEntry?.apelido) {
+			groupNick = String(nickEntry.apelido).trim();
+		}
+	}
+
+	// 2. Nome da mensagem (ignorando placeholder "Usuario" do fallback de cache e dígitos puros)
+	const primaryDigits = primaryId.split("@")[0].split(":")[0].replace(/\D/g, "");
+	const rawNameCandidates = [
+		quotedMsg?.authorName,
+		quotedMsg?.pushname,
+		quotedMsg?.pushName,
+		quotedMsg?.name
+	];
+	const msgName =
+		rawNameCandidates
+			.map((v) => (typeof v === "string" ? v.trim() : ""))
+			.find((v) => {
+				if (!v) return false;
+				const lower = v.toLowerCase();
+				if (lower === "usuario" || lower === "usuário") return false;
+				if (primaryDigits && v.replace(/\D/g, "") === primaryDigits) return false;
+				return true;
+			}) || "";
+
+	// 3. Se houver nome/apelido, não exibir o número; fallback para número mascarado
+	const resolvedName = groupNick || msgName;
+	if (resolvedName) {
+		return { displayName: resolvedName, formattedPhone: "" };
+	}
+
+	return {
+		displayName: maskedPhone || "+55 (55) 9999-####",
+		formattedPhone: ""
+	};
+}
+
+/**
+ * Formata data e hora da mensagem citada no padrão DD/MM/AAAA HH:mm.
+ * @param {Object} quotedMsg
+ * @returns {string}
+ */
+function formatMessageDateTime(quotedMsg) {
+	const rawTs = Number(quotedMsg?.timestamp);
+	const ms =
+		Number.isFinite(rawTs) && rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : Date.now();
+	return new Intl.DateTimeFormat("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false
+	})
+		.format(new Date(ms))
+		.replace(",", "");
+}
+
+/**
+ * Trunca texto para caber na largura máxima em pixels, adicionando reticências.
+ */
+function truncateTextToWidth(ctx, text, maxWidth) {
+	if (ctx.measureText(text).width <= maxWidth) return text;
+	let out = text;
+	while (out.length > 1 && ctx.measureText(`${out}...`).width > maxWidth) {
+		out = out.slice(0, -1);
+	}
+	return `${out}...`;
+}
+
+/**
+ * Quebra texto em linhas respeitando quebras explícitas e largura máxima em pixels.
+ */
+function wrapTextLines(ctx, text, maxWidth) {
+	const paragraphs = text.split(/\r?\n/);
+	const lines = [];
+
+	for (const paragraph of paragraphs) {
+		if (!paragraph.trim()) {
+			lines.push("");
+			continue;
+		}
+		const words = paragraph.split(/\s+/);
+		let currentLine = "";
+
+		for (const word of words) {
+			const testLine = currentLine ? `${currentLine} ${word}` : word;
+			if (ctx.measureText(testLine).width <= maxWidth) {
+				currentLine = testLine;
+			} else {
+				if (currentLine) {
+					lines.push(currentLine);
+					currentLine = "";
+				}
+				if (ctx.measureText(word).width <= maxWidth) {
+					currentLine = word;
+				} else {
+					let chunk = "";
+					for (const char of word) {
+						if (ctx.measureText(chunk + char).width > maxWidth && chunk) {
+							lines.push(chunk);
+							chunk = char;
+						} else {
+							chunk += char;
+						}
+					}
+					currentLine = chunk;
+				}
+			}
+		}
+		if (currentLine) {
+			lines.push(currentLine);
+		}
+	}
+
+	return lines;
+}
+
+/**
+ * Desenha retângulo com cantos arredondados e rabinho estilo bubble do WhatsApp.
+ */
+function drawWhatsAppBubblePath(ctx, x, y, width, height, radius, tailSize) {
+	ctx.beginPath();
+	ctx.moveTo(x - tailSize, y);
+	ctx.lineTo(x + width - radius, y);
+	ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+	ctx.lineTo(x + width, y + height - radius);
+	ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+	ctx.lineTo(x + radius, y + height);
+	ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+	ctx.lineTo(x, y + tailSize);
+	ctx.lineTo(x - tailSize, y);
+	ctx.closePath();
+}
+
+/**
+ * Renderiza uma mensagem de texto como um bubble estilo WhatsApp em PNG 512x512 transparente.
+ * @param {Object} params
+ * @param {string} params.displayName
+ * @param {string} [params.formattedPhone]
+ * @param {string} params.text
+ * @param {string} params.dateTime
+ * @param {string} [params.nameColor]
+ * @returns {Buffer}
+ */
+function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime, nameColor }) {
+	const canvas = createCanvas(TEXT_STICKER.SIZE, TEXT_STICKER.SIZE);
+	const ctx = canvas.getContext("2d");
+	ctx.clearRect(0, 0, TEXT_STICKER.SIZE, TEXT_STICKER.SIZE);
+
+	const cleanText = String(text || "")
+		.trim()
+		.replace(/\r\n/g, "\n");
+	const limitedText =
+		cleanText.length > TEXT_STICKER.MAX_CHARS
+			? `${cleanText.slice(0, TEXT_STICKER.MAX_CHARS - 3).trimEnd()}...`
+			: cleanText;
+
+	const chosenColor =
+		nameColor ||
+		TEXT_STICKER.NAME_COLORS[Math.floor(Math.random() * TEXT_STICKER.NAME_COLORS.length)];
+
+	const innerMaxWidth = TEXT_STICKER.BUBBLE_MAX_WIDTH - TEXT_STICKER.PADDING_X * 2;
+	const headerGap = 10;
+	const footerHeight = 20;
+	const footerGap = 12;
+
+	// Escolhe o maior tamanho de fonte que caiba no bubble (nome levemente maior que o texto)
+	const fontSizes = [28, 24, 21, 18];
+	let selectedFontSize = fontSizes[fontSizes.length - 1];
+	let nameFontSize = selectedFontSize + 3;
+	let headerHeight = Math.round(nameFontSize * 1.25);
+	let selectedLines = [];
+	let selectedLineHeight = 24;
+
+	for (const size of fontSizes) {
+		const candidateNameSize = size + 3;
+		const candidateHeaderHeight = Math.round(candidateNameSize * 1.25);
+		const maxBodyHeight =
+			TEXT_STICKER.BUBBLE_MAX_HEIGHT -
+			TEXT_STICKER.PADDING_Y * 2 -
+			candidateHeaderHeight -
+			headerGap -
+			footerGap -
+			footerHeight;
+		const lineHeight = Math.round(size * 1.32);
+		ctx.font = `${size}px ${TEXT_STICKER.FONT_FAMILY}`;
+		const lines = wrapTextLines(ctx, limitedText, innerMaxWidth);
+		if (lines.length * lineHeight <= maxBodyHeight) {
+			selectedFontSize = size;
+			nameFontSize = candidateNameSize;
+			headerHeight = candidateHeaderHeight;
+			selectedLines = lines;
+			selectedLineHeight = lineHeight;
+			break;
+		}
+		if (size === fontSizes[fontSizes.length - 1]) {
+			const maxLines = Math.max(1, Math.floor(maxBodyHeight / lineHeight));
+			selectedFontSize = size;
+			nameFontSize = candidateNameSize;
+			headerHeight = candidateHeaderHeight;
+			selectedLineHeight = lineHeight;
+			selectedLines = lines.slice(0, maxLines);
+			if (lines.length > maxLines) {
+				selectedLines[maxLines - 1] = truncateTextToWidth(
+					ctx,
+					`${selectedLines[maxLines - 1]}...`,
+					innerMaxWidth
+				);
+			}
+		}
+	}
+
+	// Medir largura necessária do conteúdo para dimensionar o bubble proporcionalmente
+	ctx.font = `bold ${nameFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	const nameRawWidth = ctx.measureText(displayName).width;
+	ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
+	const phoneWidth = formattedPhone ? ctx.measureText(formattedPhone).width + 14 : 0;
+	const dateWidth = ctx.measureText(dateTime).width;
+
+	ctx.font = `${selectedFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	const maxLineWidth = selectedLines.reduce(
+		(acc, line) => Math.max(acc, ctx.measureText(line).width),
+		0
+	);
+
+	const neededInnerWidth = Math.max(nameRawWidth + phoneWidth, maxLineWidth, dateWidth + 20);
+	const bubbleWidth = Math.min(
+		TEXT_STICKER.BUBBLE_MAX_WIDTH,
+		Math.max(
+			TEXT_STICKER.BUBBLE_MIN_WIDTH,
+			Math.ceil(neededInnerWidth) + TEXT_STICKER.PADDING_X * 2
+		)
+	);
+	const bubbleInnerWidth = bubbleWidth - TEXT_STICKER.PADDING_X * 2;
+	const bodyHeight = Math.max(selectedLineHeight, selectedLines.length * selectedLineHeight);
+	const bubbleHeight =
+		TEXT_STICKER.PADDING_Y * 2 + headerHeight + headerGap + bodyHeight + footerGap + footerHeight;
+
+	const bubbleX = Math.round((TEXT_STICKER.SIZE - bubbleWidth + TEXT_STICKER.TAIL_SIZE) / 2);
+	const bubbleY = Math.round((TEXT_STICKER.SIZE - bubbleHeight) / 2);
+
+	// Sombra suave + preenchimento + borda do bubble
+	ctx.save();
+	ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+	ctx.shadowBlur = 12;
+	ctx.shadowOffsetY = 4;
+	drawWhatsAppBubblePath(
+		ctx,
+		bubbleX,
+		bubbleY,
+		bubbleWidth,
+		bubbleHeight,
+		TEXT_STICKER.RADIUS,
+		TEXT_STICKER.TAIL_SIZE
+	);
+	ctx.fillStyle = TEXT_STICKER.BG_COLOR;
+	ctx.fill();
+	ctx.restore();
+
+	drawWhatsAppBubblePath(
+		ctx,
+		bubbleX,
+		bubbleY,
+		bubbleWidth,
+		bubbleHeight,
+		TEXT_STICKER.RADIUS,
+		TEXT_STICKER.TAIL_SIZE
+	);
+	ctx.lineWidth = 1.5;
+	ctx.strokeStyle = TEXT_STICKER.BORDER_COLOR;
+	ctx.stroke();
+
+	const contentX = bubbleX + TEXT_STICKER.PADDING_X;
+	const headerY = bubbleY + TEXT_STICKER.PADDING_Y + nameFontSize;
+
+	// Cabeçalho: Nome colorido + Número à direita
+	let maxNameWidth = bubbleInnerWidth;
+	if (formattedPhone) {
+		ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
+		const measuredPhoneWidth = ctx.measureText(formattedPhone).width;
+		maxNameWidth = Math.max(80, bubbleInnerWidth - measuredPhoneWidth - 12);
+		ctx.fillStyle = TEXT_STICKER.META_COLOR;
+		ctx.textAlign = "right";
+		ctx.fillText(formattedPhone, bubbleX + bubbleWidth - TEXT_STICKER.PADDING_X, headerY);
+	}
+
+	ctx.font = `bold ${nameFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.fillStyle = chosenColor;
+	ctx.textAlign = "left";
+	ctx.fillText(truncateTextToWidth(ctx, displayName, maxNameWidth), contentX, headerY);
+
+	// Corpo da mensagem
+	ctx.font = `${selectedFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.fillStyle = TEXT_STICKER.TEXT_COLOR;
+	let currentY = bubbleY + TEXT_STICKER.PADDING_Y + headerHeight + headerGap + selectedFontSize;
+	for (const line of selectedLines) {
+		ctx.fillText(line, contentX, currentY);
+		currentY += selectedLineHeight;
+	}
+
+	// Rodapé: data e hora no canto inferior direito
+	ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.fillStyle = TEXT_STICKER.META_COLOR;
+	ctx.textAlign = "right";
+	ctx.fillText(
+		dateTime,
+		bubbleX + bubbleWidth - TEXT_STICKER.PADDING_X,
+		bubbleY + bubbleHeight - TEXT_STICKER.PADDING_Y
+	);
+
+	return canvas.toBuffer("image/png");
+}
+
 // Função para converter um buffer de mídia em um buffer de sticker quadrado nos padrões do WhatsApp
-async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
+async function makeSquareMedia(mediaBuffer, mimeType, optionsOrCropType = "center") {
 	const fnStart = Date.now();
+	const { cropMode, qualityMode, transforms } = normalizeStickerOptions(optionsOrCropType);
+	const isHqQuality = qualityMode === "hq" || qualityMode === "longhq";
 	try {
 		// Converter de base64 para Buffer se necessário
 		let rawBuffer = mediaBuffer;
@@ -355,20 +1311,26 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 
 		// Se for imagem estática (exceto GIF e WebP animado), use sharp
 		if (mimeType.startsWith("image/") && mimeType !== "image/gif" && !isAnimWebP) {
-			const sharpStart = Date.now();
-			const image = sharp(rawBuffer);
+			let workingBuffer = rawBuffer;
+			if (transforms.rotation || transforms.flipH || transforms.flipV) {
+				let transformed = sharp(rawBuffer);
+				if (transforms.rotation) transformed = transformed.rotate(transforms.rotation);
+				if (transforms.flipV) transformed = transformed.flip();
+				if (transforms.flipH) transformed = transformed.flop();
+				workingBuffer = await transformed.png({ compressionLevel: 1 }).toBuffer();
+			}
+
+			const image = sharp(workingBuffer);
 			const metadata = await image.metadata();
-			// logger.info(
-			// 	`[makeSquareMedia] Processando imagem via Sharp [${mimeType}, crop=${cropType}, ${metadata.width}x${metadata.height}]`
-			// );
+			const webpQuality = isHqQuality ? 85 : WHATSAPP_STICKER.STATIC_QUALITY;
 
 			// Determinar dimensões para corte quadrado
 			const size = Math.min(metadata.width, metadata.height);
 			let left = 0;
 			let top = 0;
 
-			// Verificar se o cropType é uma porcentagem (vinda do LLM ou manual)
-			const percentage = parseFloat(cropType);
+			// Verificar se o cropMode é uma porcentagem (vinda do LLM ou manual)
+			const percentage = parseFloat(cropMode);
 
 			let result;
 			if (!isNaN(percentage)) {
@@ -387,52 +1349,52 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 					.extract({ left: Math.floor(left), top: Math.floor(top), width: size, height: size })
 					.resize(TARGET_SIZE, TARGET_SIZE)
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "center") {
+			} else if (cropMode === "center") {
 				left = Math.max(0, (metadata.width - size) / 2);
 				top = Math.max(0, (metadata.height - size) / 2);
 				result = await image
 					.extract({ left: Math.floor(left), top: Math.floor(top), width: size, height: size })
 					.resize(TARGET_SIZE, TARGET_SIZE)
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "top") {
+			} else if (cropMode === "top") {
 				left = Math.max(0, (metadata.width - size) / 2);
 				top = 0;
 				result = await image
 					.extract({ left: Math.floor(left), top: Math.floor(top), width: size, height: size })
 					.resize(TARGET_SIZE, TARGET_SIZE)
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "bottom") {
+			} else if (cropMode === "bottom") {
 				left = Math.max(0, (metadata.width - size) / 2);
 				top = Math.max(0, metadata.height - size);
 				result = await image
 					.extract({ left: Math.floor(left), top: Math.floor(top), width: size, height: size })
 					.resize(TARGET_SIZE, TARGET_SIZE)
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "stretch") {
+			} else if (cropMode === "stretch") {
 				result = await image
 					.resize(TARGET_SIZE, TARGET_SIZE, { fit: "fill" })
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "hq") {
+			} else if (cropMode === "hq_aspect" || cropMode === "hq" || cropMode === "longhq") {
 				// Redimensiona para caber em 512x512 mantendo o aspecto original, sem adicionar bordas
 				result = await image
 					.resize(TARGET_SIZE, TARGET_SIZE, { fit: "inside" })
@@ -441,7 +1403,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
-			} else if (cropType === "transparent") {
+			} else if (cropMode === "transparent" || cropMode === "long") {
 				// Redimensiona para caber em 512x512 mantendo o aspecto e adiciona bordas transparentes
 				result = await image
 					.resize(TARGET_SIZE, TARGET_SIZE, {
@@ -449,7 +1411,7 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 						background: { r: 0, g: 0, b: 0, alpha: 0 }
 					})
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
@@ -458,55 +1420,37 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
 					.extract({ left: Math.floor(left), top: Math.floor(top), width: size, height: size })
 					.resize(TARGET_SIZE, TARGET_SIZE)
 					.webp({
-						quality: WHATSAPP_STICKER.STATIC_QUALITY,
+						quality: webpQuality,
 						effort: WHATSAPP_STICKER.COMPRESSION_LEVEL
 					})
 					.toBuffer();
 			}
 
-			// logger.info(
-			// 	`[makeSquareMedia] ✓ Imagem processada via Sharp em ${Date.now() - sharpStart}ms (total: ${Date.now() - fnStart}ms)`
-			// );
 			return result;
 		} else if (isVideo(mimeType) || isAnimWebP) {
 			// Para vídeos, GIFs e WebP animado, processa via ffmpeg
-			// logger.info(
-			// 	`[makeSquareMedia] Iniciando processamento FFmpeg [${mimeType}, crop=${cropType}, isAnimWebP=${isAnimWebP}]...`
-			// );
-			const ffmpegStart = Date.now();
 			const inputPath = await saveTempMedia(rawBuffer, mimeType);
-
-			let filterCommand = "";
-			const percentage = parseFloat(cropType);
-
-			if (!isNaN(percentage)) {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):clip((iw*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,iw-min(iw\\,ih)):clip((ih*${percentage}/100)-(min(iw\\,ih)/2)\\,0\\,ih-min(iw\\,ih)),scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "center") {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:(ih-min(iw\\,ih))/2,scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "top") {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:0,scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "bottom") {
-				filterCommand = `fps=${FPS},crop=min(iw\\,ih):min(iw\\,ih):(iw-min(iw\\,ih))/2:ih-min(iw\\,ih),scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "stretch") {
-				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE},format=yuva420p`;
-			} else if (cropType === "transparent") {
-				// Ajustar vídeo para caber em 512x512 e preencher com fundo 100% transparente (sem bordas pretas)
-				filterCommand = `fps=${FPS},scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,format=yuva420p,pad=${TARGET_SIZE}:${TARGET_SIZE}:(ow-iw)/2:(oh-ih)/2:color=black@0.0`;
-			} else if (cropType === "hq") {
-				// HQ: apenas dimensões (máx 512) com proporção original, sem crop, pad ou yuva420p
-				filterCommand = `fps=25,scale=${TARGET_SIZE}:${TARGET_SIZE}:force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`;
-			}
+			const filterOptions = { cropMode, qualityMode, transforms };
+			const filterBuilder = (profile) =>
+				buildAnimatedVideoFilter(filterOptions, profile.maxSize || TARGET_SIZE, profile.fps || FPS);
 
 			try {
-				const profiles = cropType === "hq" ? ANIMATED_HQ_PROFILES : ANIMATED_FALLBACK_PROFILES;
+				let profiles;
+				if (qualityMode === "long" || qualityMode === "longhq") {
+					const mediaDuration = await getMediaDuration(inputPath);
+					profiles = buildLongAnimatedProfiles(qualityMode, mediaDuration);
+				} else if (qualityMode === "hq") {
+					profiles = ANIMATED_HQ_PROFILES;
+				} else {
+					profiles = ANIMATED_FALLBACK_PROFILES;
+				}
+
 				const processedBuffer = await encodeAnimatedWebPWithFallback(
 					inputPath,
-					filterCommand,
-					profiles
+					filterBuilder,
+					profiles,
+					cropMode
 				);
-				// logger.info(
-				// 	`[makeSquareMedia] ✓ Vídeo/GIF processado via FFmpeg em ${Date.now() - ffmpegStart}ms (total: ${Date.now() - fnStart}ms)`
-				// );
 				return processedBuffer;
 			} finally {
 				await fs.unlink(inputPath).catch(() => {});
@@ -527,17 +1471,732 @@ async function makeSquareMedia(mediaBuffer, mimeType, cropType = "center") {
  * Função middleware para processar mídia antes de enviá-la para o comando de sticker
  * @param {Buffer|Object} mediaBuffer - Buffer ou objeto com a mídia
  * @param {string} mimeType - Tipo MIME da mídia
- * @param {string} cropType - Tipo de corte: 'center', 'top', 'bottom' ou 'stretch'
+ * @param {string|Object} optionsOrCropType - Opções ou tipo de corte
  * @returns {Promise<Buffer>} - Buffer da mídia processada
  */
-async function processMediaToSquare(mediaBuffer, mimeType, cropType) {
+async function processMediaToSquare(mediaBuffer, mimeType, optionsOrCropType) {
 	try {
-		// logger.info(`Processando mídia para quadrado: ${mimeType}, tipo de corte: ${cropType}`);
-		return await makeSquareMedia(mediaBuffer, mimeType, cropType);
+		return await makeSquareMedia(mediaBuffer, mimeType, optionsOrCropType);
 	} catch (error) {
-		logger.error(`Erro ao processar mídia em formato quadrado (${cropType}):`, error);
+		logger.error(`Erro ao processar mídia em formato quadrado:`, error);
 		throw error;
 	}
+}
+
+/**
+ * Garante que a mídia do sticker citado esteja em WebP para envio como sound sticker.
+ * Preserva WebP já pronto (estático ou animado) quando não há ajustes visuais e converte quando necessário.
+ * @param {Object} stickerMsg - Mensagem de sticker citada
+ * @param {Object|null} [stickerOptions=null] - Opções visuais combinadas
+ * @returns {Promise<Object>} - Objeto MessageMedia pronto para envio
+ */
+async function prepareStickerMediaForAudioFusion(stickerMsg, stickerOptions = null) {
+	const stickerMedia = await stickerMsg.downloadMedia();
+	if (!stickerMedia || (!stickerMedia.data && !stickerMedia.url)) {
+		throw new Error("Não foi possível baixar a figurinha citada pelo áudio");
+	}
+	const mime = String(stickerMedia.mimetype || "").toLowerCase();
+	const hasVisualAdjustments = Boolean(stickerOptions?.hasExplicitVisualChanges);
+	if (
+		!hasVisualAdjustments &&
+		(mime.includes("webp") || (!stickerMedia.data && stickerMedia.url))
+	) {
+		return {
+			mimetype: stickerMedia.mimetype || "image/webp",
+			data: stickerMedia.data,
+			url: stickerMedia.url,
+			filename: stickerMedia.filename || `sticker-${Date.now()}.webp`,
+			isMessageMedia: true
+		};
+	}
+
+	const webpBuffer = await makeSquareMedia(
+		stickerMedia,
+		stickerMedia.mimetype || "image/webp",
+		stickerOptions || "transparent"
+	);
+	return {
+		mimetype: "image/webp",
+		data: webpBuffer.toString("base64"),
+		filename: `sticker-${Date.now()}.webp`,
+		isMessageMedia: true
+	};
+}
+
+/**
+ * Converte um arquivo de mídia de entrada (áudio ou vídeo) para OGG Opus via FFmpeg.
+ * @param {string} inputPath
+ * @param {string} outputPath
+ * @returns {Promise<{audioBuffer: Buffer, duration: number}>}
+ */
+async function transcodeToOpusOgg(inputPath, outputPath) {
+	let probeData;
+	try {
+		probeData = await new Promise((resolve, reject) => {
+			ffmpeg.ffprobe(inputPath, (err, metadata) => {
+				if (err) reject(err);
+				else resolve(metadata);
+			});
+		});
+	} catch (probeErr) {
+		const err = new Error("Arquivo de áudio ilegível ou corrompido");
+		err.code = "AUDIO_UNREADABLE";
+		err.cause = probeErr;
+		throw err;
+	}
+
+	const streams = Array.isArray(probeData?.streams) ? probeData.streams : [];
+	const audioStream = streams.find((s) => s.codec_type === "audio");
+	if (!audioStream) {
+		const err = new Error("Arquivo sem faixa de áudio");
+		err.code = "VIDEO_WITHOUT_AUDIO";
+		throw err;
+	}
+
+	const duration =
+		parseFfprobeDuration(probeData?.format?.duration) ??
+		parseFfprobeDuration(audioStream.duration) ??
+		0;
+
+	await acquireFFmpegSlot();
+	try {
+		await new Promise((resolve, reject) => {
+			ffmpeg(inputPath)
+				.noVideo()
+				.audioCodec("libopus")
+				.audioBitrate("48k")
+				.audioFrequency(48000)
+				.audioChannels(1)
+				.format("ogg")
+				// Corta áudio longo a 240s em vez de rejeitar
+				.outputOptions(["-t", "240"])
+				.output(outputPath)
+				.on("end", resolve)
+				.on("error", reject)
+				.run();
+		});
+	} catch (convErr) {
+		const err = new Error("Falha ao converter áudio para formato compatível");
+		err.code = "AUDIO_CONVERSION_FAILED";
+		err.cause = convErr;
+		throw err;
+	} finally {
+		releaseFFmpegSlot();
+	}
+
+	const audioBuffer = await fs.readFile(outputPath);
+	if (!audioBuffer || audioBuffer.length === 0) {
+		const err = new Error("Áudio convertido resultou vazio");
+		err.code = "AUDIO_EMPTY";
+		throw err;
+	}
+	return { audioBuffer, duration: Math.min(duration, 240) };
+}
+
+/**
+ * Converte um buffer de áudio (mp3, m4a, ogg, wav, etc.) para OGG Opus pronto para sticker com som.
+ * @param {Buffer} audioBuffer
+ * @param {string} [mimeType="audio/ogg"]
+ * @param {string} [filename=""]
+ * @returns {Promise<{audioBuffer: Buffer, duration: number}>}
+ */
+async function convertAudioBufferToOpus(audioBuffer, mimeType = "audio/ogg", filename = "") {
+	const inputPath = await saveTempMedia(audioBuffer, mimeType, filename);
+	const outputPath = `${inputPath}.opus.ogg`;
+	try {
+		return await transcodeToOpusOgg(inputPath, outputPath);
+	} finally {
+		await fs.unlink(inputPath).catch(() => {});
+		await fs.unlink(outputPath).catch(() => {});
+	}
+}
+
+/**
+ * Mapeia erros de processamento de áudio/figurinha para mensagens amigáveis ao usuário sem expor caminhos ou detalhes internos.
+ * @param {Error} err
+ * @returns {string}
+ */
+function formatFriendlyAudioStickerError(err) {
+	switch (err?.code) {
+		case "VIDEO_WITHOUT_AUDIO":
+			return "❌ Esse arquivo não possui nenhuma faixa de áudio válida para colocar na figurinha.";
+		case "VIDEO_TOO_LONG":
+			return "❌ O áudio é muito longo (máximo de 4 minutos para figurinhas com som).";
+		case "AUDIO_UNREADABLE":
+			return "❌ Não consegui ler esse arquivo de áudio. Ele pode estar corrompido ou em um formato incompatível.";
+		case "AUDIO_CONVERSION_FAILED":
+			return "❌ Não consegui converter esse áudio para o formato de figurinha com som. Tente enviar outro áudio (como MP3, OGG ou gravação de voz).";
+		case "AUDIO_EMPTY":
+			return "❌ O áudio ficou vazio ou mudo depois da conversão. Tente enviar outro arquivo.";
+		default:
+			return "❌ Não consegui criar a figurinha com som com esse áudio. Tente enviar outro arquivo ou gravar novamente.";
+	}
+}
+
+/**
+ * Funde uma figurinha (citada pelo áudio) com um áudio para gerar um sticker com som.
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+ */
+async function createAudioStickerFromAudioAndSticker({
+	bot,
+	message,
+	args,
+	group,
+	chatId,
+	audioMsg,
+	quotedStickerMsg,
+	cropType,
+	stickerOptions = null
+}) {
+	const parsedOptions =
+		stickerOptions ||
+		parseStickerArgs(args, { cropMode: cropType !== "transparent" ? cropType : null });
+	return await telemetry.withSpan(
+		"sticker sound.fuse",
+		{ attributes: { "ravena.sticker.crop_type": parsedOptions.cropMode } },
+		async (span) => {
+			if (bot?.useTelegram || bot?.useDiscord) {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "unsupported_platform"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content: "Figurinhas com som só são suportadas no WhatsApp por enquanto."
+				});
+			}
+
+			const parentType = String(quotedStickerMsg?.type || "").toLowerCase();
+			if (!quotedStickerMsg || parentType !== "sticker") {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "audio_without_quoted_sticker"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Para criar uma figurinha com som, responda a uma figurinha com um áudio (ou arquivo de áudio) e use !s (ou use !sa em um vídeo)."
+				});
+			}
+
+			const audioMedia =
+				audioMsg?.content?.data || audioMsg?.content?.url
+					? audioMsg.content
+					: typeof audioMsg.downloadMedia === "function"
+						? await audioMsg.downloadMedia().catch(() => null)
+						: null;
+			if (!audioMedia || (!audioMedia.data && !audioMedia.url)) {
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "audio_download_failed"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content: "❌ Não consegui baixar o áudio marcado (a mídia expirou ou ficou indisponível)."
+				});
+			}
+
+			let normalizedAudioData = audioMedia.data;
+			let normalizedAudioMime = audioMedia.mimetype || "audio/ogg; codecs=opus";
+			if (audioMedia.data) {
+				try {
+					const rawAudioBuffer = Buffer.from(
+						String(audioMedia.data).replace(/^data:[^;]+;base64,/, ""),
+						"base64"
+					);
+					const converted = await convertAudioBufferToOpus(
+						rawAudioBuffer,
+						normalizedAudioMime,
+						audioMedia.filename || ""
+					);
+					normalizedAudioData = converted.audioBuffer.toString("base64");
+					normalizedAudioMime = "audio/ogg; codecs=opus";
+				} catch (convErr) {
+					logger.warn(
+						`[createAudioStickerFromAudioAndSticker] Falha ao converter áudio (${convErr.code || "ERR"}): ${convErr.message}`
+					);
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": convErr.code || "audio_conversion_failed"
+					});
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: formatFriendlyAudioStickerError(convErr)
+					});
+				}
+			}
+
+			let stickerMedia;
+			try {
+				stickerMedia = await prepareStickerMediaForAudioFusion(quotedStickerMsg, parsedOptions);
+			} catch (dlErr) {
+				logger.warn(`[createAudioStickerFromAudioAndSticker] ${dlErr.message}`);
+				telemetry.setAttrs({
+					"app.outcome": "rejected",
+					"app.reject.reason": "sticker_download_failed"
+				});
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content:
+						"❌ Não consegui baixar ou processar a figurinha marcada pelo áudio (a mídia pode ter expirado)."
+				});
+			}
+
+			const nameArgs = parsedOptions.remainingArgs || [];
+			const stickerName = nameArgs.length > 0 ? nameArgs.join(" ") : group ? group.name : "sticker";
+
+			cmdUsage.logFixedCommandUsage({
+				timestamp: Date.now(),
+				command: "sticker",
+				user: message.author,
+				groupId: chatId,
+				args: args.join(" "),
+				info: {
+					cropType: parsedOptions.cropMode,
+					qualityMode: parsedOptions.qualityMode,
+					mimeType: normalizedAudioMime,
+					hasAudio: true
+				}
+			});
+
+			telemetry.setAttrs({
+				"ravena.sticker.has_audio": true,
+				"ravena.sticker.crop_type": parsedOptions.cropMode
+			});
+			span?.setAttribute("ravena.sticker.audio_mime", String(normalizedAudioMime));
+
+			return [
+				new ReturnMessage({
+					chatId,
+					content: stickerMedia,
+					options: {
+						sendMediaAsSticker: true,
+						stickerAudio: {
+							data: normalizedAudioData,
+							url: normalizedAudioData ? undefined : audioMedia.url,
+							mimetype: normalizedAudioMime,
+							filename: `sticker-audio-${Date.now()}.ogg`
+						},
+						stickerAuthor: bot?.nomeExibir || "ravena",
+						stickerName,
+						quotedMessageId: message.origin.id._serialized
+					}
+				})
+			];
+		}
+	);
+}
+
+/**
+ * Extrai o áudio do sticker citado: áudio embutido ("sticker com som") ou áudio citado
+ * no contexto (ex.: sticker respondendo a um áudio).
+ * @param {Object} quotedMsg - Mensagem do sticker citada
+ * @returns {Promise<Object|null>} - media pronto ou null
+ */
+async function getStickerAudioMedia(quotedMsg) {
+	if (!quotedMsg) return null;
+
+	// 1. Áudio embutido (sticker com som)
+	const hasEmbeddedAudio = Boolean(
+		quotedMsg?.content?.audioMessage ||
+		quotedMsg?.content?._mediaDetails?.Audio?.AudioMessage ||
+		quotedMsg?.content?._mediaDetails?.audioMessage
+	);
+	if (hasEmbeddedAudio && typeof quotedMsg.downloadStickerAudio === "function") {
+		const media = await quotedMsg.downloadStickerAudio().catch((err) => {
+			logger.warn(`[getStickerAudioMedia] Falha ao baixar áudio do sticker: ${err.message}`);
+			return null;
+		});
+		if (media && (media.data || media.url)) return media;
+		// Se o download embutido falhar, retorna null
+	}
+
+	return null;
+}
+
+/**
+ * Une o vídeo de um sticker animado (MP4) com o áudio original usando ffmpeg.
+ * @param {Buffer} mp4Buffer - Buffer do MP4 do sticker animado
+ * @param {Object} audioMedia - Media do áudio original (data base64)
+ * @returns {Promise<Buffer>} - MP4 com áudio embutido (ou o MP4 original se não for possível)
+ */
+async function muxStickerVideoWithAudio(mp4Buffer, audioMedia) {
+	if (!audioMedia?.data) return mp4Buffer;
+	const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "sticker-mux-"));
+	try {
+		const videoPath = path.join(tempDir, "video.mp4");
+		const audioPath = path.join(tempDir, "audio.ogg");
+		const outPath = path.join(tempDir, "out.mp4");
+		await fs.writeFile(videoPath, mp4Buffer);
+		await fs.writeFile(
+			audioPath,
+			Buffer.from(String(audioMedia.data).replace(/^data:[^;]+;base64,/, ""), "base64")
+		);
+
+		await acquireFFmpegSlot();
+		try {
+			await new Promise((resolve, reject) => {
+				ffmpeg(videoPath)
+					.input(audioPath)
+					.outputOptions([
+						"-y",
+						"-c:v",
+						"copy",
+						"-c:a",
+						"aac",
+						"-shortest",
+						"-movflags",
+						"+faststart"
+					])
+					.output(outPath)
+					.on("end", resolve)
+					.on("error", reject)
+					.run();
+			});
+		} finally {
+			releaseFFmpegSlot();
+		}
+
+		return await fs.readFile(outPath);
+	} finally {
+		await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+	}
+}
+
+/**
+ * Se a figurinha extraída possuir áudio (embutido ou citado), anexa também o áudio na resposta.
+ */
+async function appendAudioStickerExtraction({
+	chatId,
+	message,
+	quotedMsg,
+	visualReturnMessage,
+	precomputedAudioMedia = undefined
+}) {
+	const audioMedia =
+		precomputedAudioMedia === undefined
+			? await getStickerAudioMedia(quotedMsg)
+			: precomputedAudioMedia;
+	if (!audioMedia || (!audioMedia.data && !audioMedia.url)) {
+		return visualReturnMessage;
+	}
+
+	telemetry.setAttrs({ "ravena.sticker.extracted_audio": true });
+
+	const audioReturnMessage = new ReturnMessage({
+		chatId,
+		content: {
+			mimetype: audioMedia.mimetype || "audio/ogg; codecs=opus",
+			data: audioMedia.data,
+			url: audioMedia.url,
+			filename: audioMedia.filename || "sticker-audio.ogg",
+			isMessageMedia: true
+		},
+		options: {
+			sendMediaAsSticker: false,
+			quotedMessageId: message.origin.id._serialized,
+			goReply: message.origin
+		}
+	});
+
+	return [visualReturnMessage, audioReturnMessage];
+}
+
+/**
+ * Extrai a faixa de áudio de um vídeo em OGG Opus e valida se existe áudio e duração <= 240s.
+ * @param {Buffer} videoBuffer - Buffer do vídeo
+ * @param {string} mimeType - Mimetype do vídeo
+ * @returns {Promise<{audioBuffer: Buffer, duration: number}>}
+ */
+async function extractAudioFromVideoBuffer(videoBuffer, mimeType = "video/mp4") {
+	const videoPath = await saveTempMedia(videoBuffer, mimeType);
+	const audioPath = `${videoPath}.ogg`;
+	try {
+		return await transcodeToOpusOgg(videoPath, audioPath);
+	} finally {
+		await fs.unlink(videoPath).catch(() => {});
+		await fs.unlink(audioPath).catch(() => {});
+	}
+}
+
+/**
+ * Cria figurinha com som diretamente a partir de um vídeo (!sa / !saudio), aceitando args combináveis.
+ * @returns {Promise<ReturnMessage|Array<ReturnMessage>>}
+ */
+async function audioStickerFromVideoCommand(bot, message, args, group) {
+	const chatId = message.group ?? message.author;
+	const stickerOptions = parseStickerArgs(args);
+	telemetry.setAttrs({
+		"ravena.sticker.crop_type": stickerOptions.cropMode,
+		"ravena.sticker.quality_mode": stickerOptions.qualityMode,
+		"ravena.sticker.has_audio": true
+	});
+
+	if (bot?.useTelegram || bot?.useDiscord) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "unsupported_platform"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content: "Figurinhas com som só são suportadas no WhatsApp por enquanto."
+		});
+	}
+
+	let videoMsg = null;
+	let preloadedVideoMedia = null;
+	let detectedVideoMime = null;
+
+	if (message.type === "video") {
+		videoMsg = message;
+	} else if (message.type === "audio" || message.type === "ptt") {
+		const quotedStickerMsg =
+			typeof message.origin?.getQuotedMessage === "function"
+				? await message.origin.getQuotedMessage().catch(() => null)
+				: null;
+		return await createAudioStickerFromAudioAndSticker({
+			bot,
+			message,
+			args,
+			group,
+			chatId,
+			audioMsg: message,
+			quotedStickerMsg,
+			cropType: stickerOptions.cropMode,
+			stickerOptions
+		});
+	} else if (message.type === "document") {
+		const docMedia = message.content?.data
+			? message.content
+			: typeof message.downloadMedia === "function"
+				? await message.downloadMedia().catch(() => null)
+				: null;
+		const docClass = classifyDocumentMedia(message, docMedia);
+		if (docClass.kind === "audio") {
+			const quotedStickerMsg =
+				typeof message.origin?.getQuotedMessage === "function"
+					? await message.origin.getQuotedMessage().catch(() => null)
+					: null;
+			return await createAudioStickerFromAudioAndSticker({
+				bot,
+				message,
+				args,
+				group,
+				chatId,
+				audioMsg: docMedia
+					? {
+							...message,
+							content: { ...message.content, ...docMedia, mimetype: docClass.mimeType }
+						}
+					: message,
+				quotedStickerMsg,
+				cropType: stickerOptions.cropMode,
+				stickerOptions
+			});
+		}
+		if (docClass.kind === "video") {
+			videoMsg = message;
+			preloadedVideoMedia = docMedia;
+			detectedVideoMime = docClass.mimeType;
+		}
+	} else {
+		const quotedMsg =
+			typeof message.origin?.getQuotedMessage === "function"
+				? await message.origin.getQuotedMessage().catch(() => null)
+				: null;
+		const qType = String(quotedMsg?.type || "").toLowerCase();
+		if (qType === "video") {
+			videoMsg = quotedMsg;
+		} else if (qType === "audio" || qType === "ptt") {
+			const quotedStickerMsg =
+				typeof quotedMsg.origin?.getQuotedMessage === "function"
+					? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+					: null;
+			return await createAudioStickerFromAudioAndSticker({
+				bot,
+				message,
+				args,
+				group,
+				chatId,
+				audioMsg: quotedMsg,
+				quotedStickerMsg,
+				cropType: stickerOptions.cropMode,
+				stickerOptions
+			});
+		} else if (qType === "document") {
+			const docMedia = quotedMsg.content?.data
+				? quotedMsg.content
+				: typeof quotedMsg.downloadMedia === "function"
+					? await quotedMsg.downloadMedia().catch(() => null)
+					: null;
+			const docClass = classifyDocumentMedia(quotedMsg, docMedia);
+			if (docClass.kind === "audio") {
+				const quotedStickerMsg =
+					typeof quotedMsg.origin?.getQuotedMessage === "function"
+						? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+						: null;
+				return await createAudioStickerFromAudioAndSticker({
+					bot,
+					message,
+					args,
+					group,
+					chatId,
+					audioMsg: docMedia
+						? {
+								...quotedMsg,
+								content: { ...quotedMsg.content, ...docMedia, mimetype: docClass.mimeType }
+							}
+						: quotedMsg,
+					quotedStickerMsg,
+					cropType: stickerOptions.cropMode,
+					stickerOptions
+				});
+			}
+			if (docClass.kind === "video") {
+				videoMsg = quotedMsg;
+				preloadedVideoMedia = docMedia;
+				detectedVideoMime = docClass.mimeType;
+			}
+		}
+	}
+
+	if (!videoMsg) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "missing_video_for_saudio"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content:
+				"Manda um vídeo com !sa na legenda ou responde a um vídeo com !sa para criar uma figurinha com som! 🎬🔊"
+		});
+	}
+
+	let videoMedia = preloadedVideoMedia;
+	if (!videoMedia) {
+		if (videoMsg.content && videoMsg.content.data) {
+			videoMedia = videoMsg.content;
+		} else if (typeof videoMsg.downloadMedia === "function") {
+			videoMedia = await videoMsg.downloadMedia().catch(() => null);
+		}
+	}
+
+	if (!videoMedia || !videoMedia.data) {
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": "video_download_failed"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content:
+				"❌ Não consegui baixar esse vídeo (pode ter expirado ou ser visualização única protegida)."
+		});
+	}
+
+	const mimeType = detectedVideoMime || videoMedia.mimetype || "video/mp4";
+	const videoBuffer = Buffer.from(videoMedia.data, "base64");
+
+	let extracted;
+	try {
+		extracted = await extractAudioFromVideoBuffer(videoBuffer, mimeType);
+	} catch (err) {
+		if (err.code === "VIDEO_WITHOUT_AUDIO") {
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "video_without_audio"
+			});
+			await message.origin.react("❌");
+			return new ReturnMessage({
+				chatId,
+				content: "❌ Esse vídeo não tem faixa de áudio. Para figurinha sem som, use !s."
+			});
+		}
+		if (err.code === "VIDEO_TOO_LONG") {
+			telemetry.setAttrs({
+				"app.outcome": "rejected",
+				"app.reject.reason": "video_too_long"
+			});
+			await message.origin.react("❌");
+			return new ReturnMessage({
+				chatId,
+				content: "❌ O vídeo é muito longo (máximo de 4 minutos para figurinhas com som)."
+			});
+		}
+		telemetry.setAttrs({
+			"app.outcome": "rejected",
+			"app.reject.reason": err.code || "video_audio_extract_failed"
+		});
+		await message.origin.react("❌");
+		return new ReturnMessage({
+			chatId,
+			content: formatFriendlyAudioStickerError(err)
+		});
+	}
+
+	let finalStickerOptions = stickerOptions;
+	if (stickerOptions.cropMode === "llm") {
+		const percentage = await getLLMCropPercentage(videoMedia, mimeType);
+		finalStickerOptions = { ...stickerOptions, cropMode: String(percentage) };
+	}
+
+	const processedBuffer = await processMediaToSquare(videoMedia, mimeType, finalStickerOptions);
+	telemetry.setAttrs({
+		"ravena.sticker.crop_type": String(finalStickerOptions.cropMode),
+		"ravena.sticker.quality_mode": finalStickerOptions.qualityMode,
+		"ravena.sticker.mime_type": mimeType,
+		"ravena.sticker.size_bytes": processedBuffer.length,
+		"ravena.sticker.has_audio": true
+	});
+
+	const stickerMedia = {
+		mimetype: "image/webp",
+		data: processedBuffer.toString("base64"),
+		filename: `sticker-${Date.now()}.webp`,
+		isMessageMedia: true
+	};
+	const nameArgs = stickerOptions.remainingArgs || [];
+	const stickerName = nameArgs.length > 0 ? nameArgs.join(" ") : group ? group.name : "sticker";
+
+	cmdUsage.logFixedCommandUsage({
+		timestamp: Date.now(),
+		command: "sticker",
+		user: message.author,
+		groupId: chatId,
+		args: args.join(" "),
+		info: {
+			cropType: finalStickerOptions.cropMode,
+			qualityMode: finalStickerOptions.qualityMode,
+			mimeType,
+			hasAudio: true,
+			fromVideo: true
+		}
+	});
+
+	return [
+		new ReturnMessage({
+			chatId,
+			content: stickerMedia,
+			options: {
+				sendMediaAsSticker: true,
+				stickerAudio: {
+					data: extracted.audioBuffer.toString("base64"),
+					mimetype: "audio/ogg; codecs=opus",
+					filename: `sticker-audio-${Date.now()}.ogg`
+				},
+				stickerAuthor: bot?.nomeExibir || "ravena",
+				stickerName,
+				quotedMessageId: message.origin.id._serialized
+			}
+		})
+	];
 }
 
 /**
@@ -551,22 +2210,103 @@ async function processMediaToSquare(mediaBuffer, mimeType, cropType) {
  */
 async function squareStickerCommand(bot, message, args, group, cropType) {
 	const chatId = message.group ?? message.author;
-	// logger.debug(`Executando comando sticker quadrado (${cropType}) para ${chatId}`);
+	const baseOptions =
+		cropType === "hq"
+			? { hq: true }
+			: cropType === "long"
+				? { longo: true }
+				: cropType === "longhq"
+					? { hq: true, longo: true }
+					: cropType && cropType !== "transparent"
+						? { cropMode: cropType }
+						: {};
+	const stickerOptions = parseStickerArgs(args, baseOptions);
+	telemetry.setAttrs({
+		"ravena.sticker.crop_type": stickerOptions.cropMode,
+		"ravena.sticker.quality_mode": stickerOptions.qualityMode,
+		"ravena.sticker.has_audio": false
+	});
 
 	try {
 		let mediaBuffer, mimeType, quotedMessageId;
+		let isTextBubbleSticker = false;
 
 		// Extrair mídia e informações necessárias da mensagem direta ou citada
-		if (message.type === "image" || message.type === "video" || message.type === "gif") {
+		if (message.type === "audio" || message.type === "ptt") {
+			const quotedStickerMsg =
+				typeof message.origin?.getQuotedMessage === "function"
+					? await message.origin.getQuotedMessage().catch(() => null)
+					: null;
+			const quotedParentType = String(quotedStickerMsg?.type || "").toLowerCase();
+			if (!["image", "video", "gif"].includes(quotedParentType)) {
+				return await createAudioStickerFromAudioAndSticker({
+					bot,
+					message,
+					args,
+					group,
+					chatId,
+					audioMsg: message,
+					quotedStickerMsg,
+					cropType: stickerOptions.cropMode,
+					stickerOptions
+				});
+			}
+		}
+		if (message.type === "document") {
+			const docMedia =
+				message.content && message.content.data
+					? message.content
+					: typeof message.downloadMedia === "function"
+						? await message.downloadMedia().catch(() => null)
+						: null;
+			const docClass = classifyDocumentMedia(message, docMedia);
+			if (docClass.kind === "audio") {
+				const quotedStickerMsg =
+					typeof message.origin?.getQuotedMessage === "function"
+						? await message.origin.getQuotedMessage().catch(() => null)
+						: null;
+				return await createAudioStickerFromAudioAndSticker({
+					bot,
+					message,
+					args,
+					group,
+					chatId,
+					audioMsg: docMedia
+						? {
+								...message,
+								content: { ...message.content, ...docMedia, mimetype: docClass.mimeType }
+							}
+						: message,
+					quotedStickerMsg,
+					cropType: stickerOptions.cropMode,
+					stickerOptions
+				});
+			}
+			if (docClass.kind === "image" || docClass.kind === "video") {
+				if (!docMedia || !docMedia.data) {
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: "❌ Não consegui baixar esse arquivo (pode ter expirado ou ser muito grande)."
+					});
+				}
+				mediaBuffer = docMedia;
+				mimeType = docClass.mimeType;
+				quotedMessageId = message.origin.id._serialized;
+			} else {
+				await message.origin.react("❌");
+				return new ReturnMessage({
+					chatId,
+					content:
+						"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos, figurinhas e áudios (ou documentos nesses formatos, ou marca alguém com @ pra usar a foto de perfil)."
+				});
+			}
+		} else if (message.type === "image" || message.type === "video" || message.type === "gif") {
 			// Mídia na mensagem atual
-			// logger.debug(`Processando mídia da mensagem atual: ${message.type}`);
-
-			// Lazy loading: só usa content direto se já tiver .data (base64)
 			if (message.content && message.content.data) {
 				mediaBuffer = message.content;
 				mimeType = message.content.mimetype;
 			} else if (typeof message.downloadMedia === "function") {
-				// Baixa sob demanda
 				const media = await message.downloadMedia();
 				if (!media) throw new Error("Falha ao baixar mídia");
 				mediaBuffer = media;
@@ -584,7 +2324,6 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			if (!quotedMsg) {
 				await message.origin.react("❌");
 				if (message.hasQuotedMsg) {
-					// Havia uma mensagem citada, mas saiu do cache
 					return new ReturnMessage({
 						chatId,
 						content:
@@ -601,16 +2340,31 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			// Verificar se o tipo de mídia é suportado
 			const mediaType = quotedMsg.type.toLowerCase();
 
-			// logger.debug(`Processando mídia da mensagem citada, tipo ${mediaType}`);
 			if (mediaType === "sticker") {
 				// Baixa o sticker original para extrair a mídia
 				const stickerMedia = await quotedMsg.downloadMedia();
 				if (!stickerMedia || !stickerMedia.data || !stickerMedia.mimetype) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "sticker_download_failed"
+					});
 					await message.origin.react("❌");
 					return new ReturnMessage({
 						chatId,
 						content:
 							"❌ Não consegui baixar a figurinha marcada (a mídia expirou ou ficou indisponível)."
+					});
+				}
+
+				if (String(stickerMedia.mimetype).toLowerCase().includes("was")) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "unsupported_lottie_sticker"
+					});
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: "Figurinhas animadas Lottie (.was) ainda não são suportadas para extração."
 					});
 				}
 
@@ -620,10 +2374,10 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 						const buffer = Buffer.from(stickerMedia.data, "base64");
 						const image = sharp(buffer, { animated: true });
 						const metadata = await image.metadata();
+						const audioMedia = await getStickerAudioMedia(quotedMsg);
 
 						if (metadata.pages > 1) {
 							// WebP Animado -> GIF (via sharp) -> MP4 (via ffmpeg)
-							// Resolve incompatibilidade do ffmpeg com chunks ANIM do WebP
 							const gifBuffer = await image.gif({ loop: 0 }).toBuffer();
 							const inputPath = await saveTempMedia(gifBuffer, "image/gif");
 							const outputPath = inputPath.replace(".gif", ".mp4");
@@ -650,7 +2404,22 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 									.run();
 							});
 
-							const mp4Buffer = await fs.readFile(outputPath);
+							let mp4Buffer = await fs.readFile(outputPath);
+							await fs.unlink(inputPath).catch(() => {});
+							await fs.unlink(outputPath).catch(() => {});
+
+							// Une o som original com o vídeo animado (mantendo o áudio
+							// separado na resposta também)
+							if (audioMedia && (audioMedia.data || audioMedia.url)) {
+								try {
+									mp4Buffer = await muxStickerVideoWithAudio(mp4Buffer, audioMedia);
+								} catch (muxErr) {
+									logger.warn(
+										`[!s] Não consegui misturar som no sticker animado: ${muxErr.message}`
+									);
+								}
+							}
+
 							const mp4Media = {
 								mimetype: "video/mp4",
 								data: mp4Buffer.toString("base64"),
@@ -658,22 +2427,24 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 								isMessageMedia: true
 							};
 
-							// Limpar arquivos temporários
-							await fs.unlink(inputPath).catch(() => {});
-							await fs.unlink(outputPath).catch(() => {});
-
-							return new ReturnMessage({
+							return await appendAudioStickerExtraction({
 								chatId,
-								content: mp4Media,
-								options: {
-									sendMediaAsSticker: false,
-									caption: "Sticker Animation",
-									quotedMessageId: message.origin.id._serialized,
-									goReply: message.origin
-								}
+								message,
+								quotedMsg,
+								visualReturnMessage: new ReturnMessage({
+									chatId,
+									content: mp4Media,
+									options: {
+										sendMediaAsSticker: false,
+										caption: "Sticker Animation",
+										quotedMessageId: message.origin.id._serialized,
+										goReply: message.origin
+									}
+								}),
+								precomputedAudioMedia: audioMedia
 							});
-						} else if (metadata.hasAlpha) {
-							// WebP Transparente -> PNG (Documento)
+						} else {
+							// WebP Estático -> PNG
 							const pngBuffer = await image.png().toBuffer();
 							const pngMedia = {
 								mimetype: "image/png",
@@ -682,34 +2453,133 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 								isMessageMedia: true
 							};
 
-							return new ReturnMessage({
-								chatId,
-								content: pngMedia,
-								options: {
-									sendMediaAsDocument: true,
-									caption: "Sticker Transparente",
-									quotedMessageId: message.origin.id._serialized,
-									goReply: message.origin
-								}
-							});
+							if (audioMedia && (audioMedia.data || audioMedia.url)) {
+								// Figurinha estática com som: foto + áudio separado
+								return await appendAudioStickerExtraction({
+									chatId,
+									message,
+									quotedMsg,
+									visualReturnMessage: new ReturnMessage({
+										chatId,
+										content: pngMedia,
+										options: {
+											sendMediaAsSticker: false,
+											caption: "Sticker Transparente",
+											quotedMessageId: message.origin.id._serialized,
+											goReply: message.origin
+										}
+									}),
+									precomputedAudioMedia: audioMedia
+								});
+							}
+
+							if (metadata.hasAlpha) {
+								// WebP Transparente -> PNG (Documento)
+								return await appendAudioStickerExtraction({
+									chatId,
+									message,
+									quotedMsg,
+									visualReturnMessage: new ReturnMessage({
+										chatId,
+										content: pngMedia,
+										options: {
+											sendMediaAsDocument: true,
+											caption: "Sticker Transparente",
+											quotedMessageId: message.origin.id._serialized,
+											goReply: message.origin
+										}
+									})
+								});
+							}
+							// Opaque sem audio: cai para a mídia original
 						}
 					} catch (error) {
 						logger.error("Erro ao processar sticker especial:", error);
-						// Continua para o fallback padrão em caso de erro
 					}
 				}
 
-				// Retorna a mídia original (não como sticker)
-				return new ReturnMessage({
+				// Retorna a mídia original (não como sticker) e, se houver, o áudio embutido
+				return await appendAudioStickerExtraction({
 					chatId,
-					content: stickerMedia,
-					options: {
-						sendMediaAsSticker: false,
-						caption: "Sticker Media",
-						quotedMessageId: message.origin.id._serialized,
-						goReply: message.origin
-					}
+					message,
+					quotedMsg,
+					visualReturnMessage: new ReturnMessage({
+						chatId,
+						content: stickerMedia,
+						options: {
+							sendMediaAsSticker: false,
+							caption: "Sticker Media",
+							quotedMessageId: message.origin.id._serialized,
+							goReply: message.origin
+						}
+					})
 				});
+			} else if (mediaType === "audio" || mediaType === "ptt") {
+				const quotedStickerMsg =
+					typeof quotedMsg.origin?.getQuotedMessage === "function"
+						? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+						: null;
+				return await createAudioStickerFromAudioAndSticker({
+					bot,
+					message,
+					args,
+					group,
+					chatId,
+					audioMsg: quotedMsg,
+					quotedStickerMsg,
+					cropType: stickerOptions.cropMode,
+					stickerOptions
+				});
+			} else if (mediaType === "document") {
+				const docMedia =
+					quotedMsg.content && quotedMsg.content.data
+						? quotedMsg.content
+						: typeof quotedMsg.downloadMedia === "function"
+							? await quotedMsg.downloadMedia().catch(() => null)
+							: null;
+				const docClass = classifyDocumentMedia(quotedMsg, docMedia);
+				if (docClass.kind === "audio") {
+					const quotedStickerMsg =
+						typeof quotedMsg.origin?.getQuotedMessage === "function"
+							? await quotedMsg.origin.getQuotedMessage().catch(() => null)
+							: null;
+					return await createAudioStickerFromAudioAndSticker({
+						bot,
+						message,
+						args,
+						group,
+						chatId,
+						audioMsg: docMedia
+							? {
+									...quotedMsg,
+									content: { ...quotedMsg.content, ...docMedia, mimetype: docClass.mimeType }
+								}
+							: quotedMsg,
+						quotedStickerMsg,
+						cropType: stickerOptions.cropMode,
+						stickerOptions
+					});
+				}
+				if (docClass.kind === "image" || docClass.kind === "video") {
+					if (!docMedia || !docMedia.data) {
+						await message.origin.react("❌");
+						return new ReturnMessage({
+							chatId,
+							content:
+								"❌ Não consegui baixar esse arquivo (pode ter expirado ou ser visualização única protegida)."
+						});
+					}
+					mediaBuffer = docMedia;
+					mimeType = docClass.mimeType;
+					quotedMessageId = message.origin.id._serialized;
+				} else {
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content:
+							"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos, figurinhas e áudios (ou documentos nesses formatos, ou marca alguém com @ pra usar a foto de perfil)."
+					});
+				}
 			} else if (["image", "video", "gif"].includes(mediaType)) {
 				const media = await quotedMsg.downloadMedia();
 				if (!media || !media.data || !media.mimetype) {
@@ -723,38 +2593,79 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				mediaBuffer = media;
 				mimeType = media.mimetype;
 				quotedMessageId = message.origin.id._serialized;
+			} else if (["text", "chat", "conversation", "extendedtext"].includes(mediaType)) {
+				const rawText =
+					typeof quotedMsg.content === "string"
+						? quotedMsg.content
+						: typeof quotedMsg.body === "string"
+							? quotedMsg.body
+							: "";
+				if (!rawText.trim()) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "empty_quoted_text"
+					});
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: "❌ A mensagem marcada está vazia e não pode virar figurinha."
+					});
+				}
+
+				const { displayName, formattedPhone } = resolveQuotedSenderInfo(quotedMsg, group);
+				const dateTime = formatMessageDateTime(quotedMsg);
+				const pngBuffer = await telemetry.withSpan(
+					"sticker text.render",
+					{
+						attributes: {
+							"ravena.sticker.text_length": rawText.trim().length,
+							"ravena.sticker.text_truncated": rawText.trim().length > TEXT_STICKER.MAX_CHARS
+						}
+					},
+					async () =>
+						renderTextBubblePng({
+							displayName,
+							formattedPhone,
+							text: rawText,
+							dateTime
+						})
+				);
+
+				mediaBuffer = {
+					mimetype: "image/png",
+					data: pngBuffer.toString("base64"),
+					filename: `text-sticker-${Date.now()}.png`,
+					isMessageMedia: true
+				};
+				mimeType = "image/png";
+				quotedMessageId = message.origin.id._serialized;
+				isTextBubbleSticker = true;
 			} else {
 				await message.origin.react("❌");
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos e figurinhas (ou marca alguém com @ pra usar a foto de perfil)."
+						"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos, figurinhas, áudios e mensagens de texto (ou documentos nesses formatos, ou marca alguém com @ pra usar a foto de perfil)."
 				});
 			}
 		}
 
-		// Log unificado do comando sticker + timer global
-		const cmdStart = Date.now();
-		// logger.info(
-		// 	`[squareStickerCommand] INÍCIO (${cropType}) para ${chatId} [tipo=${mimeType}, mediaBuffer=${typeof mediaBuffer}]`
-		// );
-
 		// Determinar o tipo de corte final (se for LLM, fazer a query agora)
-		let finalCropType = cropType;
-		if (cropType === "llm") {
-			// const llmStart = Date.now();
-			finalCropType = await getLLMCropPercentage(mediaBuffer, mimeType);
-			// logger.info(
-			// 	`[squareStickerCommand] LLM crop em ${Date.now() - llmStart}ms → ${finalCropType}%`
-			// );
+		let finalStickerOptions = stickerOptions;
+		if (!isTextBubbleSticker && stickerOptions.cropMode === "llm") {
+			const percentage = await getLLMCropPercentage(mediaBuffer, mimeType);
+			finalStickerOptions = { ...stickerOptions, cropMode: String(percentage) };
 		}
 
 		// Processar a mídia para torná-la quadrada no padrão WhatsApp
-		// const processStart = Date.now();
-		const processedBuffer = await processMediaToSquare(mediaBuffer, mimeType, finalCropType);
-		// logger.info(
-		// 	`[squareStickerCommand] processMediaToSquare concluído em ${Date.now() - processStart}ms (${(processedBuffer.length / 1024).toFixed(1)} KB)`
-		// );
+		const processedBuffer = await processMediaToSquare(mediaBuffer, mimeType, finalStickerOptions);
+		telemetry.setAttrs({
+			"ravena.sticker.crop_type":
+				stickerOptions.cropMode === "llm" ? "llm" : String(finalStickerOptions.cropMode),
+			"ravena.sticker.quality_mode": finalStickerOptions.qualityMode,
+			"ravena.sticker.mime_type": mimeType || "unknown",
+			"ravena.sticker.size_bytes": processedBuffer.length
+		});
 
 		// Monta objeto de mídia direto do buffer em memória (sem I/O de arquivo temporário)
 		const processedMedia = {
@@ -764,8 +2675,9 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			isMessageMedia: true
 		};
 
-		// Extrair nome do sticker dos args ou usa nome do grupo
-		const stickerName = args.length > 0 ? args.join(" ") : group ? group.name : "sticker";
+		// Extrair nome do sticker dos args restantes ou usa nome do grupo
+		const nameArgs = stickerOptions.remainingArgs || [];
+		const stickerName = nameArgs.length > 0 ? nameArgs.join(" ") : group ? group.name : "sticker";
 
 		// Log usage
 		cmdUsage.logFixedCommandUsage({
@@ -775,14 +2687,11 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 			groupId: chatId,
 			args: args.join(" "),
 			info: {
-				cropType,
+				cropType: finalStickerOptions.cropMode,
+				qualityMode: finalStickerOptions.qualityMode,
 				mimeType
 			}
 		});
-
-		// logger.info(
-		// 	`[squareStickerCommand] ✓ CONCLUÍDO (${cropType}) em ${Date.now() - cmdStart}ms — entregando ReturnMessage ao bot`
-		// );
 
 		// Cria ReturnMessage com opções para sticker
 		return [
@@ -797,17 +2706,9 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				}
 			})
 		];
-		/*
-    ,
-    new ReturnMessage({
-      chatId: chatId,
-      content: processedMedia
-    })
-    */
 	} catch (error) {
-		logger.error(`Erro ao criar sticker quadrado (${cropType}):`, error);
+		logger.error(`Erro ao criar sticker (${stickerOptions.cropMode}):`, error);
 
-		// Tenta aplicar reação de erro diretamente
 		try {
 			await message.origin.react("❌");
 		} catch (reactError) {
@@ -816,7 +2717,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 
 		return new ReturnMessage({
 			chatId,
-			content: `❌ Deu ruim ao criar a figurinha (${cropType}). Tenta mandar outra imagem ou vídeo!`
+			content: `❌ Deu ruim ao criar a figurinha. Tenta mandar outra imagem, vídeo ou áudio!`
 		});
 	}
 }
@@ -915,10 +2816,13 @@ async function processAutoSticker(bot, message, group) {
 }
 
 // Criar array de comandos usando a classe Command
+const STICKER_OPTIONS_DESC =
+	"Cria uma figurinha (imagem, vídeo, GIF ou documento)! Opções: hq (alta resolução/FPS), longo (até 60s), q (centro), qc (topo), qb (base), qe (esticado), qi (IA), fh/inv (espelhar horizontal), fv (espelhar vertical), 90 (girar 90° horário), -90/270 (anti-horário). Também cria/extrai figurinhas com som.";
+
 const commands = [
 	new Command({
 		name: "sticker",
-		description: "Converte mídia em sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
@@ -937,7 +2841,7 @@ const commands = [
 	}),
 	new Command({
 		name: "figurinha",
-		description: "Converte mídia em sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true, // Verificará tanto mídia direta quanto mídia de mensagem citada
@@ -957,7 +2861,7 @@ const commands = [
 
 	new Command({
 		name: "s",
-		description: "Alias curto para comando sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true,
@@ -976,7 +2880,7 @@ const commands = [
 	}),
 	new Command({
 		name: "fig",
-		description: "Alias curto para comando sticker",
+		description: STICKER_OPTIONS_DESC,
 		category: "stickers",
 		group: "ssticker",
 		needsMedia: true,
@@ -995,9 +2899,10 @@ const commands = [
 	}),
 	new Command({
 		name: "sqi",
-		description: "Sticker quadrado com corte inteligente via IA",
+		description:
+			"Cria figurinha quadrada com corte inteligente via IA (atalho para !s qi; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqi",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1012,9 +2917,10 @@ const commands = [
 	}),
 	new Command({
 		name: "stickerqi",
-		description: "Sticker quadrado com corte inteligente via IA",
+		description:
+			"Cria figurinha quadrada com corte inteligente via IA (atalho para !s qi; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqi",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1030,9 +2936,9 @@ const commands = [
 	new Command({
 		name: "sq",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortada no centro (atalho para !s q; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1048,9 +2954,9 @@ const commands = [
 	new Command({
 		name: "stickerq",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortada no centro (atalho para !s q; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1066,9 +2972,9 @@ const commands = [
 	new Command({
 		name: "sqc",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando no topo (atalho para !s qc; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqc",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1084,9 +2990,9 @@ const commands = [
 	new Command({
 		name: "stickerqc",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando no topo (atalho para !s qc; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqc",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1103,9 +3009,9 @@ const commands = [
 	new Command({
 		name: "sqb",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando na base (atalho para !s qb; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqb",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1121,9 +3027,9 @@ const commands = [
 	new Command({
 		name: "stickerqb",
 		description:
-			"Sticker quadrado, cortado no meio (sq), cima (sqc), baixo (sqb) ou esticado (sqe)",
+			"Cria figurinha quadrada cortando na base (atalho para !s qb; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqb",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1139,9 +3045,10 @@ const commands = [
 	// Comando para sticker esticado (sqe)
 	new Command({
 		name: "sqe",
-		description: "Sticker quadrado esticado, sem cortar a imagem",
+		description:
+			"Cria figurinha quadrada esticada sem cortar as bordas (atalho para !s qe; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqe",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1156,9 +3063,10 @@ const commands = [
 	}),
 	new Command({
 		name: "stickerqe",
-		description: "Sticker quadrado esticado, sem cortar a imagem",
+		description:
+			"Cria figurinha quadrada esticada sem cortar as bordas (atalho para !s qe; aceita opções do !s)",
 		category: "stickers",
-		group: "sstickerqua",
+		group: "ssticker_sqe",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1173,9 +3081,10 @@ const commands = [
 	}),
 	new Command({
 		name: "shq",
-		description: "Cria figurinha em alta taxa de quadros (HQ: 22-25 FPS)",
+		description:
+			"Cria figurinha em alta taxa de quadros e resolução (atalho para !s hq; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_shq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1191,9 +3100,10 @@ const commands = [
 	}),
 	new Command({
 		name: "stickerhq",
-		description: "Cria figurinha em alta taxa de quadros (HQ: 22-25 FPS)",
+		description:
+			"Cria figurinha em alta taxa de quadros e resolução (atalho para !s hq; aceita opções do !s)",
 		category: "stickers",
-		group: "ssticker",
+		group: "ssticker_shq",
 		needsMedia: true,
 		caseSensitive: false,
 		cooldown: 5,
@@ -1206,55 +3116,209 @@ const commands = [
 		},
 		method: async (bot, message, args, group) =>
 			await squareStickerCommand(bot, message, args, group, "hq")
+	}),
+	new Command({
+		name: "slongo",
+		description:
+			"Cria figurinha de vídeo longa até 60s (atalho para !s longo; aceita opções do !s)",
+		category: "stickers",
+		group: "ssticker_slongo",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "long")
+	}),
+	new Command({
+		name: "stickerlongo",
+		description:
+			"Cria figurinha de vídeo longa até 60s (atalho para !s longo; aceita opções do !s)",
+		category: "stickers",
+		group: "ssticker_slongo",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "long")
+	}),
+	new Command({
+		name: "slongohq",
+		description:
+			"Cria figurinha de vídeo longa até 60s em alta qualidade (atalho para !s hq longo; aceita opções do !s)",
+		category: "stickers",
+		group: "ssticker_slongohq",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "longhq")
+	}),
+	new Command({
+		name: "stickerlongohq",
+		description:
+			"Cria figurinha de vídeo longa até 60s em alta qualidade (atalho para !s hq longo; aceita opções do !s)",
+		category: "stickers",
+		group: "ssticker_slongohq",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await squareStickerCommand(bot, message, args, group, "longhq")
+	}),
+	new Command({
+		name: "sa",
+		description:
+			"Transforma vídeo (ou áudio respondendo a figurinha) em figurinha com som (também aceita opções do !s)",
+		category: "stickers",
+		group: "sstickersound",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await audioStickerFromVideoCommand(bot, message, args, group)
+	}),
+	new Command({
+		name: "saudio",
+		description:
+			"Transforma vídeo (ou áudio respondendo a figurinha) em figurinha com som (também aceita opções do !s)",
+		category: "stickers",
+		group: "sstickersound",
+		needsMedia: true,
+		caseSensitive: false,
+		cooldown: 5,
+		cooldownPV: 0,
+		reactions: {
+			trigger: "🖼",
+			before: process.env.LOADING_EMOJI ?? "⌛️",
+			after: "🖼",
+			error: "❌"
+		},
+		method: async (bot, message, args, group) =>
+			await audioStickerFromVideoCommand(bot, message, args, group)
 	})
 ];
 
 const helper = {
-	about: "Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)",
+	about:
+		"Criação, recorte, transformações, corte inteligente por IA e conversão de figurinhas (stickers), incluindo stickers com som e documentos",
 	implementation:
-		"Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS) e crop por IA",
-	tags: "sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,midia,recorte,whatsapp",
+		"Processa imagens, vídeos, áudios e documentos (PNG, WebP, vídeo, áudio) com Sharp e FFmpeg. Comandos como !s e !sa aceitam argumentos combináveis (hq, longo, q, qc, qb, qe, qi, fh/inv, fv, 90, -90), além de criação e extração de figurinhas com som",
+	tags: "sticker,figurinha,s,sa,saudio,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp,som,audio,document",
 	cmds: [
 		{
 			cmd: "!sticker",
-			desc: "Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp",
-			usage: ["!sticker (com imagem ou em resposta)", "!s"],
+			desc: "Cria uma figurinha (imagem, vídeo, GIF ou documento)! Opções: hq (alta resolução/FPS), longo (até 60s), q (centro), qc (topo), qb (base), qe (esticado), qi (IA), fh/inv (espelhar horizontal), fv (espelhar vertical), 90 (girar 90° horário), -90/270 (anti-horário). Também cria/extrai figurinhas com som.",
+			usage: [
+				"!s (com imagem, vídeo, GIF, documento ou em resposta)",
+				"!s hq (alta resolução/FPS sem bordas transparentes)",
+				"!s longo (preserva duração de vídeos longos até 60s)",
+				"!s q / c / centro (corte quadrado no centro)",
+				"!s qc / cima (corte quadrado no topo)",
+				"!s qb / baixo (corte quadrado na base)",
+				"!s qe / esticar (esticado para quadrado sem cortar)",
+				"!s qi / ia (corte quadrado inteligente por IA)",
+				"!s fh / inv / espelhar (inverte horizontalmente)",
+				"!s fv (inverte verticalmente)",
+				"!s 90 / horario (gira 90° no sentido horário)",
+				"!s -90 / 270 / antihorario (gira 90° no sentido anti-horário)",
+				"!s hq qc fh (combine livremente e adicione um nome no fim)",
+				"[figurinha] -> [áudio ou documento de áudio] -> !s (cria sticker com som)",
+				"!s (respondendo a uma figurinha extrai a mídia e o áudio original)"
+			],
+			category: "stickers"
+		},
+		{
+			cmd: "!sa",
+			desc: "Transforma vídeo (ou áudio respondendo a figurinha) em figurinha com som (também aceita opções do !s)",
+			usage: [
+				"!sa (na legenda do vídeo ou em resposta a um vídeo)",
+				"!sa hq longo q (alta qualidade, até 60s e corte central)",
+				"!sa qc fh 90 (combina corte, espelhamento e rotação)",
+				"!saudio"
+			],
 			category: "stickers"
 		},
 		{
 			cmd: "!shq",
-			desc: "Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais",
-			usage: ["!shq (com imagem/vídeo ou em resposta)", "!stickerhq"],
+			desc: "Cria figurinha em alta taxa de quadros e resolução (atalho para !s hq; aceita opções do !s)",
+			usage: ["!shq (com imagem/vídeo ou em resposta)", "!shq qc", "!stickerhq"],
+			category: "stickers"
+		},
+		{
+			cmd: "!slongo",
+			desc: "Cria figurinha de vídeo longa até 60s (atalho para !s longo; aceita opções do !s)",
+			usage: ["!slongo (com vídeo/GIF ou em resposta)", "!slongo q", "!stickerlongo"],
+			category: "stickers"
+		},
+		{
+			cmd: "!slongohq",
+			desc: "Cria figurinha de vídeo longa até 60s em alta qualidade (atalho para !s hq longo; aceita opções do !s)",
+			usage: ["!slongohq (com vídeo/GIF ou em resposta)", "!slongohq qc", "!stickerlongohq"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqi",
-			desc: "Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA",
-			usage: ["!sqi (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada com enquadramento inteligente via IA (atalho para !s qi; aceita opções do !s)",
+			usage: ["!sqi (com imagem ou em resposta)", "!sqi hq fh", "!stickerqi"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sq",
-			desc: "Cria figurinha quadrada cortada no centro",
-			usage: ["!sq (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada cortada no centro (atalho para !s q; aceita opções do !s)",
+			usage: ["!sq (com imagem/vídeo ou em resposta)", "!sq hq", "!stickerq"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqc",
-			desc: "Cria figurinha quadrada cortando no topo",
-			usage: ["!sqc (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada cortando no topo (atalho para !s qc; aceita opções do !s)",
+			usage: ["!sqc (com imagem/vídeo ou em resposta)", "!sqc hq", "!stickerqc"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqb",
-			desc: "Cria figurinha quadrada cortando na base",
-			usage: ["!sqb (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada cortando na base (atalho para !s qb; aceita opções do !s)",
+			usage: ["!sqb (com imagem/vídeo ou em resposta)", "!sqb hq", "!stickerqb"],
 			category: "stickers"
 		},
 		{
 			cmd: "!sqe",
-			desc: "Cria figurinha quadrada esticada sem cortar as bordas",
-			usage: ["!sqe (com imagem ou em resposta)"],
+			desc: "Cria figurinha quadrada esticada sem cortar as bordas (atalho para !s qe; aceita opções do !s)",
+			usage: ["!sqe (com imagem/vídeo ou em resposta)", "!sqe 90", "!stickerqe"],
 			category: "stickers"
 		}
 	]
@@ -1263,5 +3327,11 @@ const helper = {
 module.exports = {
 	helper,
 	commands,
-	processAutoSticker
+	processAutoSticker,
+	parseStickerArgs,
+	processMediaToSquare,
+	getLLMCropPercentage,
+	resolveQuotedSenderInfo,
+	formatMessageDateTime,
+	renderTextBubblePng
 };

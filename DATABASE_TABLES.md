@@ -108,6 +108,7 @@ Configuração completa de cada grupo onde o bot está presente.
 | `webhooks` | TEXT (JSON) | Webhooks configurados |
 | `twitch` / `youtube` / `kick` / `tiktok` | TEXT (JSON) | Canais monitorados |
 | `bot_not_in_group` | TEXT (JSON) | Lista de bot_ids que não participam deste grupo |
+| `bots_in_group` | TEXT (JSON) | Últimos bot_ids vistos no grupo. Só `setBotInGroup()` grava (a cada mudança: mensagem no grupo ou entrada do próprio bot põe, saída dele tira); `saveGroup()` não toca. `NULL` ou conteúdo que não é lista JSON = nenhum bot visto, e a próxima gravação conserta. Depois de `SQLITE_BUSY`, só volta a pôr bots após 1 minuto; a saída não espera. Bot desconectado, banido, renomeado ou removido continua na lista com o id antigo. No Discord cada canal ou tópico é um grupo e o servidor não entra; sair do servidor tira só os canais e tópicos dele que estão no cache. Leia por `getGroups()` (`botsInGroup`) ou `getGroupIdsByBot()`; o `Group` do cache não carrega o campo |
 | `minecraft_server` | TEXT (JSON) | Servidor de Minecraft do grupo `{host, port}` (`!configurar-servidor` / `!servidor`) |
 | `json_data` | TEXT | **Legado** — mantido como fallback (Fase 4 remove) |
 

@@ -13,7 +13,7 @@
  * A credencial é o cookie do painel (as rotas :botId aceitam a sessão do admin); nada de ?auth=.
  */
 
-import { h, lamp, card, note, confirmInline, toast, parseHash } from "../../core.js";
+import { h, lamp, card, note, busy, confirmInline, toast, parseHash } from "../../core.js";
 import { botAction, botFetch, explain, outcomeBox } from "./comum.js";
 
 /** Stream guardado entre redesenhos da mesma instância (ver o cabeçalho). */
@@ -52,6 +52,8 @@ export function qrSrc(code) {
 	return null;
 }
 
+const noInstance = (err) => err.body?.instanceExists === false;
+
 export async function renderPareamento(root, ctx, bot) {
 	const id = encodeURIComponent(bot.nome);
 	const name = bot.nomeExibir || bot.nome;
@@ -78,6 +80,7 @@ export async function renderPareamento(root, ctx, bot) {
 				say(`Comando de reconexão enviado${m ? ` (${m})` : ""}. Verificando o estado…`);
 				timers.push(setTimeout(() => ctx.refresh(), 3000));
 			} catch (err) {
+				if (noInstance(err)) return ctx.refresh();
 				say("");
 				out.set("error", err.message);
 			} finally {
@@ -108,6 +111,30 @@ export async function renderPareamento(root, ctx, bot) {
 			say("Instância recriada. Atualizando…");
 			timers.push(setTimeout(() => ctx.refresh(), 1500));
 		}
+	});
+	const create = h("button", {
+		type: "button",
+		class: "btn btn-primary",
+		"data-key": "criar",
+		text: "Criar",
+		onclick: () =>
+			busy(create, "Criando…", async () => {
+				out.clear();
+				say("Criando a instância na WhatsGoAPI…");
+				try {
+					await botAction(bot, `/recreate/${id}?onlyIfMissing=1`, `criar a instância de ${name}`);
+				} catch (err) {
+					if (err.body?.instanceExists !== undefined) {
+						toast(err.body.message, { kind: "error" });
+						return ctx.refresh();
+					}
+					say("");
+					out.set("error", err.message);
+					return;
+				}
+				toast("Instância criada", { kind: "ok" });
+				ctx.refresh();
+			})
 	});
 	const logout = h("button", {
 		type: "button",
@@ -201,9 +228,10 @@ export async function renderPareamento(root, ctx, bot) {
 	}
 	const connected = !!st.connected;
 	const exists = !!st.instanceExists;
+	const missing = !connected && st.instanceExists === false;
 	const badge = connected
 		? lamp("ok", "conectado")
-		: !exists
+		: missing
 			? lamp("attention", "sem instância na WhatsGoAPI")
 			: lamp("down", "desconectado");
 
@@ -227,8 +255,20 @@ export async function renderPareamento(root, ctx, bot) {
 		if (code) pairCode.textContent = String(code);
 	};
 
-	const parts = [out.el, card({ title: "Conexão", pill: badge, body: [actions, msg] })];
-	if (!connected) {
+	const body = [missing ? h("div", { class: "inst-actions" }, create, refresh) : actions, msg];
+	const parts = [out.el, card({ title: "Conexão", pill: badge, body })];
+	if (missing) {
+		parts.unshift(
+			h(
+				"div",
+				{ class: "notice", role: "note" },
+				lamp("attention"),
+				h("span", {
+					text: "Atualmente nenhuma instância criada, use o botão criar para iniciar"
+				})
+			)
+		);
+	} else if (!connected) {
 		parts.push(
 			h(
 				"div",
@@ -259,23 +299,27 @@ export async function renderPareamento(root, ctx, bot) {
 			);
 		}
 	}
-	parts.push(tip, legacy);
+	if (!missing) parts.push(tip);
+	parts.push(legacy);
 	root.append(...parts);
 
 	// Verificação periódica: muda de estado → redesenha (4 s desconectado, 5 s conectado).
 	const check = async () => {
-		if (closed || root.querySelector(".confirm")) return;
+		const acting = () => closed || root.querySelector('.confirm, [aria-busy="true"]');
+		if (acting()) return;
 		try {
 			const d = await botFetch(bot, `/qrcode-status/${id}`);
-			if (!!d.connected !== connected && !closed) ctx.refresh();
+			const existsChanged =
+				typeof d.instanceExists === "boolean" && d.instanceExists !== st.instanceExists;
+			if ((!!d.connected !== connected || existsChanged) && !acting()) ctx.refresh();
 		} catch {
 			/* a próxima volta tenta de novo */
 		}
 	};
 	const iv = setInterval(check, connected ? 5000 : 4000);
 
-	if (!connected && !exists) {
-		say('A instância não existe na WhatsGoAPI. Use "Tentar reconectar" ou "Recriar instância".');
+	if (!connected && !exists && !missing) {
+		say("Não foi possível consultar a instância na WhatsGoAPI. Tentando de novo…");
 	}
 	if (!connected && exists) {
 		const start = () => {
@@ -294,9 +338,8 @@ export async function renderPareamento(root, ctx, bot) {
 					toast(`${name} conectada`, { kind: "ok" });
 					ctx.refresh();
 				} else if (d.type === "instance_deleted") {
-					say(
-						"A instância foi apagada no servidor (ficou desconectada tempo demais). Use Recriar."
-					);
+					toast("A instância foi apagada no servidor (ficou desconectada tempo demais)");
+					ctx.refresh();
 				}
 			};
 			// Erro passageiro: o EventSource reconecta sozinho (sem fechar, para o servidor não
@@ -321,6 +364,7 @@ export async function renderPareamento(root, ctx, bot) {
 			},
 			(err) => {
 				if (closed) return;
+				if (noInstance(err)) return ctx.refresh();
 				say("");
 				out.set("error", explain(err, "iniciar a conexão"));
 			}

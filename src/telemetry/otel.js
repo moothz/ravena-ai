@@ -60,6 +60,7 @@ function compactDiagLogger(base) {
 }
 
 function start() {
+	const maskTelegramToken = require("../utils/maskTelegramToken");
 	const { NodeSDK } = require("@opentelemetry/sdk-node");
 	const { diag, DiagConsoleLogger, DiagLogLevel } = require("@opentelemetry/api");
 	const { resourceFromAttributes } = require("@opentelemetry/resources");
@@ -95,8 +96,7 @@ function start() {
 
 	// Remove query string (pode ter key=/token=) e o token de bot do Telegram (/bot<token>/metodo).
 	const sanitizePath = (p) =>
-		String(p || "")
-			.split("?")[0]
+		maskTelegramToken(String(p || "").split("?")[0])
 			.replace(/\/bot[^/]+/, "/bot***")
 			.replace(/[0-9]{6,}/g, "{n}")
 			.replace(/[^/]*(@|%40)(c\.us|g\.us|lid|s\.whatsapp\.net)/gi, "{id}");

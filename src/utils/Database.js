@@ -429,6 +429,17 @@ class Database {
 		return result;
 	}
 
+	setBotInGroup(groupId, botId, present) {
+		if (this.testMode) return false;
+		const changed = this.coreRepo.setBotInGroup(groupId, botId, present);
+		if (changed) this.triggerBackupStart();
+		return changed;
+	}
+
+	getGroupIdsByBot() {
+		return this.coreRepo.getGroupIdsByBot();
+	}
+
 	/**
 	 * Lightweight update: persists only the `interact` field of a group.
 	 * Synchronous under the hood (better-sqlite3).

@@ -9,12 +9,63 @@ const WhatsAppBotGo = require("../WhatsAppBotGo");
 const { createMessage } = require("./FakeMessage");
 const Stickers = require("../functions/Stickers");
 
-async function createTestVideo(outputPath, width = 320, height = 180, duration = 2) {
+async function createTestVideo(
+	outputPath,
+	width = 320,
+	height = 180,
+	duration = 2,
+	source = "testsrc"
+) {
 	return new Promise((resolve, reject) => {
 		ffmpeg()
-			.input(`testsrc=duration=${duration}:size=${width}x${height}:rate=15`)
+			.input(`${source}=duration=${duration}:size=${width}x${height}:rate=15`)
 			.inputFormat("lavfi")
 			.outputOptions(["-y", "-c:v", "libx264", "-pix_fmt", "yuv420p"])
+			.output(outputPath)
+			.on("end", resolve)
+			.on("error", reject)
+			.run();
+	});
+}
+
+async function createMuxedVideoWithLongerAudio(
+	outputPath,
+	width = 320,
+	height = 180,
+	videoDuration = 4,
+	audioDuration = 12
+) {
+	return new Promise((resolve, reject) => {
+		ffmpeg()
+			.input(`testsrc=duration=${videoDuration}:size=${width}x${height}:rate=15`)
+			.inputFormat("lavfi")
+			.input(`anullsrc=r=44100:cl=mono`)
+			.inputFormat("lavfi")
+			.outputOptions([
+				"-y",
+				"-t",
+				String(audioDuration),
+				"-c:v",
+				"libx264",
+				"-pix_fmt",
+				"yuv420p",
+				"-c:a",
+				"aac"
+			])
+			.output(outputPath)
+			.on("end", resolve)
+			.on("error", reject)
+			.run();
+	});
+}
+
+async function createNoisyVideo(outputPath, width = 320, height = 180, duration = 60) {
+	return new Promise((resolve, reject) => {
+		ffmpeg()
+			.input(`testsrc=duration=${duration}:size=${width}x${height}:rate=12`)
+			.inputFormat("lavfi")
+			.videoFilters("noise=alls=100:allf=t+u")
+			.outputOptions(["-y", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p"])
 			.output(outputPath)
 			.on("end", resolve)
 			.on("error", reject)
@@ -27,9 +78,17 @@ async function runTests() {
 	const bot = new FakeBot({ id: "test-bot" });
 	const eventHandler = new EventHandler();
 	const cmdHandler = eventHandler.commandHandler;
+	clearInterval(cmdHandler.decayInterval);
+	clearInterval(cmdHandler.cooldownMsgCleanupInterval);
+	const resetCase = () => {
+		bot.resetCapture();
+		cmdHandler.cooldownCache?.clear?.();
+	};
 
 	const tempDir = path.join(__dirname, "../../temp", "test-stickers");
+	const stickersTempDir = path.join(__dirname, "../../temp", "whatsapp-bot-stickers");
 	await fs.mkdir(tempDir, { recursive: true });
+	const beforeTempFiles = new Set(await fs.readdir(stickersTempDir).catch(() => []));
 
 	// 1. Teste: Sticker de imagem estática não quadrada com !s / !sticker
 	console.log("\n1. Testando sticker de imagem estática com transparência...");
@@ -57,7 +116,7 @@ async function runTests() {
 		}
 	});
 
-	bot.resetCapture();
+	resetCase();
 	await cmdHandler.processCommand(bot, imgMsg, "s", [], { name: "Grupo Teste" });
 
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar exatamente 1 mensagem");
@@ -96,7 +155,7 @@ async function runTests() {
 		}
 	});
 
-	bot.resetCapture();
+	resetCase();
 	await cmdHandler.processCommand(bot, videoMsg, "s", [], { name: "Grupo Teste" });
 
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar exatamente 1 mensagem");
@@ -151,7 +210,7 @@ async function runTests() {
 		}
 	});
 
-	bot.resetCapture();
+	resetCase();
 	await cmdHandler.processCommand(bot, sqMsg, "sq", [], { name: "Grupo Teste" });
 
 	assert.strictEqual(bot.capturedMessages.length, 1);
@@ -176,7 +235,7 @@ async function runTests() {
 		}
 	});
 
-	bot.resetCapture();
+	resetCase();
 	await cmdHandler.processCommand(bot, sqeMsg, "sqe", [], { name: "Grupo Teste" });
 
 	assert.strictEqual(bot.capturedMessages.length, 1);
@@ -258,7 +317,7 @@ async function runTests() {
 		}
 	});
 
-	bot.resetCapture();
+	resetCase();
 	await cmdHandler.processCommand(bot, shqVideoMsg, "shq", [], { name: "Grupo Teste" });
 
 	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar exatamente 1 mensagem");
@@ -304,7 +363,7 @@ async function runTests() {
 		}
 	});
 
-	bot.resetCapture();
+	resetCase();
 	await cmdHandler.processCommand(bot, shqImgMsg, "stickerhq", [], { name: "Grupo Teste" });
 
 	assert.strictEqual(bot.capturedMessages.length, 1);
@@ -318,6 +377,461 @@ async function runTests() {
 	console.log(
 		`✓ !stickerhq imagem: ${shqImgMeta.width}x${shqImgMeta.height}, proporção preservada sem bordas`
 	);
+
+	// 9. Teste: Sticker longo de vídeo com !slongo (25s sem corte de 15s, <= 490 KB, padding transparente)
+	console.log("\n9. Testando sticker longo de vídeo (!slongo, 25s)...");
+	const longVideoPath = path.join(tempDir, "test_long_25s.mp4");
+	await createTestVideo(longVideoPath, 320, 180, 25, "testsrc2");
+	const longVideoBuffer = await fs.readFile(longVideoPath);
+
+	const slongoVideoMsg = createMessage({
+		type: "video",
+		caption: "!slongo",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: longVideoBuffer.toString("base64")
+		}
+	});
+
+	resetCase();
+	await cmdHandler.processCommand(bot, slongoVideoMsg, "slongo", [], { name: "Grupo Teste" });
+
+	assert.strictEqual(bot.capturedMessages.length, 1, "Deveria capturar exatamente 1 mensagem");
+	const sentSlongo = bot.capturedMessages[0];
+	assert.strictEqual(sentSlongo.options.sendMediaAsSticker, true);
+	assert.strictEqual(sentSlongo.content.mimetype, "image/webp");
+
+	const slongoWebpBuffer = Buffer.from(sentSlongo.content.data, "base64");
+	const slongoMeta = await sharp(slongoWebpBuffer, { animated: true }).metadata();
+	const slongoTotalMs = (slongoMeta.delay || []).reduce((acc, d) => acc + d, 0);
+	assert.strictEqual(slongoMeta.pages > 1, true, "!slongo deve gerar WebP animado");
+	assert.strictEqual(
+		slongoWebpBuffer.length <= 490 * 1024,
+		true,
+		`!slongo deve caber no teto seguro de 490 KB (obtido ${(slongoWebpBuffer.length / 1024).toFixed(1)} KB)`
+	);
+	assert.strictEqual(
+		slongoTotalMs >= 20000,
+		true,
+		`!slongo deve preservar duração longa (>20s, obtido ${(slongoTotalMs / 1000).toFixed(1)}s)`
+	);
+	assert.strictEqual(
+		slongoMeta.width,
+		slongoMeta.pageHeight || slongoMeta.height,
+		"!slongo mantém formato quadrado com bordas transparentes"
+	);
+	const slongoPadPixel = await sharp(slongoWebpBuffer)
+		.extract({ left: 5, top: 5, width: 1, height: 1 })
+		.raw()
+		.toBuffer();
+	assert.strictEqual(slongoPadPixel[3], 0, "Borda do !slongo deve ser transparente (alpha=0)");
+	console.log(
+		`✓ !slongo vídeo 25s: ${slongoMeta.width}x${slongoMeta.pageHeight || slongoMeta.height}, ${(slongoTotalMs / 1000).toFixed(1)}s, ${(slongoWebpBuffer.length / 1024).toFixed(1)} KB`
+	);
+
+	// 10. Teste: Sticker longo HQ de vídeo com !slongohq (25s, proporção preservada, maior FPS que !slongo)
+	console.log("\n10. Testando sticker longo HQ de vídeo (!slongohq, 25s)...");
+	const slongoHqVideoMsg = createMessage({
+		type: "video",
+		caption: "!slongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: longVideoBuffer.toString("base64")
+		}
+	});
+
+	resetCase();
+	await cmdHandler.processCommand(bot, slongoHqVideoMsg, "slongohq", [], { name: "Grupo Teste" });
+
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	const sentSlongoHq = bot.capturedMessages[0];
+	assert.strictEqual(sentSlongoHq.options.sendMediaAsSticker, true);
+	assert.strictEqual(sentSlongoHq.content.mimetype, "image/webp");
+
+	const slongoHqWebpBuffer = Buffer.from(sentSlongoHq.content.data, "base64");
+	const slongoHqMeta = await sharp(slongoHqWebpBuffer, { animated: true }).metadata();
+	const slongoHqHeight = slongoHqMeta.pageHeight || slongoHqMeta.height;
+	const slongoHqTotalMs = (slongoHqMeta.delay || []).reduce((acc, d) => acc + d, 0);
+	assert.strictEqual(slongoHqMeta.pages > 1, true, "!slongohq deve gerar WebP animado");
+	assert.strictEqual(
+		slongoHqWebpBuffer.length <= 490 * 1024,
+		true,
+		`!slongohq deve caber em <= 490 KB (obtido ${(slongoHqWebpBuffer.length / 1024).toFixed(1)} KB)`
+	);
+	assert.strictEqual(
+		slongoHqTotalMs >= 20000,
+		true,
+		`!slongohq deve preservar duração longa (>20s, obtido ${(slongoHqTotalMs / 1000).toFixed(1)}s)`
+	);
+	assert.strictEqual(
+		slongoHqMeta.width > slongoHqHeight,
+		true,
+		"!slongohq deve preservar proporção 16:9 sem bordas quadradas"
+	);
+	assert.strictEqual(
+		slongoHqMeta.pages >= slongoMeta.pages,
+		true,
+		`!slongohq (${slongoHqMeta.pages} frames) deve manter FPS/quadros >= !slongo (${slongoMeta.pages} frames)`
+	);
+	console.log(
+		`✓ !slongohq vídeo 25s: ${slongoHqMeta.width}x${slongoHqHeight}, ${(slongoHqTotalMs / 1000).toFixed(1)}s, ${slongoHqMeta.pages} frames, ${(slongoHqWebpBuffer.length / 1024).toFixed(1)} KB`
+	);
+
+	// 11. Teste: Respeito ao teto máximo de 60s em vídeo > 60s (!stickerlongohq)
+	console.log("\n11. Testando teto de 60s em vídeo de 65s (!stickerlongohq)...");
+	const veryLongVideoPath = path.join(tempDir, "test_long_65s.mp4");
+	await createTestVideo(veryLongVideoPath, 320, 180, 65, "testsrc2");
+	const veryLongVideoBuffer = await fs.readFile(veryLongVideoPath);
+
+	const capVideoMsg = createMessage({
+		type: "video",
+		caption: "!stickerlongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: veryLongVideoBuffer.toString("base64")
+		}
+	});
+
+	resetCase();
+	await cmdHandler.processCommand(bot, capVideoMsg, "stickerlongohq", [], {
+		name: "Grupo Teste"
+	});
+
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	const sentCap = bot.capturedMessages[0];
+	const capWebpBuffer = Buffer.from(sentCap.content.data, "base64");
+	const capMeta = await sharp(capWebpBuffer, { animated: true }).metadata();
+	const capTotalMs = (capMeta.delay || []).reduce((acc, d) => acc + d, 0);
+	assert.strictEqual(
+		capWebpBuffer.length <= 490 * 1024,
+		true,
+		`!stickerlongohq 65s deve caber em <= 490 KB (obtido ${(capWebpBuffer.length / 1024).toFixed(1)} KB)`
+	);
+	assert.strictEqual(
+		capTotalMs >= 50000 && capTotalMs <= 61500,
+		true,
+		`Duração deve ficar entre 50s e 60s (obtido ${(capTotalMs / 1000).toFixed(1)}s)`
+	);
+	console.log(
+		`✓ !stickerlongohq vídeo 65s: limitado a ${(capTotalMs / 1000).toFixed(1)}s, ${(capWebpBuffer.length / 1024).toFixed(1)} KB`
+	);
+
+	// 12. Teste: Imagens estáticas em !slongo e !slongohq
+	console.log("\n12. Testando imagens estáticas em !slongo e !slongohq...");
+	const slongoImgMsg = createMessage({
+		type: "image",
+		caption: "!slongo",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "image/png",
+			data: imgBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, slongoImgMsg, "slongo", [], { name: "Grupo Teste" });
+	const slongoImgMeta = await sharp(
+		Buffer.from(bot.capturedMessages[0].content.data, "base64")
+	).metadata();
+	assert.strictEqual(slongoImgMeta.width, 512);
+	assert.strictEqual(slongoImgMeta.height, 512);
+
+	const slongoHqImgMsg = createMessage({
+		type: "image",
+		caption: "!slongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "image/png",
+			data: imgBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, slongoHqImgMsg, "slongohq", [], { name: "Grupo Teste" });
+	const slongoHqImgMeta = await sharp(
+		Buffer.from(bot.capturedMessages[0].content.data, "base64")
+	).metadata();
+	assert.strictEqual(slongoHqImgMeta.width, 512);
+	assert.strictEqual(slongoHqImgMeta.height, 256);
+	console.log("✓ Imagens estáticas ok em !slongo (512x512) e !slongohq (512x256)");
+
+	// 13. Teste: Vídeo curto muxado com trilha de áudio mais longa (!slongohq prioriza trilha de vídeo)
+	console.log("\n13. Testando vídeo 4s muxado com áudio de 12s em !slongohq...");
+	const muxedPath = path.join(tempDir, "muxed-short-video-long-audio.mp4");
+	await createMuxedVideoWithLongerAudio(muxedPath, 320, 180, 4, 12);
+	const muxedBuffer = await fs.readFile(muxedPath);
+	const muxedMsg = createMessage({
+		type: "video",
+		caption: "!slongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: muxedBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, muxedMsg, "slongohq", [], { name: "Grupo Teste" });
+	const muxedWebpBuffer = Buffer.from(bot.capturedMessages[0].content.data, "base64");
+	const muxedMeta = await sharp(muxedWebpBuffer, { animated: true }).metadata();
+	assert.strictEqual(muxedMeta.width, 512, "Vídeo de 4s deve manter 512px mesmo com áudio de 12s");
+	console.log(
+		`✓ !slongohq vídeo 4s + áudio 12s: mantido em ${muxedMeta.width}x${muxedMeta.pageHeight || muxedMeta.height}, ${(muxedWebpBuffer.length / 1024).toFixed(1)} KB`
+	);
+
+	// 14. Teste: Vídeo 60s de ruído puro em !slongohq deve caber no limite de 490 KB
+	console.log("\n14. Testando vídeo 60s de ruído intenso em !slongohq...");
+	const noisyPath = path.join(tempDir, "noisy-60s.mp4");
+	await createNoisyVideo(noisyPath, 320, 180, 60);
+	const noisyBuffer = await fs.readFile(noisyPath);
+	const noisyMsg = createMessage({
+		type: "video",
+		caption: "!slongohq",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "video/mp4",
+			data: noisyBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, noisyMsg, "slongohq", [], { name: "Grupo Teste" });
+	const noisyWebpBuffer = Buffer.from(bot.capturedMessages[0].content.data, "base64");
+	assert.strictEqual(
+		noisyWebpBuffer.length <= 490 * 1024,
+		true,
+		`Ruído 60s deve caber em <= 490 KB (obtido ${(noisyWebpBuffer.length / 1024).toFixed(1)} KB)`
+	);
+	console.log(
+		`✓ !slongohq ruído 60s: comprimido para ${(noisyWebpBuffer.length / 1024).toFixed(1)} KB <= 490 KB`
+	);
+
+	// 15. Teste: Combinação de argumentos e transformações (!s hq qc, !s fh, !s fv, !s 90, !s -90)
+	console.log("\n15. Testando argumentos combináveis e transformações...");
+	const rectImgBuffer = await sharp({
+		create: {
+			width: 400,
+			height: 200,
+			channels: 4,
+			background: { r: 255, g: 0, b: 0, alpha: 1 }
+		}
+	})
+		.composite([
+			{
+				input: await sharp({
+					create: {
+						width: 200,
+						height: 200,
+						channels: 4,
+						background: { r: 0, g: 255, b: 0, alpha: 1 }
+					}
+				})
+					.png()
+					.toBuffer(),
+				left: 200,
+				top: 0
+			}
+		])
+		.png()
+		.toBuffer();
+
+	// 15a. !s hq qc em imagem -> 512x512 quadrado
+	const hqQcMsg = createMessage({
+		type: "image",
+		caption: "!s hq qc",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "image/png", data: rectImgBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, hqQcMsg, "s", ["hq", "qc"], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	const hqQcMeta = await sharp(
+		Buffer.from(bot.capturedMessages[0].content.data, "base64")
+	).metadata();
+	assert.strictEqual(hqQcMeta.width, 512);
+	assert.strictEqual(hqQcMeta.height, 512);
+	assert.strictEqual(bot.capturedMessages[0].options.stickerName, "Grupo Teste");
+
+	// 15b. !s fh (inverter horizontal: direita verde passa para a esquerda)
+	const fhMsg = createMessage({
+		type: "image",
+		caption: "!s fh",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "image/png", data: rectImgBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, fhMsg, "s", ["fh"], { name: "Grupo Teste" });
+	const fhBuf = Buffer.from(bot.capturedMessages[0].content.data, "base64");
+	const fhLeftPixel = await sharp(fhBuf)
+		.extract({ left: 10, top: 256, width: 1, height: 1 })
+		.raw()
+		.toBuffer();
+	assert.ok(fhLeftPixel[1] > 200 && fhLeftPixel[0] < 50, "Lado esquerdo deve ficar verde após fh");
+
+	// 15c. !s 90 (girar 90° horário: 400x200 vira 200x400, então com hq fica mais alto que largo)
+	const rot90Msg = createMessage({
+		type: "image",
+		caption: "!s hq 90",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "image/png", data: rectImgBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, rot90Msg, "s", ["hq", "90"], { name: "Grupo Teste" });
+	const rot90Meta = await sharp(
+		Buffer.from(bot.capturedMessages[0].content.data, "base64")
+	).metadata();
+	assert.strictEqual(rot90Meta.width, 256);
+	assert.strictEqual(rot90Meta.height, 512);
+
+	// 15d. !s -90 fv em vídeo
+	const videoRotMsg = createMessage({
+		type: "video",
+		caption: "!s -90 fv",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "video/mp4", data: videoBuffer.toString("base64") }
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, videoRotMsg, "s", ["-90", "fv"], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+	console.log("✓ Combinação de args (!s hq qc, !s fh, !s hq 90, !s -90 fv) validada");
+
+	// 16. Teste: Anexo document PNG transparente, vídeo e tipo não suportado
+	console.log("\n16. Testando !s em anexos document...");
+	const docPngMsg = createMessage({
+		type: "document",
+		caption: "!s",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "application/octet-stream",
+			filename: "arte.png",
+			data: rectImgBuffer.toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, docPngMsg, "s", [], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+
+	const docPdfMsg = createMessage({
+		type: "document",
+		caption: "!s",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: {
+			mimetype: "application/pdf",
+			filename: "doc.pdf",
+			data: Buffer.from("%PDF-1.4").toString("base64")
+		}
+	});
+	resetCase();
+	await cmdHandler.processCommand(bot, docPdfMsg, "s", [], { name: "Grupo Teste" });
+	assert.strictEqual(bot.capturedMessages.length, 1);
+	assert.ok(
+		String(bot.capturedMessages[0].content).includes("Esse tipo de arquivo não vira figurinha")
+	);
+	console.log("✓ Document PNG gerou sticker e Document PDF foi recusado com aviso");
+
+	// 17. Teste: Exibição da categoria Stickers no !cmd e /cmd (BotAPI) e recusa de vídeo no !sbg
+	console.log("\n17. Testando categoria Stickers em !cmd, /cmd e !sbg...");
+	const Menu = require("../functions/Menu");
+	const analyticsHelper = require("../BotAPI/services/analyticsHelper");
+	const ImageManipulation = require("../functions/ImageManipulation");
+	await cmdHandler.fixedCommands.loadCommands();
+	bot.eventHandler = eventHandler;
+
+	const cmdMenu = Menu.commands.find((c) => c.name === "cmd");
+	const stickersCmdMsg = createMessage({
+		content: "!cmd stickers",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net"
+	});
+	const cmdStickersRes = await cmdMenu.method(bot, stickersCmdMsg, ["stickers"], {
+		id: "120363000000000099@g.us",
+		name: "Grupo Teste",
+		prefix: "!"
+	});
+	const stickersMenuText = cmdStickersRes.content;
+	assert.ok(
+		stickersMenuText.includes("• *!s, !fig, !figurinha, !sticker*"),
+		`!s deve ser o primeiro no grupo principal. Obtido:\n${stickersMenuText}`
+	);
+	assert.ok(
+		stickersMenuText.includes("• *!sbg, !stickerbg*") &&
+			stickersMenuText.includes("apenas para imagens"),
+		"!sbg deve indicar apenas para imagens e aceitar opções do !s"
+	);
+	for (const expectedLine of [
+		"• *!sa, !saudio*",
+		"• *!sq, !stickerq*",
+		"• *!sqc, !stickerqc*",
+		"• *!sqb, !stickerqb*",
+		"• *!sqe, !stickerqe*",
+		"• *!sqi, !stickerqi*",
+		"• *!shq, !stickerhq*",
+		"• *!slongo, !stickerlongo*",
+		"• *!slongohq, !stickerlongohq*"
+	]) {
+		assert.ok(
+			stickersMenuText.includes(expectedLine),
+			`Deve exibir linha separada: ${expectedLine}`
+		);
+	}
+
+	const publicCmds = analyticsHelper.updatePublicCommandsCache({
+		bots: [bot],
+		logger: { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} }
+	});
+	const publicStickers = publicCmds.categories.find((c) => c.name.toLowerCase() === "stickers");
+	assert.ok(publicStickers, "Categoria stickers deve existir no /cmd");
+	const publicSCmd = publicStickers.commands.find((c) => c.name === "s");
+	assert.ok(publicSCmd, "Comando principal no /cmd deve ser 's'");
+	assert.deepStrictEqual(publicSCmd.aliases, ["fig", "figurinha", "sticker"]);
+	for (const flag of ["hq", "longo", "q", "qc", "qb", "qe", "qi", "fh", "fv", "90", "-90"]) {
+		assert.ok(
+			publicSCmd.usage.some((u) => u.includes(flag)),
+			`Exemplos de !s no /cmd devem incluir '${flag}'`
+		);
+	}
+	for (const sep of ["sbg", "sa", "sq", "sqc", "sqb", "sqe", "sqi", "shq", "slongo", "slongohq"]) {
+		assert.ok(
+			publicStickers.commands.some((c) => c.name === sep),
+			`Comando !${sep} deve estar separado no /cmd`
+		);
+	}
+
+	const sbgCmd = ImageManipulation.commands.find((c) => c.name === "sbg");
+	const sbgVideoMsg = createMessage({
+		type: "video",
+		caption: "!sbg",
+		group: "120363000000000099@g.us",
+		author: "5511999990001@s.whatsapp.net",
+		content: { mimetype: "video/mp4", data: videoBuffer.toString("base64") }
+	});
+	const sbgVideoRes = await sbgCmd.method(bot, sbgVideoMsg, [], { name: "Grupo Teste" });
+	assert.ok(String(sbgVideoRes.content).includes("apenas com imagens"));
+	console.log("✓ !cmd stickers, /cmd e validação de imagem do !sbg passaram");
+
+	// 18. Teste: Verificar que nenhum arquivo temporário ficou para trás em temp/whatsapp-bot-stickers
+	const afterTempFiles = await fs.readdir(stickersTempDir).catch(() => []);
+	const leftoverFiles = afterTempFiles.filter((file) => !beforeTempFiles.has(file));
+	assert.strictEqual(
+		leftoverFiles.length,
+		0,
+		`Nenhum arquivo temporário deveria sobrar em temp/whatsapp-bot-stickers (encontrados: ${leftoverFiles.join(", ")})`
+	);
+	console.log("✓ Limpeza confirmada: zero arquivos temporários residuais");
 
 	// Limpeza dos arquivos temporários de teste
 	await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});

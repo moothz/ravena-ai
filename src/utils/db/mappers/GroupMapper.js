@@ -28,6 +28,8 @@ const GroupMapper = {
 			return val;
 		};
 
+		const botsInGroup = parse(row.bots_in_group, []);
+
 		return {
 			id: row.id,
 			name: row.name,
@@ -56,6 +58,7 @@ const GroupMapper = {
 			youtube: parse(row.youtube, []),
 			tiktok: parse(row.tiktok, []),
 			botNotInGroup: parse(row.bot_not_in_group, []),
+			botsInGroup: Array.isArray(botsInGroup) ? botsInGroup : [],
 			webhooks: parse(row.webhooks, []),
 			minecraftServer: parse(row.minecraft_server, null),
 			greetings: parse(row.greetings, {}),

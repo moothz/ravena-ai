@@ -600,6 +600,7 @@ class EventHandler extends EventEmitter {
 					message
 				);
 				group = groupData.group;
+				this.database.setBotInGroup(group.id, bot.id, true);
 
 				if (bot.markInGroup) {
 					await bot.markInGroup(message.group);
@@ -2047,6 +2048,7 @@ class EventHandler extends EventEmitter {
 				bot
 			);
 			group = groupData.group;
+			if (isBotJoining && !bot.useDiscord) this.database.setBotInGroup(group.id, bot.id, true);
 
 			// Motivo da alteração: Não ignorar mais o evento de join em grupos em modo Announce (apenas admins enviam mensagens)
 			// caso o grupo possua mensagem de boas-vindas ou despedida configurada.
@@ -2670,6 +2672,8 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 				(cleanBotPn && data?.user?.id?.startsWith(cleanBotPn));
 
 			//this.logger.debug(`[processGroupLeave] isBotLeaving (${isBotLeaving}}) = data.user.id (${data.user.id}) -startsWith- bot.phoneNumber ${botNumber} | not in group? ${data.group?.notInGroup}`, { data, chatInfo });
+
+			if (isBotLeaving) this.database.setBotInGroup(data.group.id, bot.id, false);
 
 			// Envia notificação para o grupo de logs
 			if (bot.grupoLogs) {

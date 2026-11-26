@@ -538,6 +538,20 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
+### 📁 Módulo: `GameCommands.js`
+**Sobre:** Busca de informações e avaliações de jogos eletrônicos no IGDB
+
+**Tags:** `jogos,games,videogame,igdb,steam,playstation,xbox,nintendo,pc`
+
+**Detalhes Técnicos:** Consulta a API oficial do IGDB (Twitch) para exibir plataformas, desenvolvedores, gêneros, capa e notas
+
+#### Comandos:
+- **`!jogos`**: Busca informações, nota, gêneros e sinopse de um jogo
+  - *Categoria:* cultura
+  - *Uso/Exemplos:* `!jogos Elden Ring`, `!jogos Chrono Trigger`, `!jogos Hollow Knight`
+
+---
+
 ### 📁 Módulo: `GamingFreebies.js`
 **Sobre:** Consulta jogos grátis disponíveis por tempo limitado em plataformas como Steam, Epic Games e GOG
 
@@ -1294,19 +1308,28 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 ---
 
 ### 📁 Módulo: `Stickers.js`
-**Sobre:** Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers)
+**Sobre:** Criação, recorte, corte inteligente por IA e conversão de figurinhas (stickers), incluindo stickers com som
 
-**Tags:** `sticker,figurinha,s,fig,sq,sqi,shq,stickerhq,midia,recorte,whatsapp`
+**Tags:** `sticker,figurinha,s,sa,saudio,fig,sq,sqi,shq,stickerhq,slongo,stickerlongo,slongohq,stickerlongohq,midia,recorte,whatsapp,som,audio`
 
-**Detalhes Técnicos:** Processa imagens e vídeos com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS) e crop por IA
+**Detalhes Técnicos:** Processa imagens, vídeos e áudios com Sharp e FFmpeg, suporta enquadramento quadrado central, topo, fundo, stretch, HQ (22-25 FPS), modos longos (!slongo e !slongohq até 60s), crop por IA, criação de figurinhas com som ([figurinha] -> [áudio] -> !s e !sa/!saudio em vídeo) e extração das mídias originais de figurinhas com som
 
 #### Comandos:
-- **`!sticker`**: Converte uma imagem, vídeo ou GIF em figurinha do WhatsApp
+- **`!sticker`**: Converte uma imagem, vídeo ou GIF em figurinha (ou responda a uma figurinha com áudio e dê !s no áudio para fazer sticker com som)
   - *Categoria:* stickers
-  - *Uso/Exemplos:* `!sticker (com imagem ou em resposta)`, `!s`
+  - *Uso/Exemplos:* `!sticker (com imagem ou em resposta)`, `!s`, `[figurinha] -> [áudio] -> !s`
+- **`!sa`**: Cria figurinha com som diretamente a partir de um vídeo (mantendo o áudio do vídeo)
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!sa (na legenda do vídeo ou em resposta a um vídeo)`, `!saudio`
 - **`!shq`**: Cria figurinha em alta taxa de quadros (22-25 FPS) mantendo as proporções originais
   - *Categoria:* stickers
   - *Uso/Exemplos:* `!shq (com imagem/vídeo ou em resposta)`, `!stickerhq`
+- **`!slongo`**: Cria figurinha de vídeo longa (até 60s), reduzindo FPS e resolução se necessário para respeitar o limite do WhatsApp
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!slongo (com vídeo/GIF ou em resposta)`, `!stickerlongo`
+- **`!slongohq`**: Cria figurinha de vídeo longa (até 60s) com alta qualidade e proporções originais como no !shq
+  - *Categoria:* stickers
+  - *Uso/Exemplos:* `!slongohq (com vídeo/GIF ou em resposta)`, `!stickerlongohq`
 - **`!sqi`**: Cria figurinha quadrada com enquadramento inteligente do objeto principal via IA
   - *Categoria:* stickers
   - *Uso/Exemplos:* `!sqi (com imagem ou em resposta)`

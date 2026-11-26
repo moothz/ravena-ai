@@ -251,7 +251,7 @@ function registerManagementRoutes(api) {
 			const groupBots = {};
 			allGroupsData.forEach((g) => {
 				groupNames[g.id] = g.name;
-				groupBots[g.id] = g.botId || "-";
+				groupBots[g.id] = g.botsInGroup;
 			});
 
 			const historyMap = {};
@@ -281,11 +281,13 @@ function registerManagementRoutes(api) {
 
 				const scores = history.map((h) => h.problematic_score);
 				const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
+				const botsInGroup = groupBots[s.group_id] ?? [];
 
 				return {
 					id: s.group_id,
 					name: groupNames[s.group_id] || "Grupo Desconhecido",
-					bot_id: groupBots[s.group_id] || "-",
+					bot_id: botsInGroup.join(", ") || "-",
+					bots_in_group: botsInGroup,
 					type: latestDossier.type,
 					summary: latestDossier.summary,
 					problematic_score: latestDossier.problematic_score,

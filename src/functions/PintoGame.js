@@ -46,7 +46,9 @@ database.getSQLiteDb(
 const MIN_FLACCID = 3.0;
 const MAX_FLACCID = 12.0;
 const MIN_ERECT = 5.0;
-const MAX_ERECT = 25.0;
+const BASE_MAX_ERECT = 25.0;
+const MAX_ERECT = 35.0;
+const TOP_TIER_CHANCE = 0.05; // 5% de chance fixa de entrar no sorteio raro de 25.1cm a 35.0cm
 const MIN_GIRTH = 8.0;
 const MAX_GIRTH = 18.0;
 const MAX_SCORE = 1000;
@@ -69,12 +71,13 @@ function generateRandomValue(min, max) {
  * @param {number} erect - Comprimento ereto
  * @param {number} girth - Circunferência
  * @param {number} curvature - Curvatura em graus (-30 a 30)
- * @returns {number} - Score calculado
+ * @returns {number} - Score calculado (pode ultrapassar 1000 pontos para ereto > 25cm)
  */
 function calculateScore(flaccid, erect, girth, curvature) {
 	// Normaliza os valores (0 a 1)
 	const normFlaccid = (flaccid - MIN_FLACCID) / (MAX_FLACCID - MIN_FLACCID);
-	const normErect = (erect - MIN_ERECT) / (MAX_ERECT - MIN_ERECT);
+	// Comprimento ereto normalizado na escala base de 25cm (valores até 35cm ultrapassam 1.0)
+	const normErect = (erect - MIN_ERECT) / (BASE_MAX_ERECT - MIN_ERECT);
 	const normGirth = (girth - MIN_GIRTH) / (MAX_GIRTH - MIN_GIRTH);
 
 	// Curvatura: 0 é o maior score, módulo de 30 adiciona 0
@@ -85,6 +88,31 @@ function calculateScore(flaccid, erect, girth, curvature) {
 
 	// Converte para o score final
 	return Math.round(weightedAvg * MAX_SCORE);
+}
+
+/**
+ * Gera o comprimento ereto considerando a faixa base (5 a 25cm) e o sorteio separado dos últimos 10cm (25 a 35cm).
+ * Buffs de donate e outros não podem influenciar em valores acima de 25cm - os últimos 10cm são um random separado, igual para todos.
+ * @param {number} flaccid - Comprimento flácido já gerado
+ * @param {number} [donorMultiplier=1] - Multiplicador de bônus de doador
+ * @returns {number} - Comprimento ereto final
+ */
+function generateErect(flaccid, donorMultiplier = 1) {
+	// Random separado para a faixa rara (25.1 a 35.0 cm), chance fixa igual para todos sem bônus
+	const entersTopTier = Math.random() < TOP_TIER_CHANCE;
+	if (entersTopTier) {
+		// Curva quadrática torna valores próximos de 35cm progressivamente mais raros
+		const topValue =
+			BASE_MAX_ERECT + 0.1 + (MAX_ERECT - (BASE_MAX_ERECT + 0.1)) * Math.random() ** 2;
+		return Math.round(topValue * 10) / 10;
+	}
+
+	// Faixa base até 25cm (usa o flácido original antes do bônus para não contar o multiplicador duas vezes)
+	let erect = generateRandomValue(Math.max(flaccid, MIN_ERECT), BASE_MAX_ERECT);
+	if (donorMultiplier > 1) {
+		erect = Math.min(BASE_MAX_ERECT, Math.round(erect * donorMultiplier * 10) / 10);
+	}
+	return erect;
 }
 
 /**
@@ -162,6 +190,8 @@ const INTRO_C = [
  * @returns {string} - Comentário engraçado
  */
 function getComment(score, doctorName = "Dr. Raveno") {
+	if (score >= 1200) return "🪐 *ANOMALIA GRAVITACIONAL!* Dobrou o espaço-tempo no consultório!";
+	if (score >= 1100) return "⚡ *COLOSSO CÓSMICO!* Não cabe nem nos compêndios médicos!";
 	if (score >= 1000) return "🌌 *DEUS DO OLIMPO!* Isso não é um membro, é um monumento histórico!";
 	if (score >= 950)
 		return "🔥 *LENDÁRIO!* As lendas urbanas falavam de algo assim, mas eu não acreditava!";
@@ -374,21 +404,24 @@ async function pintoCommand(bot, message, args, group) {
 		}
 
 		// Gera os valores aleatórios base
-		let flaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
-		let erect = generateRandomValue(Math.max(flaccid, MIN_ERECT), MAX_ERECT); // Ereto é no mínimo igual ao flácido
+		const baseFlaccid = generateRandomValue(MIN_FLACCID, MAX_FLACCID);
+		let flaccid = baseFlaccid;
 		let girth = generateRandomValue(MIN_GIRTH, MAX_GIRTH);
 		const curvature = generateRandomValue(-30, 30);
 
 		// Bônus para doadores (+1% por real doado, sem ultrapassar os máximos definidos)
 		const donorTotal = await DonorBonusService.getDonorTotal(userId);
 		let donorBonusText = "";
+		let donorMultiplier = 1;
 		if (donorTotal > 0) {
-			const bonusMult = 1 + donorTotal * 0.01;
-			flaccid = Math.min(MAX_FLACCID, Math.round(flaccid * bonusMult * 10) / 10);
-			erect = Math.min(MAX_ERECT, Math.round(erect * bonusMult * 10) / 10);
-			girth = Math.min(MAX_GIRTH, Math.round(girth * bonusMult * 10) / 10);
+			donorMultiplier = 1 + donorTotal * 0.01;
+			flaccid = Math.min(MAX_FLACCID, Math.round(flaccid * donorMultiplier * 10) / 10);
+			girth = Math.min(MAX_GIRTH, Math.round(girth * donorMultiplier * 10) / 10);
 			donorBonusText = `\n💎 *Benefício de Apoiador:* +${Math.round(donorTotal)}% de bônus estético aplicado!`;
 		}
+
+		// Gera o comprimento ereto usando o flácido original (antes do bônus) para o multiplicador contar apenas 1x
+		const erect = generateErect(baseFlaccid, donorMultiplier);
 
 		// Calcula o score com os valores finais
 		const score = calculateScore(flaccid, erect, girth, curvature);
@@ -800,5 +833,13 @@ async function getWeeklyPintoStats(sinceMs) {
 module.exports = {
 	helper,
 	commands,
-	getWeeklyPintoStats
+	getWeeklyPintoStats,
+	calculateScore,
+	getComment,
+	generateErect,
+	MIN_ERECT,
+	BASE_MAX_ERECT,
+	MAX_ERECT,
+	TOP_TIER_CHANCE,
+	MAX_SCORE
 };

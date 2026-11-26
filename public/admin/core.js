@@ -76,6 +76,7 @@ function setProps(el, props) {
 		if (value === undefined || value === null || value === false) continue;
 		if (key === "text") el.textContent = String(value);
 		else if (key === "dataset") Object.assign(el.dataset, value);
+		else if (key === "style") el.style.cssText = value;
 		else if (key.startsWith("on") && typeof value === "function") {
 			el.addEventListener(key.slice(2).toLowerCase(), value);
 		} else el.setAttribute(key, value === true ? "" : String(value));
