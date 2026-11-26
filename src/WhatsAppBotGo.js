@@ -26,7 +26,7 @@ const LoadReport = require("./LoadReport");
 const Logger = require("./utils/Logger");
 const SkipGroups = require("./utils/SkipGroups");
 const { toOpus, toMp3 } = require("./utils/Conversions");
-const { llmTranslate } = require("./utils/LLMTranslate");
+const { llmTranslateMany } = require("./utils/LLMTranslate");
 const ProfileStatusScheduler = require("./services/ProfileStatusScheduler");
 const GrupoAgendamentos = require("./commands/modules/GrupoAgendamentos");
 const MemoryCache = require("./utils/MemoryCache");
@@ -1791,25 +1791,23 @@ class WhatsAppBotGo {
 
 		// Auto-translate logic
 		if (group && group.autoTranslateTo) {
+			const fields = [];
 			for (const message of validMessages) {
-				try {
-					if (message.content && typeof message.content === "string") {
-						message.content = await llmTranslate(
-							message.content,
-							group.autoTranslateTo,
-							this.llmService
-						);
-					}
-					if (message.caption && typeof message.caption === "string") {
-						message.caption = await llmTranslate(
-							message.caption,
-							group.autoTranslateTo,
-							this.llmService
-						);
-					}
-				} catch (e) {
-					this.logger.error(`[sendReturnMessages] Translation error`, e);
+				for (const key of ["content", "caption"]) {
+					if (message[key] && typeof message[key] === "string") fields.push({ message, key });
 				}
+			}
+			try {
+				const translated = await llmTranslateMany(
+					fields.map(({ message, key }) => message[key]),
+					group.autoTranslateTo,
+					this.llmService
+				);
+				fields.forEach(({ message, key }, idx) => {
+					message[key] = translated[idx];
+				});
+			} catch (e) {
+				this.logger.error(`[sendReturnMessages] Translation error`, e);
 			}
 		}
 

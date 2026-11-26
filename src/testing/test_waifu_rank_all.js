@@ -10,6 +10,7 @@ process.env.DISABLE_ACTIVITY = "true";
 const assert = require("assert");
 const Database = require("../utils/Database");
 const WaifuCommands = require("../functions/WaifuCommands");
+const WhatsAppBotGo = require("../WhatsAppBotGo");
 const { createMessage } = require("./FakeMessage");
 
 function makeSyntheticUsers(count) {
@@ -152,6 +153,68 @@ async function runTests() {
 			"Top 10 deve manter dica do comando all"
 		);
 		console.log("✓ !mu-rank zinthos (top 10) manteve formato único.");
+
+		const longRich = Array.from({ length: 100 }, (_, i) => ({
+			id: `551199991${String(i + 1).padStart(4, "0")}@s.whatsapp.net`,
+			name: `Jogador Longo ${i + 1} ${"Nome Muito Comprido ".repeat(8)}`.trim(),
+			kakera: (100 - i) * 10,
+			_count: { harem: 1 }
+		}));
+		const shortApiGet = WaifuCommands.api.get;
+		WaifuCommands.api.get = async (url) => {
+			if (url === "/leaderboard/users") return { data: { data: { topRich: longRich } } };
+			throw new Error(`Unexpected API GET: ${url}`);
+		};
+		let longRes;
+		try {
+			longRes = await WaifuCommands.verRanking({}, msg, ["zinthos", "all"], group);
+		} finally {
+			WaifuCommands.api.get = shortApiGet;
+		}
+		const longMsgs = Array.isArray(longRes) ? longRes : [longRes];
+		assert(
+			longMsgs.length >= 2,
+			"100 jogadores com nomes longos (~20 mil chars) devem ser divididos por caracteres"
+		);
+		for (const m of longMsgs) {
+			const lineCount = m.content.split("\n").length;
+			assert(
+				lineCount < 150,
+				`A divisão deveria ser por caracteres, não por linhas (${lineCount})`
+			);
+			assert(m.content.length <= 12000, `Mensagem excedeu 12000 chars (${m.content.length})`);
+		}
+		const longJoined = longMsgs.map((m) => m.content).join("\n");
+		const positions = longRich.map((u) => longJoined.indexOf(`*${u.name}*`));
+		assert(
+			positions.every((pos) => pos >= 0),
+			"Todos os 100 jogadores devem aparecer"
+		);
+		assert(
+			positions.every((pos, i) => i === 0 || pos > positions[i - 1]),
+			"Os jogadores devem manter a ordem do ranking"
+		);
+		console.log(
+			`✓ !mu-rank zinthos all com nomes longos dividiu por caracteres em ${longMsgs.length} mensagens.`
+		);
+
+		const consolidadoRes = await WaifuCommands.verRanking({}, msg, [], group);
+		const warnings = [];
+		const sentText = WhatsAppBotGo.prototype.truncateText.call(
+			{ id: "teste-rank", logger: { warn: (m) => warnings.push(m) } },
+			consolidadoRes.content
+		);
+		assert.strictEqual(
+			sentText,
+			consolidadoRes.content,
+			"Painel consolidado não pode ser alterado no envio"
+		);
+		assert.strictEqual(
+			warnings.length,
+			0,
+			"Painel consolidado não pode gerar aviso de mensagem ajustada"
+		);
+		console.log("✓ !mu-rank consolidado passa pelo truncateText sem ajuste nem aviso.");
 	} finally {
 		db.dbGet = originalDbGet;
 		db.dbAll = originalDbAll;
