@@ -1195,20 +1195,26 @@ function claimMatchesRef(claim, ref) {
 	if (claim.numericId != null && String(claim.numericId) === lowerRef) return true;
 	const nameRef = normalizeRollName(ref);
 	if (!nameRef || !claim.characterName) return false;
-	return (
-		normalizeRollName(claim.characterName) === nameRef ||
-		normalizeRollName(truncateRollText(claim.characterName)) === nameRef
-	);
+	return normalizeRollName(claim.characterName) === nameRef;
+}
+
+function claimMatchesTruncatedName(claim, ref) {
+	const nameRef = normalizeRollName(ref);
+	if (!nameRef || !claim.characterName) return false;
+	return normalizeRollName(truncateRollText(claim.characterName)) === nameRef;
 }
 
 function findActiveClaim(groupId, ref) {
 	if (!groupId || !ref) return null;
 	const direct = activeClaimsByCharGroup.get(`${groupId}:${ref}`);
 	if (direct) return direct;
+	const truncated = [];
 	for (const [key, claim] of activeClaimsByCharGroup.entries()) {
-		if (key.startsWith(`${groupId}:`) && claimMatchesRef(claim, ref)) return claim;
+		if (!key.startsWith(`${groupId}:`)) continue;
+		if (claimMatchesRef(claim, ref)) return claim;
+		if (claimMatchesTruncatedName(claim, ref)) truncated.push(claim);
 	}
-	return null;
+	return truncated.length === 1 ? truncated[0] : null;
 }
 
 /**
