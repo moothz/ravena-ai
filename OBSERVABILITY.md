@@ -201,7 +201,7 @@ Assim, uma pré-checagem recusada seguida da ação OK não marca o comando (ex.
 
 Regras que valem para os spans:
 - **IDs só em atributos próprios**, via `userIdAttr()`/`chatIdAttr()` de `src/telemetry/index.js`, nunca no nome do span (o nome vira dimensão de métrica).
-- **URLs:** query string removida e token de bot do Telegram (`/bot<token>/`) mascarado já no SDK.
+- **URLs e exceções:** query string removida e token de bot do Telegram mascarado já no SDK, em URL e em mensagem/stack de `recordError` (`src/utils/maskTelegramToken.js`, o mesmo do `Logger`).
 - **Rede de segurança no collector** (`transform/pii`, `attributes/pii`):
   - mascara sequências de ≥ 6 dígitos (`{n}`) em URLs, rotas, nomes de span e mensagens/stack de exceção (o ID fica só nos atributos `*.id`);
   - mascara tokens do Telegram, `key=`/`token=`/`auth=` e argumentos de comandos Redis;
