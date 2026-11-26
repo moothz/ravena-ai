@@ -4,6 +4,7 @@ const axios = require("axios");
 const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const Logger = require("../utils/Logger");
+const telemetry = require("../telemetry");
 
 const logger = new Logger("discord-commands");
 
@@ -29,129 +30,139 @@ function isDiscordAdmin(message) {
 	);
 }
 
+const AVATAR_TYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const AVATAR_MAX_BYTES = 8 * 1024 * 1024;
+const NICK_MAX_LENGTH = 32;
+
+function baseType(contentType) {
+	return (contentType || "").split(";")[0].trim().toLowerCase();
+}
+
+function findAvatarAttachment(discordMessage) {
+	if (!discordMessage?.attachments?.size) return null;
+	return discordMessage.attachments.find((a) => AVATAR_TYPES.has(baseType(a.contentType))) || null;
+}
+
 /**
- * Extrai o buffer de imagem da mensagem, citação ou argumento
+ * Extrai o buffer de imagem da mensagem ou da citação
  * @param {Object} message - Mensagem formatada
- * @param {Array} args - Argumentos do comando
- * @returns {Promise<Buffer|null>}
+ * @returns {Promise<{buffer?: Buffer, reason?: string}>}
  */
-async function extractImageBuffer(message, args) {
-	// 1. Imagem anexada na mensagem atual (Discord.js direto)
-	if (message.discordMessage && message.discordMessage.attachments?.size > 0) {
-		const att = message.discordMessage.attachments.find(
-			(a) => a.contentType && a.contentType.startsWith("image/")
+async function extractImageBuffer(message) {
+	let att = findAvatarAttachment(message.discordMessage);
+	if (!att && typeof message.getQuotedMessage === "function") {
+		const quoted = await message.getQuotedMessage().catch(() => null);
+		att = findAvatarAttachment(quoted?.discordMessage);
+	}
+	if (!att) return { reason: "no_image" };
+	if (!(att.size > 0) || att.size > AVATAR_MAX_BYTES) return { reason: "image_too_large" };
+
+	try {
+		const res = await telemetry.withSpan(
+			"discord avatar.download",
+			{
+				attributes: {
+					"ravena.discord.avatar.bytes": att.size,
+					"ravena.discord.avatar.type": baseType(att.contentType)
+				}
+			},
+			() =>
+				axios.get(att.url, {
+					responseType: "arraybuffer",
+					timeout: 15000,
+					maxContentLength: AVATAR_MAX_BYTES
+				})
 		);
-		if (att && att.url) {
-			const res = await axios.get(att.url, { responseType: "arraybuffer", timeout: 15000 });
-			return Buffer.from(res.data);
-		}
+		return { buffer: Buffer.from(res.data) };
+	} catch (e) {
+		logger.warn("Erro ao baixar imagem do anexo:", e.message);
+		return { reason: "download_failed" };
 	}
+}
 
-	// 2. Download via método da mensagem
-	if (message.hasMedia && typeof message.downloadMedia === "function") {
-		try {
-			const media = await message.downloadMedia();
-			if (media && media.data) {
-				return Buffer.from(media.data, "base64");
-			}
-		} catch (e) {
-			logger.warn("Erro ao baixar mídia da mensagem:", e);
-		}
+function reject(message, reason, content) {
+	telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": reason });
+	return new ReturnMessage({ chatId: message.from, content });
+}
+
+function checkAccess(bot, message, action) {
+	if (!bot.useDiscord) {
+		return reject(
+			message,
+			"not_discord",
+			"❌ Este comando é exclusivo para servidores do Discord."
+		);
 	}
-
-	// 3. Imagem de mensagem citada (reply)
-	if (typeof message.getQuotedMessage === "function") {
-		try {
-			const quoted = await message.getQuotedMessage();
-			if (quoted) {
-				if (quoted.discordMessage && quoted.discordMessage.attachments?.size > 0) {
-					const qAtt = quoted.discordMessage.attachments.find(
-						(a) => a.contentType && a.contentType.startsWith("image/")
-					);
-					if (qAtt && qAtt.url) {
-						const res = await axios.get(qAtt.url, { responseType: "arraybuffer", timeout: 15000 });
-						return Buffer.from(res.data);
-					}
-				}
-				if (quoted.hasMedia && typeof quoted.downloadMedia === "function") {
-					const media = await quoted.downloadMedia();
-					if (media && media.data) {
-						return Buffer.from(media.data, "base64");
-					}
-				}
-			}
-		} catch (e) {
-			logger.warn("Erro ao buscar mídia de mensagem citada:", e);
-		}
+	if (!message.guildId) {
+		return reject(
+			message,
+			"not_guild",
+			"❌ Este comando só pode ser utilizado dentro de um servidor do Discord."
+		);
 	}
-
-	// 4. URL nos argumentos
-	if (Array.isArray(args) && args.length > 0) {
-		const candidateUrl = args[0].trim();
-		if (/^https?:\/\//i.test(candidateUrl)) {
-			try {
-				const res = await axios.get(candidateUrl, { responseType: "arraybuffer", timeout: 15000 });
-				const contentType = res.headers["content-type"] || "";
-				if (contentType.startsWith("image/") || candidateUrl.match(/\.(png|jpe?g|webp|gif)$/i)) {
-					return Buffer.from(res.data);
-				}
-			} catch (e) {
-				logger.warn("Erro ao baixar imagem via URL:", e);
-			}
-		}
+	if (!isDiscordAdmin(message)) {
+		return reject(
+			message,
+			"no_permission",
+			`❌ Apenas administradores ou membros com a permissão 'Gerenciar Servidor' podem alterar ${action} do bot.`
+		);
 	}
-
 	return null;
+}
+
+function updateProfile(field, fn) {
+	return telemetry.withSpan(
+		"discord profile.update",
+		{ attributes: { "ravena.discord.profile.field": field } },
+		fn
+	);
 }
 
 /**
  * Define ou reseta o apelido do bot na guilda atual
  */
 async function setBotNameCommand(bot, message, args) {
-	if (!bot.useDiscord) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content: "❌ Este comando é exclusivo para servidores do Discord."
-		});
-	}
-
-	if (!message.guildId) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content: "❌ Este comando só pode ser utilizado dentro de um servidor do Discord."
-		});
-	}
-
-	if (!isDiscordAdmin(message)) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content:
-				"❌ Apenas administradores ou membros com a permissão 'Gerenciar Servidor' podem alterar o apelido do bot."
-		});
-	}
+	const denied = checkAccess(bot, message, "o apelido");
+	if (denied) return denied;
 
 	const newName = Array.isArray(args) ? args.join(" ").trim() : "";
 
+	if (!newName) {
+		return reject(
+			message,
+			"missing_name",
+			"📝 Informe o novo apelido: `!d-botname <novo nome>` ou `!d-botname reset` para voltar ao padrão."
+		);
+	}
+	if (newName.length > NICK_MAX_LENGTH) {
+		return reject(
+			message,
+			"name_too_long",
+			`❌ O apelido pode ter no máximo ${NICK_MAX_LENGTH} caracteres.`
+		);
+	}
+
 	try {
-		if (!newName || newName.toLowerCase() === "reset") {
-			await bot.setGuildNickname(message.guildId, null);
+		if (newName.toLowerCase() === "reset") {
+			await updateProfile("nick", () => bot.setGuildNickname(message.guildId, null));
 			return new ReturnMessage({
 				chatId: message.from,
 				content: "✅ Apelido do bot neste servidor foi resetado para o padrão!"
 			});
 		}
 
-		await bot.setGuildNickname(message.guildId, newName);
+		await updateProfile("nick", () => bot.setGuildNickname(message.guildId, newName));
 		return new ReturnMessage({
 			chatId: message.from,
 			content: `✅ Apelido do bot neste servidor atualizado para: **${newName}**`
 		});
 	} catch (err) {
 		if (err.code === 50013) {
-			return new ReturnMessage({
-				chatId: message.from,
-				content: "❌ O bot não possui permissão de 'Alterar Apelido' neste servidor do Discord."
-			});
+			return reject(
+				message,
+				"bot_missing_permission",
+				"❌ O bot não possui permissão de 'Alterar Apelido' neste servidor do Discord."
+			);
 		}
 		return new ReturnMessage({
 			chatId: message.from,
@@ -160,54 +171,36 @@ async function setBotNameCommand(bot, message, args) {
 	}
 }
 
+const AVATAR_REJECTIONS = {
+	no_image:
+		"🖼️ Envie uma imagem (PNG, JPEG, GIF ou WEBP) com o comando ou responda a uma imagem existente para definir a foto do bot neste servidor.",
+	image_too_large: `❌ A imagem pode ter no máximo ${AVATAR_MAX_BYTES / (1024 * 1024)} MB.`,
+	download_failed: "❌ Não consegui baixar a imagem. Tente enviar de novo."
+};
+
 /**
  * Define a foto de perfil do bot exclusiva para a guilda atual
  */
-async function setBotAvatarCommand(bot, message, args) {
-	if (!bot.useDiscord) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content: "❌ Este comando é exclusivo para servidores do Discord."
-		});
-	}
+async function setBotAvatarCommand(bot, message) {
+	const denied = checkAccess(bot, message, "a foto de perfil");
+	if (denied) return denied;
 
-	if (!message.guildId) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content: "❌ Este comando só pode ser utilizado dentro de um servidor do Discord."
-		});
-	}
-
-	if (!isDiscordAdmin(message)) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content:
-				"❌ Apenas administradores ou membros com a permissão 'Gerenciar Servidor' podem alterar a foto de perfil do bot."
-		});
-	}
-
-	const imageBuffer = await extractImageBuffer(message, args);
-	if (!imageBuffer) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content:
-				"🖼️ Envie uma imagem com o comando, responda a uma imagem existente ou informe a URL de uma imagem válida para definir a foto do bot neste servidor."
-		});
-	}
+	const { buffer, reason } = await extractImageBuffer(message);
+	if (!buffer) return reject(message, reason, AVATAR_REJECTIONS[reason]);
 
 	try {
-		await bot.setGuildAvatar(message.guildId, imageBuffer);
+		await updateProfile("avatar", () => bot.setGuildAvatar(message.guildId, buffer));
 		return new ReturnMessage({
 			chatId: message.from,
 			content: "✅ Foto de perfil do bot neste servidor atualizada com sucesso!"
 		});
 	} catch (err) {
 		if (err.code === 50013) {
-			return new ReturnMessage({
-				chatId: message.from,
-				content:
-					"❌ O bot não possui permissão suficiente para alterar seu avatar neste servidor do Discord."
-			});
+			return reject(
+				message,
+				"bot_missing_permission",
+				"❌ O bot não possui permissão suficiente para alterar seu avatar neste servidor do Discord."
+			);
 		}
 		return new ReturnMessage({
 			chatId: message.from,
@@ -220,30 +213,11 @@ async function setBotAvatarCommand(bot, message, args) {
  * Reseta a foto de perfil do bot na guilda para o avatar padrão global
  */
 async function resetBotAvatarCommand(bot, message) {
-	if (!bot.useDiscord) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content: "❌ Este comando é exclusivo para servidores do Discord."
-		});
-	}
-
-	if (!message.guildId) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content: "❌ Este comando só pode ser utilizado dentro de um servidor do Discord."
-		});
-	}
-
-	if (!isDiscordAdmin(message)) {
-		return new ReturnMessage({
-			chatId: message.from,
-			content:
-				"❌ Apenas administradores ou membros com a permissão 'Gerenciar Servidor' podem alterar a foto de perfil do bot."
-		});
-	}
+	const denied = checkAccess(bot, message, "a foto de perfil");
+	if (denied) return denied;
 
 	try {
-		await bot.setGuildAvatar(message.guildId, null);
+		await updateProfile("avatar", () => bot.setGuildAvatar(message.guildId, null));
 		return new ReturnMessage({
 			chatId: message.from,
 			content: "✅ Foto de perfil do bot neste servidor foi resetada para o avatar padrão!"
@@ -297,9 +271,10 @@ const helper = {
 			usage: ["!d-botname Ravena Assistente", "!d-botname reset"]
 		},
 		{
-			cmd: "!d-botavatar [url ou anexo]",
-			description: "Define a foto de perfil do bot exclusiva para este servidor Discord",
-			usage: ["!d-botavatar (com imagem anexada)", "!d-botavatar https://exemplo.com/foto.png"]
+			cmd: "!d-botavatar (com imagem anexada ou respondendo a uma imagem)",
+			description:
+				"Define a foto de perfil do bot exclusiva para este servidor Discord (PNG, JPEG, GIF ou WEBP, até 8 MB)",
+			usage: ["!d-botavatar (com imagem anexada)", "!d-botavatar (respondendo a uma imagem)"]
 		},
 		{
 			cmd: "!d-botavatar-reset",
