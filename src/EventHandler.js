@@ -2827,29 +2827,46 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 										`[processGroupLeave] Bot '${bot.id}' saiu do grupo '${group.name}' (${groupId}). Removidas configurações de streams: ${parts.join(" | ")}`
 									);
 
-									// Desinscreve canais do StreamMonitor caso não sejam usados por nenhum outro grupo
-									try {
-										const StreamSystem = require("./StreamSystem");
-										const streamSystem = StreamSystem.getInstance();
-										const streamMonitor = bot.streamMonitor || streamSystem?.streamMonitor;
+						let recentMessagesText = "";
+						try {
+							const recentMessages = await telemetry.withSpan(
+								"group leave.recent_messages",
+								{ attributes: { "ravena.chat.id": telemetry.chatIdAttr(groupId) } },
+								async (span) => {
+									const msgs = await SummaryCommands.getRecentMessages(groupId, 15);
+									const count = Array.isArray(msgs) ? msgs.length : 0;
+									if (span) span.setAttribute("ravena.group.recent_messages_count", count);
+									return Array.isArray(msgs) ? msgs : [];
+								}
+							);
+							recentMessagesText = formatLeaveRecentMessages(recentMessages);
+						} catch (recentErr) {
+							this.logger.error("Erro ao carregar últimas mensagens para log de saída:", recentErr);
+						}
 
-										if (streamMonitor) {
-											const allGroups = await this.database.getGroups();
-											for (const ch of oldTwitch) {
-												const chName = ch.channel;
-												const stillUsed = allGroups.some(
-													(g) =>
-														g.id !== groupId &&
-														Array.isArray(g.twitch) &&
-														g.twitch.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
-												);
-												if (!stillUsed) {
-													streamMonitor.unsubscribe(chName, "twitch");
-													this.logger.debug(
-														`[processGroupLeave] Desinscrito canal Twitch sem grupos restantes: ${chName}`
-													);
-												}
-											}
+						// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
+						// Aplica-se a bots normais e comunitários (apenas VIP e privado são isentos)
+						let blockLogsText = "";
+						const msgSubsequentCommands = "";
+						const shouldPunishRemoval = !bot.vip && !bot.privado;
+
+						const currentPeriod =
+							periods && periods.length > 0 ? periods[periods.length - 1] : null;
+						const durationMs =
+							currentPeriod?.duration ??
+							(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
+						const isLessThan24Hours =
+							durationMs !== null
+								? durationMs < 24 * 60 * 60 * 1000
+								: group.date
+									? Date.now() - group.date < 24 * 60 * 60 * 1000
+									: false;
+						const isLessThan7Days =
+							durationMs !== null
+								? durationMs < 7 * 24 * 60 * 60 * 1000
+								: group.date
+									? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
+									: false;
 
 											for (const ch of oldKick) {
 												const chName = ch.channel;
@@ -3234,7 +3251,7 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 - 👷‍♂️ *Responsável:*
 \`\`\`${JSON.stringify(data.responsavel, null, "\t")}\`\`\`${saidaAmigavelText}
 - 👨‍💻 *Raw Data*:
-\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${streamsRemovedText}${blockLogsText}`;
+\`\`\`${JSON.stringify(data.group)}\`\`\`${membershipHistoryText}${recentMessagesText}${streamsRemovedText}${blockLogsText}`;
 
 								// Remove o responsável do bot comunitário dos admins adicionais
 								/* por enquanto desabilitado
@@ -4895,6 +4912,29 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 		}
 		return EventHandler.instance;
 	}
+}
+
+function formatLeaveRecentMessages(messages) {
+	if (!Array.isArray(messages) || messages.length === 0) return "";
+	const lines = [];
+	for (const msg of messages.slice(-15)) {
+		if (!msg || typeof msg.text !== "string") continue;
+		const cleanText = msg.text.replace(/\s+/g, " ").trim();
+		if (!cleanText) continue;
+		const truncated = cleanText.length > 100 ? `${cleanText.slice(0, 97)}...` : cleanText;
+		const author = msg.author || "Desconhecido";
+		let dateStr = "??/??/???? ??:??";
+		if (msg.timestamp) {
+			const d = new Date(msg.timestamp);
+			if (!Number.isNaN(d.getTime())) {
+				const pad = (n) => String(n).padStart(2, "0");
+				dateStr = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+			}
+		}
+		lines.push(`[${dateStr}] ${author}: ${truncated}`);
+	}
+	if (lines.length === 0) return "";
+	return `\n💬 *Últimas mensagens antes da remoção:*\n${lines.join("\n")}`;
 }
 
 module.exports = EventHandler;
