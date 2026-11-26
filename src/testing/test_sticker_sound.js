@@ -288,6 +288,123 @@ async function runTests() {
 		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
 		console.log("✓ !s em sticker estático opaco com som enviou foto + audio separado");
 
+		// 3c. Sticker citado que tem quoted de audio -> retorna visual + audio citado
+		console.log("\n3c. Testando !s em sticker que tem quoted de audio...");
+		const encryptedCdnUrl = "https://mmg.whatsapp.net/v/t62.7117-24/00000000_0_0_n.enc?ccb=11-4";
+		const buildStickerQuotingContext = (quotedContext) => {
+			const sticker = buildMockMsg({
+				type: "sticker",
+				author: "5511999990001@s.whatsapp.net",
+				group: "120363000000000099@g.us",
+				content: {
+					mimetype: "image/webp",
+					data: staticTransparentWebp.toString("base64")
+				}
+			});
+			sticker.origin.getQuotedMessage = async () => quotedContext;
+			return buildMockMsg({
+				type: "text",
+				content: "!s",
+				author: "5511999990003@s.whatsapp.net",
+				group: "120363000000000099@g.us",
+				quotedMessage: sticker
+			});
+		};
+		const buildQuotedContext = ({ type, mimetype, data, extra = {} }) => {
+			const quoted = buildMockMsg({
+				type,
+				author: "5511999990002@s.whatsapp.net",
+				group: "120363000000000099@g.us",
+				content: { mimetype, url: encryptedCdnUrl },
+				extra
+			});
+			quoted.downloadCalls = 0;
+			quoted.downloadMedia = async () => {
+				quoted.downloadCalls++;
+				return { mimetype, data, filename: "quoted-media" };
+			};
+			return quoted;
+		};
+		const quotedAudioFromSticker = buildQuotedContext({
+			type: "ptt",
+			mimetype: "audio/ogg; codecs=opus",
+			data: audioB64
+		});
+
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(
+			bot,
+			buildStickerQuotingContext(quotedAudioFromSticker),
+			"s",
+			[],
+			{
+				name: "Grupo Teste"
+			}
+		);
+
+		assert.strictEqual(
+			bot.capturedMessages.length,
+			2,
+			"Deve enviar foto + audio citado no contexto"
+		);
+		assert.strictEqual(bot.capturedMessages[0].content.mimetype, "image/png");
+		assert.strictEqual(bot.capturedMessages[1].content.mimetype, "audio/ogg; codecs=opus");
+		assert.strictEqual(bot.capturedMessages[1].content.data, audioB64);
+		assert.notStrictEqual(bot.capturedMessages[1].content.url, encryptedCdnUrl);
+		assert.strictEqual(quotedAudioFromSticker.downloadCalls, 1, "Deve baixar o audio citado");
+		console.log("✓ !s em sticker com quoted de audio baixou e enviou visual + audio citado");
+
+		const nonAudioContexts = [
+			{
+				label: "imagem",
+				quoted: buildQuotedContext({
+					type: "image",
+					mimetype: "image/jpeg",
+					data: staticTransparentWebp.toString("base64")
+				})
+			},
+			{
+				label: "documento PDF",
+				quoted: buildQuotedContext({
+					type: "document",
+					mimetype: "application/pdf",
+					data: Buffer.from("%PDF-1.4 sintetico").toString("base64")
+				})
+			},
+			{
+				label: "audio de visualizacao unica",
+				quoted: buildQuotedContext({
+					type: "audio",
+					mimetype: "audio/ogg; codecs=opus",
+					data: audioB64,
+					extra: { isViewOnce: true }
+				})
+			},
+			{
+				label: "audio de visualizacao unica (origin)",
+				quoted: buildQuotedContext({
+					type: "ptt",
+					mimetype: "audio/ogg; codecs=opus",
+					data: audioB64,
+					extra: { origin: { isViewOnce: true } }
+				})
+			}
+		];
+		for (const { label, quoted } of nonAudioContexts) {
+			console.log(`\n3c. Testando !s em sticker respondendo a ${label}...`);
+			resetCase(bot, cmdHandler);
+			await cmdHandler.processCommand(bot, buildStickerQuotingContext(quoted), "s", [], {
+				name: "Grupo Teste"
+			});
+			assert.strictEqual(
+				bot.capturedMessages.length,
+				1,
+				`Sticker respondendo a ${label} deve enviar só o visual`
+			);
+			assert.strictEqual(bot.capturedMessages[0].content.mimetype, "image/png");
+			console.log(`✓ !s em sticker respondendo a ${label} enviou só o visual`);
+		}
+
 		// 4. Fluxo reverso em sticker animado com som: envia MP4 + audio
 		console.log("\n4. Testando !s em sticker animado com som (retorna MP4 + audio)...");
 		const animInputPath = path.join(tempDir, "anim_src.mp4");
