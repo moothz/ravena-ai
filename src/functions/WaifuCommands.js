@@ -6110,7 +6110,7 @@ async function verRanking(bot, message, args, group) {
 			"ravena.waifu.rank_count": topRich.length + topHarem.length
 		});
 
-		text += `\n────────────────────────\n`;
+		text += `\n───────────────\n`;
 		text += `💡 *Rankings completos:*\n`;
 		text += `• \`!mu-rank zinthos all\` — Lista todos os jogadores de Zinthos\n`;
 		text += `• \`!mu-rank casamentos all\` — Lista todos os colecionadores\n`;
