@@ -1,7 +1,7 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
-const storageService = require("../services/StorageService");
+const storageService = require("../../services/StorageService");
 const assert = require("assert");
 
 async function main() {

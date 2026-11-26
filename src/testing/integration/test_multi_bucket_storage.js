@@ -1,4 +1,4 @@
-const storageService = require("../services/StorageService");
+const storageService = require("../../services/StorageService");
 const assert = require("assert");
 
 async function main() {

@@ -3,11 +3,11 @@ process.env.DISABLE_ACTIVITY = "true";
 process.env.WAIFULETES_WEB_URL = "https://waifuletes.moothz.com";
 
 const assert = require("assert");
-const FakeBot = require("./FakeBot");
-const EventHandler = require("../EventHandler");
-const ReactionsHandler = require("../ReactionsHandler");
-const { createMessage } = require("./FakeMessage");
-const WaifuCommands = require("../functions/WaifuCommands");
+const FakeBot = require("../FakeBot");
+const EventHandler = require("../../EventHandler");
+const ReactionsHandler = require("../../ReactionsHandler");
+const { createMessage } = require("../FakeMessage");
+const WaifuCommands = require("../../functions/WaifuCommands");
 
 // Mock rápido do download de imagem para não depender de download de imagem pesada da internet
 const originalDownload = WaifuCommands.downloadImageAsBase64;

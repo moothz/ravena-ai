@@ -4,10 +4,10 @@ process.env.DISABLE_ACTIVITY = "true";
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const FakeBot = require("./FakeBot");
-const { createMessage } = require("./FakeMessage");
-const YoutubeDownloader = require("../functions/YoutubeDownloader");
-const SocialMediaDownloader = require("../functions/SocialMediaDownloader");
+const FakeBot = require("../FakeBot");
+const { createMessage } = require("../FakeMessage");
+const YoutubeDownloader = require("../../functions/YoutubeDownloader");
+const SocialMediaDownloader = require("../../functions/SocialMediaDownloader");
 const {
 	downloadHandler,
 	saveSearchSession,

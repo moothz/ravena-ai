@@ -2,12 +2,12 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
-const Database = require("../utils/Database");
-const bankService = require("../services/BankService");
-const FakeBot = require("./FakeBot");
-const EventHandler = require("../EventHandler");
-const PvSafetyService = require("../services/PvSafetyService");
-const { createMessage } = require("./FakeMessage");
+const Database = require("../../utils/Database");
+const bankService = require("../../services/BankService");
+const FakeBot = require("../FakeBot");
+const EventHandler = require("../../EventHandler");
+const PvSafetyService = require("../../services/PvSafetyService");
+const { createMessage } = require("../FakeMessage");
 
 async function runTests() {
 	console.log("=== Iniciando Testes Unitários e de Integração do RavenaBank ===");

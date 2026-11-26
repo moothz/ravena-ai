@@ -1,8 +1,8 @@
 const assert = require("assert");
-const FakeBot = require("./FakeBot");
-const EventHandler = require("../EventHandler");
-const { createMessage } = require("./FakeMessage");
-const waifuModule = require("../functions/WaifuCommands");
+const FakeBot = require("../FakeBot");
+const EventHandler = require("../../EventHandler");
+const { createMessage } = require("../FakeMessage");
+const waifuModule = require("../../functions/WaifuCommands");
 
 async function runTests() {
 	console.log("=== Iniciando Testes de WaifuCommands ===");

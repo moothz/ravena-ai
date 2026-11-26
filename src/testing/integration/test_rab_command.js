@@ -2,9 +2,9 @@ process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
 
 const assert = require("assert");
-const FakeBot = require("./FakeBot");
-const EventHandler = require("../EventHandler");
-const { createMessage } = require("./FakeMessage");
+const FakeBot = require("../FakeBot");
+const EventHandler = require("../../EventHandler");
+const { createMessage } = require("../FakeMessage");
 
 async function main() {
 	console.log("=== INICIANDO TESTE DO COMANDO !RAB ===");

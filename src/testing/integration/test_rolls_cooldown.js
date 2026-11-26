@@ -1,7 +1,7 @@
 const assert = require("assert");
-const FakeBot = require("./FakeBot");
-const EventHandler = require("../EventHandler");
-const { createMessage } = require("./FakeMessage");
+const FakeBot = require("../FakeBot");
+const EventHandler = require("../../EventHandler");
+const { createMessage } = require("../FakeMessage");
 const axios = require("axios");
 
 const WAIFULETES_URL = process.env.WAIFULETES_API_URL || "http://waifuletes-api:3030";

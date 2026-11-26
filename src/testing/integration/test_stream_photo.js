@@ -4,10 +4,10 @@ process.env.DISABLE_ACTIVITY = "true";
 const assert = require("assert");
 const fs = require("fs").promises;
 const path = require("path");
-const FakeBot = require("./FakeBot");
-const Management = require("../commands/Management");
-const StreamSystem = require("../StreamSystem");
-const { createMessage } = require("./FakeMessage");
+const FakeBot = require("../FakeBot");
+const Management = require("../../commands/Management");
+const StreamSystem = require("../../StreamSystem");
+const { createMessage } = require("../FakeMessage");
 
 async function main() {
 	console.log("=== INICIANDO TESTES: Mudar Foto do Grupo em Lives ===");

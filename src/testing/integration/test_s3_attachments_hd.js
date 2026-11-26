@@ -4,9 +4,9 @@ process.env.DISABLE_ACTIVITY = "true";
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
-const WhatsAppBotGo = require("../WhatsAppBotGo");
-const DiscordBot = require("../DiscordBot");
-const storageService = require("../services/StorageService");
+const WhatsAppBotGo = require("../../WhatsAppBotGo");
+const DiscordBot = require("../../DiscordBot");
+const storageService = require("../../services/StorageService");
 
 async function runTests() {
 	console.log("=== Iniciando Testes de S3 Attachments & Isolamento no HD Secundário ===");
