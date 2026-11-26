@@ -786,6 +786,142 @@ async function runTests() {
 		assert.strictEqual(comboMeta.pageHeight || comboMeta.height, 512);
 		console.log("✓ !sa hq longo q gerou sticker quadrado 512x512 com áudio");
 
+		const reverseCmd = (audioMsg, author = "5511999990003@s.whatsapp.net") =>
+			buildMockMsg({
+				type: "text",
+				content: "!s",
+				author,
+				group: "120363000000000099@g.us",
+				quotedMessage: buildMockMsg({
+					type: "sticker",
+					author: "5511999990001@s.whatsapp.net",
+					group: "120363000000000099@g.us",
+					content: { mimetype: "image/png", data: stickerPngBuffer.toString("base64") },
+					quotedMessage: audioMsg
+				})
+			});
+		const oggDuration = async (b64, name) => {
+			const p = path.join(tempDir, name);
+			await fs.writeFile(p, Buffer.from(b64, "base64"));
+			const meta = await new Promise((resolve, reject) =>
+				ffmpeg.ffprobe(p, (err, m) => (err ? reject(err) : resolve(m)))
+			);
+			return parseFloat(meta?.format?.duration || "0");
+		};
+
+		console.log("\n14. Testando [audio] -> [figurinha] -> !s (ordem reversa)...");
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(
+			bot,
+			reverseCmd(
+				buildMockMsg({
+					type: "audio",
+					author: "5511999990002@s.whatsapp.net",
+					group: "120363000000000099@g.us",
+					content: { mimetype: "audio/wav", data: audioB64 }
+				})
+			),
+			"s",
+			["Reverso"],
+			{ name: "Grupo Teste" }
+		);
+		assert.strictEqual(bot.capturedMessages.length, 1, "Deve enviar 1 sticker com som");
+		const reversed = bot.capturedMessages[0];
+		assert.strictEqual(reversed.options.sendMediaAsSticker, true);
+		assert.strictEqual(reversed.options.stickerName, "Reverso");
+		assert.strictEqual(reversed.content.mimetype, "image/webp");
+		assert.strictEqual(reversed.options.stickerAudio?.mimetype, "audio/ogg; codecs=opus");
+		assert.strictEqual(
+			Buffer.from(reversed.options.stickerAudio.data, "base64").slice(0, 4).toString("utf8"),
+			"OggS"
+		);
+		const reversedDuration = await oggDuration(reversed.options.stickerAudio.data, "rev.ogg");
+		assert.ok(
+			reversedDuration > 0.5 && reversedDuration < 2,
+			`Audio do sticker deve ser o audio citado pela figurinha (obteve ${reversedDuration}s)`
+		);
+		console.log("✓ Ordem reversa gerou sticker WebP com o audio citado pela figurinha");
+
+		console.log("\n14b. Testando ordem reversa com audio em url + downloadMedia...");
+		const encUrl = "https://mmg.whatsapp.net/v/t62.7117-24/00000000_0_0_n.enc?ccb=11-4";
+		const urlAudioMsg = buildMockMsg({
+			type: "ptt",
+			author: "5511999990002@s.whatsapp.net",
+			group: "120363000000000099@g.us",
+			content: { mimetype: "audio/ogg; codecs=opus", url: encUrl }
+		});
+		urlAudioMsg.downloadMedia = async () => ({ mimetype: "audio/wav", data: audioB64 });
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(bot, reverseCmd(urlAudioMsg), "s", [], { name: "Grupo Teste" });
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		const urlReversed = bot.capturedMessages[0];
+		assert.strictEqual(urlReversed.options.sendMediaAsSticker, true);
+		assert.strictEqual(urlReversed.content.mimetype, "image/webp");
+		const urlAudio = urlReversed.options.stickerAudio;
+		assert.ok(
+			urlAudio?.url === encUrl ||
+				Buffer.from(urlAudio?.data || "", "base64")
+					.slice(0, 4)
+					.toString("utf8") === "OggS",
+			"O audio do ptt citado deve seguir no sticker"
+		);
+		console.log("✓ Ordem reversa com audio em url gerou sticker com som");
+
+		console.log("\n14c. Testando recusa de audio de visualizacao unica na ordem reversa...");
+		for (const where of ["message", "origin"]) {
+			const viewOnceAudioMsg = buildMockMsg({
+				type: "ptt",
+				author: "5511999990002@s.whatsapp.net",
+				group: "120363000000000099@g.us",
+				content: { mimetype: "audio/wav", data: audioB64 },
+				extra: where === "message" ? { isViewOnce: true } : {}
+			});
+			if (where === "origin") viewOnceAudioMsg.origin.isViewOnce = true;
+			resetCase(bot, cmdHandler);
+			await cmdHandler.processCommand(bot, reverseCmd(viewOnceAudioMsg), "s", [], {
+				name: "Grupo Teste"
+			});
+			assert.ok(
+				!bot.capturedMessages.some((m) => m.options?.stickerAudio),
+				`Audio de visualizacao unica (${where}) nao pode virar sticker com som`
+			);
+			assert.ok(
+				!bot.capturedMessages.some((m) =>
+					JSON.stringify(m.content || "").includes(audioB64.slice(-64))
+				),
+				`Audio de visualizacao unica (${where}) nao pode ser reenviado`
+			);
+		}
+		console.log("✓ Audio de visualizacao unica nao foi fundido nem reenviado");
+
+		console.log("\n14d. Testando corte de audio acima de 4 minutos na ordem reversa...");
+		resetCase(bot, cmdHandler);
+		await cmdHandler.processCommand(
+			bot,
+			reverseCmd(
+				buildMockMsg({
+					type: "audio",
+					author: "5511999990002@s.whatsapp.net",
+					group: "120363000000000099@g.us",
+					content: { mimetype: "audio/wav", data: longAudioB64, seconds: 250 }
+				})
+			),
+			"s",
+			[],
+			{ name: "Grupo Teste" }
+		);
+		assert.strictEqual(bot.capturedMessages.length, 1);
+		assert.strictEqual(bot.capturedMessages[0].options.sendMediaAsSticker, true);
+		const reverseCutDuration = await oggDuration(
+			bot.capturedMessages[0].options.stickerAudio?.data || "",
+			"rev_cut.ogg"
+		);
+		assert.ok(
+			reverseCutDuration > 200 && reverseCutDuration <= 245,
+			`Audio cortado deve ter no máximo ~240s (obteve ${reverseCutDuration}s)`
+		);
+		console.log("✓ Ordem reversa cortou audio de 250s para ~240s");
+
 		console.log("\n=== TODOS OS TESTES DE STICKER COM SOM PASSARAM! ===");
 	} finally {
 		cleanupCommandHandlerTimers(cmdHandler);

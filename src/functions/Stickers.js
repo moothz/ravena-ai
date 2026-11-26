@@ -2346,7 +2346,10 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 						? await quotedMsg.origin.getQuotedMessage().catch(() => null)
 						: null;
 				const parentAudioType = String(parentAudioMsg?.type || "").toLowerCase();
-				if (parentAudioType === "audio" || parentAudioType === "ptt") {
+				const parentAudioViewOnce = Boolean(
+					parentAudioMsg?.isViewOnce || parentAudioMsg?.origin?.isViewOnce
+				);
+				if ((parentAudioType === "audio" || parentAudioType === "ptt") && !parentAudioViewOnce) {
 					return await createAudioStickerFromAudioAndSticker({
 						bot,
 						message,
