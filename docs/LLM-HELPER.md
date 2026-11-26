@@ -538,6 +538,20 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
+### 📁 Módulo: `GameCommands.js`
+**Sobre:** Busca de informações e avaliações de jogos eletrônicos no IGDB
+
+**Tags:** `jogos,games,videogame,igdb,steam,playstation,xbox,nintendo,pc`
+
+**Detalhes Técnicos:** Consulta a API oficial do IGDB (Twitch) para exibir plataformas, desenvolvedores, gêneros, capa e notas
+
+#### Comandos:
+- **`!jogos`**: Busca informações, nota, gêneros e sinopse de um jogo
+  - *Categoria:* cultura
+  - *Uso/Exemplos:* `!jogos Elden Ring`, `!jogos Chrono Trigger`, `!jogos Hollow Knight`
+
+---
+
 ### 📁 Módulo: `GamingFreebies.js`
 **Sobre:** Consulta jogos grátis disponíveis por tempo limitado em plataformas como Steam, Epic Games e GOG
 
