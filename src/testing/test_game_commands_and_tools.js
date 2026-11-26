@@ -1,7 +1,13 @@
 process.env.DISABLE_STICKER_SCRAPER_TIMER = "true";
 process.env.DISABLE_ACTIVITY = "true";
+process.env.TWITCH_CLIENT_ID = "fake-client-id";
+process.env.TWITCH_CLIENT_SECRET = "fake-client-secret";
+process.env.TZ = "America/Sao_Paulo";
+delete process.env.DEEPL_API_KEY;
 
 const assert = require("assert");
+const axios = require("axios");
+const Queue = require("../services/Queue");
 const FakeBot = require("./FakeBot");
 const { createMessage } = require("./FakeMessage");
 const GameCommands = require("../functions/GameCommands");
@@ -159,7 +165,211 @@ async function runTests() {
 	assert.ok(animeTool, "search_anime presente em getTools()");
 	console.log("✓ ImdbCommands e AnimeCommands possuem tools integradas.");
 
+	await testRealSearch(bot, groupId, user);
+	await testToolDoesNotBlockLlmQueue();
+
 	console.log("\n=== Todos os testes de GameCommands e Tools passaram com sucesso! ===");
+}
+
+const http = { twitch: [], igdb: [] };
+
+function httpError(status) {
+	const err = new Error(`Request failed with status code ${status}`);
+	err.response = { status };
+	return err;
+}
+
+function stubHttp({ twitch, igdb }) {
+	http.twitch = [];
+	http.igdb = [];
+	axios.get = async () => {
+		throw new Error("rede desligada no teste");
+	};
+	axios.post = async (url, body, config) => {
+		if (url.includes("id.twitch.tv")) {
+			http.twitch.push(config?.params);
+			return twitch(http.twitch.length);
+		}
+		if (url.includes("api.igdb.com")) {
+			http.igdb.push({ body, auth: config?.headers?.Authorization });
+			return igdb(http.igdb.length, body);
+		}
+		throw new Error(`URL inesperada no teste: ${url}`);
+	};
+}
+
+const tokenOk = (n) => ({ data: { access_token: `fake-token-${n}`, expires_in: 3600 } });
+const syntheticGame = (n) => ({
+	name: `Synthetic Quest ${n}`,
+	first_release_date: 946684800,
+	summary: "A synthetic hero walks through a synthetic world."
+});
+
+async function testRealSearch(bot, groupId, user) {
+	const originalPost = axios.post;
+	const originalGet = axios.get;
+	try {
+		console.log("\n[6] Token recusado pela Twitch vira erro, não 'não encontrei'...");
+		stubHttp({
+			twitch: () => {
+				throw httpError(403);
+			},
+			igdb: () => ({ data: [syntheticGame(1)] })
+		});
+		await assert.rejects(GameCommands.searchIgdbGames("Synthetic Quest", 2), (err) => {
+			assert.strictEqual(err.code, GameCommands.IGDB_AUTH_ERROR);
+			return true;
+		});
+		const cmdRes = await GameCommands.buscarJogos(
+			bot,
+			createMessage({ content: "!jogos Synthetic Quest", group: groupId, author: user }),
+			["Synthetic", "Quest"]
+		);
+		assert.ok(!cmdRes.content.includes("Não encontrei"), `Comando: ${cmdRes.content}`);
+		const toolRes = await GameCommands.fetchGameInfo("Synthetic Quest");
+		assert.ok(!toolRes.includes("Não encontrei"), `Tool: ${toolRes}`);
+		assert.strictEqual(http.igdb.length, 0, "Sem token não consulta o IGDB");
+		console.log("✓ 403 no token: erro de autenticação no comando e na tool.");
+
+		console.log("\n[7] 401 do IGDB invalida o token e tenta de novo uma vez...");
+		stubHttp({
+			twitch: tokenOk,
+			igdb: (n) => {
+				if (n === 1) throw httpError(401);
+				return { data: [syntheticGame(1)] };
+			}
+		});
+		const renewed = await GameCommands.searchIgdbGames("Synthetic Quest", 2);
+		assert.strictEqual(renewed.length, 1);
+		assert.strictEqual(http.twitch.length, 2, "Token renovado após o 401");
+		assert.deepStrictEqual(
+			http.igdb.map((c) => c.auth),
+			["Bearer fake-token-1", "Bearer fake-token-2"]
+		);
+		console.log("✓ 401: token renovado e consulta repetida com o novo token.");
+
+		console.log("\n[8] 401 persistente: uma única nova tentativa e erro de autenticação...");
+		stubHttp({
+			twitch: tokenOk,
+			igdb: () => {
+				throw httpError(401);
+			}
+		});
+		await assert.rejects(GameCommands.searchIgdbGames("Synthetic Quest", 2), (err) => {
+			assert.strictEqual(err.code, GameCommands.IGDB_AUTH_ERROR);
+			return true;
+		});
+		assert.strictEqual(http.igdb.length, 2, "Só uma nova tentativa");
+		stubHttp({ twitch: tokenOk, igdb: () => ({ data: [] }) });
+		await GameCommands.searchIgdbGames("Synthetic Quest", 2);
+		assert.strictEqual(http.twitch.length, 1, "Token recusado não fica em cache");
+		console.log("✓ 401 persistente: 2 consultas, erro de autenticação e cache limpo.");
+
+		console.log("\n[9] Nome do usuário não injeta comandos na consulta e limit é respeitado...");
+		stubHttp({
+			twitch: tokenOk,
+			igdb: () => ({ data: Array.from({ length: 40 }, (_, i) => syntheticGame(i)) })
+		});
+		const injected = await GameCommands.searchIgdbGames(
+			'x\\"; limit 500; where id > 0; search \\"y',
+			2
+		);
+		assert.strictEqual(injected.length, 2, "Resultado cortado por limit");
+		await GameCommands.searchIgdbGames("Synthetic Quest\\", 2);
+		await GameCommands.searchIgdbGames(`linha1\nlinha2 ${"a".repeat(300)}`, 2);
+		for (const { body } of http.igdb) {
+			const match = body.match(/^search "([^"]*)"; fields [^";\\\n]+; limit 2;$/);
+			assert.ok(match, `Consulta malformada: ${body}`);
+			assert.ok(match[1].length <= 80, `Nome sem limite de tamanho: ${match[1].length}`);
+		}
+		const toolText = await GameCommands.fetchGameInfo("Synthetic Quest");
+		assert.strictEqual(toolText.split("---").length, 2, "Tool com no máximo 2 jogos");
+		console.log("✓ Barra invertida, aspas, ; e quebras removidas; nome e lista limitados.");
+
+		console.log("\n[10] Ano em UTC e sinopse limitada no texto da tool...");
+		stubHttp({
+			twitch: tokenOk,
+			igdb: () => ({ data: [{ ...syntheticGame(1), summary: "b".repeat(5000) }] })
+		});
+		const yearText = await GameCommands.fetchGameInfo("Synthetic Quest");
+		assert.ok(yearText.includes("Synthetic Quest 1** (2000)"), yearText.slice(0, 80));
+		assert.ok(yearText.length < 1500, `Sinopse sem limite: ${yearText.length}`);
+		console.log("✓ 01/01/2000 UTC sai como 2000 e a sinopse vem cortada.");
+	} finally {
+		axios.post = originalPost;
+		axios.get = originalGet;
+	}
+}
+
+async function testToolDoesNotBlockLlmQueue() {
+	console.log("\n[11] search_game em 2 perguntas simultâneas não trava a fila do LLM...");
+	const llm = LLMService.getInstance();
+	const saved = {
+		queue: llm.queue,
+		providerDefinitions: llm.providerDefinitions,
+		providerQueue: llm.providerQueue,
+		track: llm._trackUsage
+	};
+	const originalPost = axios.post;
+	const originalGet = axios.get;
+	let translations = 0;
+	stubHttp({ twitch: tokenOk, igdb: () => ({ data: [syntheticGame(1), syntheticGame(2)] }) });
+	const httpPost = axios.post;
+	axios.post = async (url, payload, config) => {
+		if (url.includes("id.twitch.tv") || url.includes("api.igdb.com")) {
+			return httpPost(url, payload, config);
+		}
+		await new Promise((r) => setTimeout(r, 100));
+		const hasTools = Array.isArray(payload.tools) && payload.tools.length > 0;
+		const hasToolResult = (payload.messages || []).some((m) => m.role === "tool");
+		let message;
+		if (hasToolResult) {
+			message = { role: "assistant", content: "RESPOSTA FINAL" };
+		} else if (hasTools) {
+			const call = {
+				id: "call_1",
+				type: "function",
+				function: { name: "search_game", arguments: '{"name":"Synthetic Quest"}' }
+			};
+			message = { role: "assistant", content: "", tool_calls: [call] };
+		} else {
+			translations++;
+			message = { role: "assistant", content: "Sinopse traduzida." };
+		}
+		return { data: { choices: [{ message }] } };
+	};
+	llm._trackUsage = async () => {};
+	llm.queue = new Queue({ concurrency: 2, taskTimeout: 3000 });
+	llm.providerDefinitions = [
+		{
+			name: "mock",
+			toolCalling: true,
+			method: async (o) => {
+				const r = await llm.openaiCompletion({ ...o, apiKey: "dummy" });
+				return r?.choices?.[0]?.message?.content;
+			}
+		}
+	];
+	llm.providerQueue = [...llm.providerDefinitions];
+	try {
+		const results = await Promise.all(
+			[0, 1].map((i) =>
+				llm.getCompletion({ prompt: `pergunta ${i}`, toolCalling: true, priority: 1 })
+			)
+		);
+		assert.deepStrictEqual(results, ["RESPOSTA FINAL", "RESPOSTA FINAL"]);
+		assert.strictEqual(translations, 0, "A tool não pede tradução ao LLM");
+		console.log("✓ As 2 perguntas responderam com o texto do modelo.");
+	} finally {
+		axios.post = originalPost;
+		axios.get = originalGet;
+		Object.assign(llm, {
+			queue: saved.queue,
+			providerDefinitions: saved.providerDefinitions,
+			providerQueue: saved.providerQueue,
+			_trackUsage: saved.track
+		});
+	}
 }
 
 runTests()

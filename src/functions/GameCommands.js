@@ -3,6 +3,7 @@ const Logger = require("../utils/Logger");
 const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const { translateText } = require("./TranslationCommands");
+const telemetry = require("../telemetry");
 
 const logger = new Logger("game-commands");
 
@@ -10,16 +11,47 @@ const TWITCH_CLIENT_ID = process.env.TWITCH_CLIENT_ID ?? "";
 const TWITCH_CLIENT_SECRET = process.env.TWITCH_CLIENT_SECRET ?? "";
 const IGDB_OAUTH_URL = "https://id.twitch.tv/oauth2/token";
 const IGDB_API_URL = "https://api.igdb.com/v4/games";
+const IGDB_AUTH_ERROR = "IGDB_AUTH";
+const MAX_QUERY_LENGTH = 80;
+const MAX_RESULTS = 10;
+const MAX_SUMMARY_LENGTH = 700;
 
 let igdbTokenCache = null; // { token: string, expiresAt: number }
 
+function igdbAuthError(cause) {
+	const err = new Error(`Falha de autenticação no IGDB: ${cause?.message ?? "token ausente"}`);
+	err.code = IGDB_AUTH_ERROR;
+	return err;
+}
+
+function sanitizeQuery(query) {
+	return query
+		.replace(/[\\";\r\n]/g, " ")
+		.replace(/\s+/g, " ")
+		.trim()
+		.slice(0, MAX_QUERY_LENGTH)
+		.trim();
+}
+
+function clipSummary(text) {
+	return text.length > MAX_SUMMARY_LENGTH
+		? `${text.slice(0, MAX_SUMMARY_LENGTH).trimEnd()}…`
+		: text;
+}
+
+function releaseYear(game) {
+	return game.first_release_date
+		? new Date(game.first_release_date * 1000).getUTCFullYear()
+		: "N/A";
+}
+
 /**
  * Obtém ou renova token de acesso OAuth para a API do IGDB via Twitch
- * @returns {Promise<string|null>}
+ * @returns {Promise<string>}
  */
 async function getIgdbAccessToken() {
 	if (!TWITCH_CLIENT_ID || !TWITCH_CLIENT_SECRET) {
-		return null;
+		throw igdbAuthError();
 	}
 
 	const now = Date.now();
@@ -27,8 +59,9 @@ async function getIgdbAccessToken() {
 		return igdbTokenCache.token;
 	}
 
+	let res;
 	try {
-		const res = await axios.post(IGDB_OAUTH_URL, null, {
+		res = await axios.post(IGDB_OAUTH_URL, null, {
 			params: {
 				client_id: TWITCH_CLIENT_ID,
 				client_secret: TWITCH_CLIENT_SECRET,
@@ -36,20 +69,21 @@ async function getIgdbAccessToken() {
 			},
 			timeout: 10000
 		});
-
-		if (res.data && res.data.access_token) {
-			const expiresIn = Number(res.data.expires_in) || 3600;
-			igdbTokenCache = {
-				token: res.data.access_token,
-				expiresAt: now + expiresIn * 1000
-			};
-			return igdbTokenCache.token;
-		}
 	} catch (err) {
 		logger.error("Falha ao obter token OAuth do IGDB:", err.message);
+		throw igdbAuthError(err);
 	}
 
-	return null;
+	if (!res.data?.access_token) {
+		throw igdbAuthError();
+	}
+
+	const expiresIn = Number(res.data.expires_in) || 3600;
+	igdbTokenCache = {
+		token: res.data.access_token,
+		expiresAt: now + expiresIn * 1000
+	};
+	return igdbTokenCache.token;
 }
 
 /**
@@ -63,24 +97,47 @@ async function searchIgdbGames(query, limit = 3) {
 		return [];
 	}
 
-	const token = await getIgdbAccessToken();
-	if (!token) {
+	const cleanQuery = sanitizeQuery(query);
+	if (!cleanQuery) {
 		return [];
 	}
 
-	const cleanQuery = query.trim().replace(/"/g, '\\"');
-	const apicalypseBody = `search "${cleanQuery}"; fields name,summary,storyline,total_rating,total_rating_count,first_release_date,genres.name,platforms.name,cover.image_id,cover.url,url,involved_companies.company.name,involved_companies.developer; limit ${limit};`;
+	const max = Math.min(Math.max(Math.trunc(Number(limit)) || 1, 1), MAX_RESULTS);
+	const apicalypseBody = `search "${cleanQuery}"; fields name,summary,storyline,total_rating,total_rating_count,first_release_date,genres.name,platforms.name,cover.image_id,cover.url,url,involved_companies.company.name,involved_companies.developer; limit ${max};`;
 
-	const res = await axios.post(IGDB_API_URL, apicalypseBody, {
-		headers: {
-			"Client-ID": TWITCH_CLIENT_ID,
-			Authorization: `Bearer ${token}`,
-			"Content-Type": "text/plain"
-		},
-		timeout: 10000
-	});
-
-	return Array.isArray(res.data) ? res.data : [];
+	return telemetry.withSpan(
+		"jogos igdb.search",
+		{ attributes: { "ravena.jogos.limit": max } },
+		async (span) => {
+			for (let attempt = 0; ; attempt++) {
+				const token = await getIgdbAccessToken();
+				try {
+					const res = await axios.post(IGDB_API_URL, apicalypseBody, {
+						headers: {
+							"Client-ID": TWITCH_CLIENT_ID,
+							Authorization: `Bearer ${token}`,
+							"Content-Type": "text/plain"
+						},
+						timeout: 10000
+					});
+					const games = Array.isArray(res.data) ? res.data.slice(0, max) : [];
+					telemetry.setAttrs(
+						{ "ravena.jogos.results": games.length, "ravena.jogos.token_retry": attempt > 0 },
+						span
+					);
+					return games;
+				} catch (err) {
+					if (err.response?.status !== 401) {
+						throw err;
+					}
+					igdbTokenCache = null;
+					if (attempt > 0) {
+						throw igdbAuthError(err);
+					}
+				}
+			}
+		}
+	);
 }
 
 /**
@@ -90,9 +147,7 @@ async function searchIgdbGames(query, limit = 3) {
  */
 async function formatGameCard(game) {
 	const titulo = game.name || "Jogo sem título";
-	const ano = game.first_release_date
-		? new Date(game.first_release_date * 1000).getFullYear()
-		: "N/A";
+	const ano = releaseYear(game);
 
 	const plataformas =
 		(game.platforms || [])
@@ -115,7 +170,7 @@ async function formatGameCard(game) {
 			? `${Math.round(game.total_rating)}/100 (${(game.total_rating_count || 0).toLocaleString("pt-BR")} avaliações)`
 			: "Sem avaliação agregada";
 
-	const rawSummary = game.summary || game.storyline || "";
+	const rawSummary = clipSummary(game.summary || game.storyline || "");
 	let sinopse = "Sinopse não disponível.";
 	if (rawSummary) {
 		try {
@@ -185,6 +240,7 @@ async function buscarJogos(bot, message, args, group) {
 	try {
 		const games = await module.exports.searchIgdbGames(nome, 3);
 		if (!games || games.length === 0) {
+			telemetry.setAttrs({ "app.outcome": "rejected", "app.reject.reason": "not_found" });
 			return new ReturnMessage({
 				chatId,
 				content: `❌ Não encontrei nenhum jogo com o nome "${nome}". Dá uma conferida no nome e tenta de novo.`,
@@ -247,6 +303,7 @@ async function buscarJogos(bot, message, args, group) {
 		});
 	} catch (err) {
 		logger.error(`Erro ao pesquisar jogo "${nome}" no IGDB:`, err.message);
+		telemetry.recordError(telemetry.activeSpan(), err);
 		return new ReturnMessage({
 			chatId,
 			content: "Não consegui buscar informações do jogo agora. Tenta de novo daqui a pouco.",
@@ -282,9 +339,7 @@ async function fetchGameInfo(query) {
 
 		const formatadas = [];
 		for (const g of games) {
-			const ano = g.first_release_date
-				? new Date(g.first_release_date * 1000).getFullYear()
-				: "N/A";
+			const ano = releaseYear(g);
 			const plataformas =
 				(g.platforms || [])
 					.map((p) => p.name)
@@ -303,16 +358,7 @@ async function fetchGameInfo(query) {
 					? `${Math.round(g.total_rating)}/100 (${g.total_rating_count || 0} avaliações)`
 					: "Sem avaliação agregada";
 
-			const rawSummary = g.summary || g.storyline || "";
-			let sinopse = "Sinopse não disponível.";
-			if (rawSummary) {
-				try {
-					const traduzida = await translateText(rawSummary, "en", "pt");
-					sinopse = traduzida || rawSummary;
-				} catch {
-					sinopse = rawSummary;
-				}
-			}
+			const sinopse = clipSummary(g.summary || g.storyline || "") || "Sinopse não disponível.";
 
 			let item = `🎮 **${g.name}** (${ano})\n`;
 			item += `🕹️ Plataformas: ${plataformas}\n`;
@@ -372,5 +418,6 @@ module.exports = {
 	fetchGameInfo,
 	searchIgdbGames,
 	getIgdbAccessToken,
-	formatGameCard
+	formatGameCard,
+	IGDB_AUTH_ERROR
 };
