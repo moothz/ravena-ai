@@ -7,6 +7,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const Command = require("../models/Command");
 const sharp = require("sharp");
 const ffmpeg = require("fluent-ffmpeg");
+const { createCanvas } = require("canvas");
 
 const CmdUsage = require("../utils/CmdUsage");
 const LLMService = require("../services/LLMService");
@@ -884,6 +885,399 @@ Responda APENAS com um objeto JSON seguindo este schema: { "percentage": número
 		logger.error("[getLLMCropPercentage] Erro ao obter sugestão do LLM:", error);
 		return 50;
 	}
+}
+
+const TEXT_STICKER = {
+	SIZE: WHATSAPP_STICKER.MAX_SIZE,
+	MAX_CHARS: 280,
+	BUBBLE_MAX_WIDTH: 460,
+	BUBBLE_MIN_WIDTH: 290,
+	BUBBLE_MAX_HEIGHT: 456,
+	PADDING_X: 20,
+	PADDING_Y: 16,
+	RADIUS: 16,
+	TAIL_SIZE: 12,
+	BG_COLOR: "#1F2C34",
+	BORDER_COLOR: "#2A3942",
+	TEXT_COLOR: "#E9EDEF",
+	META_COLOR: "#8696A0",
+	FONT_FAMILY: '"DejaVu Sans", "Nimbus Sans", sans-serif',
+	NAME_COLORS: [
+		"#FF8A65",
+		"#4FC3F7",
+		"#81C784",
+		"#FFD54F",
+		"#BA68C8",
+		"#4DB6AC",
+		"#F06292",
+		"#AED581",
+		"#FFB74D",
+		"#64B5F6",
+		"#E57373",
+		"#7986CB"
+	]
+};
+
+/**
+ * Formata um JID/ID de telefone para exibição amigável mascarando os últimos 4 dígitos (+55 (DD) NNNNN-####).
+ * @param {string} jid
+ * @returns {string}
+ */
+function formatPhoneFromJid(jid) {
+	if (!jid || typeof jid !== "string") return "";
+	const raw = jid.split("@")[0].split(":")[0].replace(/\D/g, "");
+	if (!raw || raw.length < 8 || raw.length > 15 || jid.includes("@lid")) {
+		return "";
+	}
+	if (raw.startsWith("55") && raw.length === 13) {
+		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 9)}-####`;
+	}
+	if (raw.startsWith("55") && raw.length === 12) {
+		return `+55 (${raw.slice(2, 4)}) ${raw.slice(4, 8)}-####`;
+	}
+	return `+${raw.slice(0, -4)}####`;
+}
+
+/**
+ * Resolve apelido na ravena, nome do contato e número mascarado de uma mensagem citada.
+ * Quando há nome ou apelido, o número não é exibido.
+ * @param {Object} quotedMsg
+ * @param {Object|null} group
+ * @returns {{displayName: string, formattedPhone: string}}
+ */
+function resolveQuotedSenderInfo(quotedMsg, group = null) {
+	const candidates = [quotedMsg?.author, quotedMsg?.quotedParticipant, quotedMsg?.from].filter(
+		(v) => typeof v === "string" && v.trim()
+	);
+	const primaryId = candidates[0] || "";
+	const maskedPhone = candidates.map((id) => formatPhoneFromJid(id)).find((p) => Boolean(p)) || "";
+
+	// 1. Apelido configurado no grupo (group.nicks)
+	let groupNick = "";
+	if (group && Array.isArray(group.nicks)) {
+		const candidateBases = new Set(
+			candidates.flatMap((id) => {
+				const base = id.split("@")[0].split(":")[0];
+				return base ? [id, base] : [id];
+			})
+		);
+		const nickEntry = group.nicks.find((n) => {
+			if (!n?.apelido || !n?.numero) return false;
+			const numBase = String(n.numero).split("@")[0].split(":")[0];
+			return candidateBases.has(n.numero) || candidateBases.has(numBase);
+		});
+		if (nickEntry?.apelido) {
+			groupNick = String(nickEntry.apelido).trim();
+		}
+	}
+
+	// 2. Nome da mensagem (ignorando placeholder "Usuario" do fallback de cache e dígitos puros)
+	const primaryDigits = primaryId.split("@")[0].split(":")[0].replace(/\D/g, "");
+	const rawNameCandidates = [
+		quotedMsg?.authorName,
+		quotedMsg?.pushname,
+		quotedMsg?.pushName,
+		quotedMsg?.name
+	];
+	const msgName =
+		rawNameCandidates
+			.map((v) => (typeof v === "string" ? v.trim() : ""))
+			.find((v) => {
+				if (!v) return false;
+				const lower = v.toLowerCase();
+				if (lower === "usuario" || lower === "usuário") return false;
+				if (primaryDigits && v.replace(/\D/g, "") === primaryDigits) return false;
+				return true;
+			}) || "";
+
+	// 3. Se houver nome/apelido, não exibir o número; fallback para número mascarado
+	const resolvedName = groupNick || msgName;
+	if (resolvedName) {
+		return { displayName: resolvedName, formattedPhone: "" };
+	}
+
+	return {
+		displayName: maskedPhone || "+55 (55) 9999-####",
+		formattedPhone: ""
+	};
+}
+
+/**
+ * Formata data e hora da mensagem citada no padrão DD/MM/AAAA HH:mm.
+ * @param {Object} quotedMsg
+ * @returns {string}
+ */
+function formatMessageDateTime(quotedMsg) {
+	const rawTs = Number(quotedMsg?.timestamp);
+	const ms =
+		Number.isFinite(rawTs) && rawTs > 0 ? (rawTs > 1e12 ? rawTs : rawTs * 1000) : Date.now();
+	return new Intl.DateTimeFormat("pt-BR", {
+		timeZone: "America/Sao_Paulo",
+		day: "2-digit",
+		month: "2-digit",
+		year: "numeric",
+		hour: "2-digit",
+		minute: "2-digit",
+		hour12: false
+	})
+		.format(new Date(ms))
+		.replace(",", "");
+}
+
+/**
+ * Trunca texto para caber na largura máxima em pixels, adicionando reticências.
+ */
+function truncateTextToWidth(ctx, text, maxWidth) {
+	if (ctx.measureText(text).width <= maxWidth) return text;
+	let out = text;
+	while (out.length > 1 && ctx.measureText(`${out}...`).width > maxWidth) {
+		out = out.slice(0, -1);
+	}
+	return `${out}...`;
+}
+
+/**
+ * Quebra texto em linhas respeitando quebras explícitas e largura máxima em pixels.
+ */
+function wrapTextLines(ctx, text, maxWidth) {
+	const paragraphs = text.split(/\r?\n/);
+	const lines = [];
+
+	for (const paragraph of paragraphs) {
+		if (!paragraph.trim()) {
+			lines.push("");
+			continue;
+		}
+		const words = paragraph.split(/\s+/);
+		let currentLine = "";
+
+		for (const word of words) {
+			const testLine = currentLine ? `${currentLine} ${word}` : word;
+			if (ctx.measureText(testLine).width <= maxWidth) {
+				currentLine = testLine;
+			} else {
+				if (currentLine) {
+					lines.push(currentLine);
+					currentLine = "";
+				}
+				if (ctx.measureText(word).width <= maxWidth) {
+					currentLine = word;
+				} else {
+					let chunk = "";
+					for (const char of word) {
+						if (ctx.measureText(chunk + char).width > maxWidth && chunk) {
+							lines.push(chunk);
+							chunk = char;
+						} else {
+							chunk += char;
+						}
+					}
+					currentLine = chunk;
+				}
+			}
+		}
+		if (currentLine) {
+			lines.push(currentLine);
+		}
+	}
+
+	return lines;
+}
+
+/**
+ * Desenha retângulo com cantos arredondados e rabinho estilo bubble do WhatsApp.
+ */
+function drawWhatsAppBubblePath(ctx, x, y, width, height, radius, tailSize) {
+	ctx.beginPath();
+	ctx.moveTo(x - tailSize, y);
+	ctx.lineTo(x + width - radius, y);
+	ctx.quadraticCurveTo(x + width, y, x + width, y + radius);
+	ctx.lineTo(x + width, y + height - radius);
+	ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height);
+	ctx.lineTo(x + radius, y + height);
+	ctx.quadraticCurveTo(x, y + height, x, y + height - radius);
+	ctx.lineTo(x, y + tailSize);
+	ctx.lineTo(x - tailSize, y);
+	ctx.closePath();
+}
+
+/**
+ * Renderiza uma mensagem de texto como um bubble estilo WhatsApp em PNG 512x512 transparente.
+ * @param {Object} params
+ * @param {string} params.displayName
+ * @param {string} [params.formattedPhone]
+ * @param {string} params.text
+ * @param {string} params.dateTime
+ * @param {string} [params.nameColor]
+ * @returns {Buffer}
+ */
+function renderTextBubblePng({ displayName, formattedPhone = "", text, dateTime, nameColor }) {
+	const canvas = createCanvas(TEXT_STICKER.SIZE, TEXT_STICKER.SIZE);
+	const ctx = canvas.getContext("2d");
+	ctx.clearRect(0, 0, TEXT_STICKER.SIZE, TEXT_STICKER.SIZE);
+
+	const cleanText = String(text || "")
+		.trim()
+		.replace(/\r\n/g, "\n");
+	const limitedText =
+		cleanText.length > TEXT_STICKER.MAX_CHARS
+			? `${cleanText.slice(0, TEXT_STICKER.MAX_CHARS - 3).trimEnd()}...`
+			: cleanText;
+
+	const chosenColor =
+		nameColor ||
+		TEXT_STICKER.NAME_COLORS[Math.floor(Math.random() * TEXT_STICKER.NAME_COLORS.length)];
+
+	const innerMaxWidth = TEXT_STICKER.BUBBLE_MAX_WIDTH - TEXT_STICKER.PADDING_X * 2;
+	const headerGap = 10;
+	const footerHeight = 20;
+	const footerGap = 12;
+
+	// Escolhe o maior tamanho de fonte que caiba no bubble (nome levemente maior que o texto)
+	const fontSizes = [28, 24, 21, 18];
+	let selectedFontSize = fontSizes[fontSizes.length - 1];
+	let nameFontSize = selectedFontSize + 3;
+	let headerHeight = Math.round(nameFontSize * 1.25);
+	let selectedLines = [];
+	let selectedLineHeight = 24;
+
+	for (const size of fontSizes) {
+		const candidateNameSize = size + 3;
+		const candidateHeaderHeight = Math.round(candidateNameSize * 1.25);
+		const maxBodyHeight =
+			TEXT_STICKER.BUBBLE_MAX_HEIGHT -
+			TEXT_STICKER.PADDING_Y * 2 -
+			candidateHeaderHeight -
+			headerGap -
+			footerGap -
+			footerHeight;
+		const lineHeight = Math.round(size * 1.32);
+		ctx.font = `${size}px ${TEXT_STICKER.FONT_FAMILY}`;
+		const lines = wrapTextLines(ctx, limitedText, innerMaxWidth);
+		if (lines.length * lineHeight <= maxBodyHeight) {
+			selectedFontSize = size;
+			nameFontSize = candidateNameSize;
+			headerHeight = candidateHeaderHeight;
+			selectedLines = lines;
+			selectedLineHeight = lineHeight;
+			break;
+		}
+		if (size === fontSizes[fontSizes.length - 1]) {
+			const maxLines = Math.max(1, Math.floor(maxBodyHeight / lineHeight));
+			selectedFontSize = size;
+			nameFontSize = candidateNameSize;
+			headerHeight = candidateHeaderHeight;
+			selectedLineHeight = lineHeight;
+			selectedLines = lines.slice(0, maxLines);
+			if (lines.length > maxLines) {
+				selectedLines[maxLines - 1] = truncateTextToWidth(
+					ctx,
+					`${selectedLines[maxLines - 1]}...`,
+					innerMaxWidth
+				);
+			}
+		}
+	}
+
+	// Medir largura necessária do conteúdo para dimensionar o bubble proporcionalmente
+	ctx.font = `bold ${nameFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	const nameRawWidth = ctx.measureText(displayName).width;
+	ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
+	const phoneWidth = formattedPhone ? ctx.measureText(formattedPhone).width + 14 : 0;
+	const dateWidth = ctx.measureText(dateTime).width;
+
+	ctx.font = `${selectedFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	const maxLineWidth = selectedLines.reduce(
+		(acc, line) => Math.max(acc, ctx.measureText(line).width),
+		0
+	);
+
+	const neededInnerWidth = Math.max(nameRawWidth + phoneWidth, maxLineWidth, dateWidth + 20);
+	const bubbleWidth = Math.min(
+		TEXT_STICKER.BUBBLE_MAX_WIDTH,
+		Math.max(
+			TEXT_STICKER.BUBBLE_MIN_WIDTH,
+			Math.ceil(neededInnerWidth) + TEXT_STICKER.PADDING_X * 2
+		)
+	);
+	const bubbleInnerWidth = bubbleWidth - TEXT_STICKER.PADDING_X * 2;
+	const bodyHeight = Math.max(selectedLineHeight, selectedLines.length * selectedLineHeight);
+	const bubbleHeight =
+		TEXT_STICKER.PADDING_Y * 2 + headerHeight + headerGap + bodyHeight + footerGap + footerHeight;
+
+	const bubbleX = Math.round((TEXT_STICKER.SIZE - bubbleWidth + TEXT_STICKER.TAIL_SIZE) / 2);
+	const bubbleY = Math.round((TEXT_STICKER.SIZE - bubbleHeight) / 2);
+
+	// Sombra suave + preenchimento + borda do bubble
+	ctx.save();
+	ctx.shadowColor = "rgba(0, 0, 0, 0.35)";
+	ctx.shadowBlur = 12;
+	ctx.shadowOffsetY = 4;
+	drawWhatsAppBubblePath(
+		ctx,
+		bubbleX,
+		bubbleY,
+		bubbleWidth,
+		bubbleHeight,
+		TEXT_STICKER.RADIUS,
+		TEXT_STICKER.TAIL_SIZE
+	);
+	ctx.fillStyle = TEXT_STICKER.BG_COLOR;
+	ctx.fill();
+	ctx.restore();
+
+	drawWhatsAppBubblePath(
+		ctx,
+		bubbleX,
+		bubbleY,
+		bubbleWidth,
+		bubbleHeight,
+		TEXT_STICKER.RADIUS,
+		TEXT_STICKER.TAIL_SIZE
+	);
+	ctx.lineWidth = 1.5;
+	ctx.strokeStyle = TEXT_STICKER.BORDER_COLOR;
+	ctx.stroke();
+
+	const contentX = bubbleX + TEXT_STICKER.PADDING_X;
+	const headerY = bubbleY + TEXT_STICKER.PADDING_Y + nameFontSize;
+
+	// Cabeçalho: Nome colorido + Número à direita
+	let maxNameWidth = bubbleInnerWidth;
+	if (formattedPhone) {
+		ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
+		const measuredPhoneWidth = ctx.measureText(formattedPhone).width;
+		maxNameWidth = Math.max(80, bubbleInnerWidth - measuredPhoneWidth - 12);
+		ctx.fillStyle = TEXT_STICKER.META_COLOR;
+		ctx.textAlign = "right";
+		ctx.fillText(formattedPhone, bubbleX + bubbleWidth - TEXT_STICKER.PADDING_X, headerY);
+	}
+
+	ctx.font = `bold ${nameFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.fillStyle = chosenColor;
+	ctx.textAlign = "left";
+	ctx.fillText(truncateTextToWidth(ctx, displayName, maxNameWidth), contentX, headerY);
+
+	// Corpo da mensagem
+	ctx.font = `${selectedFontSize}px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.fillStyle = TEXT_STICKER.TEXT_COLOR;
+	let currentY = bubbleY + TEXT_STICKER.PADDING_Y + headerHeight + headerGap + selectedFontSize;
+	for (const line of selectedLines) {
+		ctx.fillText(line, contentX, currentY);
+		currentY += selectedLineHeight;
+	}
+
+	// Rodapé: data e hora no canto inferior direito
+	ctx.font = `14px ${TEXT_STICKER.FONT_FAMILY}`;
+	ctx.fillStyle = TEXT_STICKER.META_COLOR;
+	ctx.textAlign = "right";
+	ctx.fillText(
+		dateTime,
+		bubbleX + bubbleWidth - TEXT_STICKER.PADDING_X,
+		bubbleY + bubbleHeight - TEXT_STICKER.PADDING_Y
+	);
+
+	return canvas.toBuffer("image/png");
 }
 
 // Função para converter um buffer de mídia em um buffer de sticker quadrado nos padrões do WhatsApp
@@ -1835,6 +2229,7 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 
 	try {
 		let mediaBuffer, mimeType, quotedMessageId;
+		let isTextBubbleSticker = false;
 
 		// Extrair mídia e informações necessárias da mensagem direta ou citada
 		if (message.type === "audio" || message.type === "ptt") {
@@ -2198,19 +2593,66 @@ async function squareStickerCommand(bot, message, args, group, cropType) {
 				mediaBuffer = media;
 				mimeType = media.mimetype;
 				quotedMessageId = message.origin.id._serialized;
+			} else if (["text", "chat", "conversation", "extendedtext"].includes(mediaType)) {
+				const rawText =
+					typeof quotedMsg.content === "string"
+						? quotedMsg.content
+						: typeof quotedMsg.body === "string"
+							? quotedMsg.body
+							: "";
+				if (!rawText.trim()) {
+					telemetry.setAttrs({
+						"app.outcome": "rejected",
+						"app.reject.reason": "empty_quoted_text"
+					});
+					await message.origin.react("❌");
+					return new ReturnMessage({
+						chatId,
+						content: "❌ A mensagem marcada está vazia e não pode virar figurinha."
+					});
+				}
+
+				const { displayName, formattedPhone } = resolveQuotedSenderInfo(quotedMsg, group);
+				const dateTime = formatMessageDateTime(quotedMsg);
+				const pngBuffer = await telemetry.withSpan(
+					"sticker text.render",
+					{
+						attributes: {
+							"ravena.sticker.text_length": rawText.trim().length,
+							"ravena.sticker.text_truncated": rawText.trim().length > TEXT_STICKER.MAX_CHARS
+						}
+					},
+					async () =>
+						renderTextBubblePng({
+							displayName,
+							formattedPhone,
+							text: rawText,
+							dateTime
+						})
+				);
+
+				mediaBuffer = {
+					mimetype: "image/png",
+					data: pngBuffer.toString("base64"),
+					filename: `text-sticker-${Date.now()}.png`,
+					isMessageMedia: true
+				};
+				mimeType = "image/png";
+				quotedMessageId = message.origin.id._serialized;
+				isTextBubbleSticker = true;
 			} else {
 				await message.origin.react("❌");
 				return new ReturnMessage({
 					chatId,
 					content:
-						"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos, figurinhas e áudios (ou documentos nesses formatos, ou marca alguém com @ pra usar a foto de perfil)."
+						"Esse tipo de arquivo não vira figurinha! Só aceito imagens, vídeos, figurinhas, áudios e mensagens de texto (ou documentos nesses formatos, ou marca alguém com @ pra usar a foto de perfil)."
 				});
 			}
 		}
 
 		// Determinar o tipo de corte final (se for LLM, fazer a query agora)
 		let finalStickerOptions = stickerOptions;
-		if (stickerOptions.cropMode === "llm") {
+		if (!isTextBubbleSticker && stickerOptions.cropMode === "llm") {
 			const percentage = await getLLMCropPercentage(mediaBuffer, mimeType);
 			finalStickerOptions = { ...stickerOptions, cropMode: String(percentage) };
 		}
@@ -2888,5 +3330,8 @@ module.exports = {
 	processAutoSticker,
 	parseStickerArgs,
 	processMediaToSquare,
-	getLLMCropPercentage
+	getLLMCropPercentage,
+	resolveQuotedSenderInfo,
+	formatMessageDateTime,
+	renderTextBubblePng
 };
