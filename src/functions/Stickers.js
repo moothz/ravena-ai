@@ -1162,7 +1162,6 @@ async function transcodeToOpusOgg(inputPath, outputPath) {
 		parseFfprobeDuration(probeData?.format?.duration) ??
 		parseFfprobeDuration(audioStream.duration) ??
 		0;
-	const durationToCut = duration > 240 ? 240 : duration;
 
 	await acquireFFmpegSlot();
 	try {
@@ -1175,7 +1174,7 @@ async function transcodeToOpusOgg(inputPath, outputPath) {
 				.audioChannels(1)
 				.format("ogg")
 				// Corta áudio longo a 240s em vez de rejeitar
-				.outputOptions(["-t", String(durationToCut)])
+				.outputOptions(["-t", "240"])
 				.output(outputPath)
 				.on("end", resolve)
 				.on("error", reject)
@@ -1196,7 +1195,7 @@ async function transcodeToOpusOgg(inputPath, outputPath) {
 		err.code = "AUDIO_EMPTY";
 		throw err;
 	}
-	return { audioBuffer, duration: durationToCut };
+	return { audioBuffer, duration: Math.min(duration, 240) };
 }
 
 /**
