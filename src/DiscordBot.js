@@ -1941,6 +1941,55 @@ https://www.google.com/maps/search/?api=1&query=${content.latitude},${content.lo
 	async updateProfilePicture(pic) {
 		return this._unimplemented("updateProfilePicture");
 	}
+
+	/**
+	 * Altera o apelido (nickname) do bot dentro de uma guilda específica.
+	 * @param {string} guildId - ID da guilda (servidor)
+	 * @param {string|null} newNick - Novo apelido ou null/vazio para resetar
+	 * @returns {Promise<boolean>}
+	 */
+	async setGuildNickname(guildId, newNick) {
+		try {
+			if (!this.discordClient) throw new Error("Cliente Discord não inicializado.");
+			const guild =
+				this.discordClient.guilds.cache.get(guildId) ||
+				(await this.discordClient.guilds.fetch(guildId).catch(() => null));
+			if (!guild) throw new Error("Servidor Discord não encontrado.");
+
+			const cleanNick = typeof newNick === "string" ? newNick.trim() : null;
+			await guild.members.editMe({ nick: cleanNick || null });
+			this.logger.info(
+				`[${this.id}] Apelido alterado na guilda ${guildId} para: ${cleanNick || "padrão"}`
+			);
+			return true;
+		} catch (err) {
+			this.logger.error(`[${this.id}] Erro ao alterar apelido na guilda ${guildId}:`, err);
+			throw err;
+		}
+	}
+
+	/**
+	 * Altera o avatar (foto de perfil) do bot dentro de uma guilda específica.
+	 * @param {string} guildId - ID da guilda (servidor)
+	 * @param {Buffer|string|null} avatarData - Buffer, Data URI, URL ou null para resetar
+	 * @returns {Promise<boolean>}
+	 */
+	async setGuildAvatar(guildId, avatarData) {
+		try {
+			if (!this.discordClient) throw new Error("Cliente Discord não inicializado.");
+			const guild =
+				this.discordClient.guilds.cache.get(guildId) ||
+				(await this.discordClient.guilds.fetch(guildId).catch(() => null));
+			if (!guild) throw new Error("Servidor Discord não encontrado.");
+
+			await guild.members.editMe({ avatar: avatarData || null });
+			this.logger.info(`[${this.id}] Avatar do servidor alterado com sucesso na guilda ${guildId}`);
+			return true;
+		} catch (err) {
+			this.logger.error(`[${this.id}] Erro ao alterar avatar na guilda ${guildId}:`, err);
+			throw err;
+		}
+	}
 	deleteMessageByKey(key) {
 		return this._unimplemented("deleteMessageByKey");
 	}
