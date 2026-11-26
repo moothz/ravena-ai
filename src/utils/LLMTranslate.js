@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 const Logger = require("./Logger");
 const Database = require("./Database");
+const telemetry = require("../telemetry");
 const { translateText } = require("../functions/TranslationCommands");
 
 const logger = new Logger("llm-translate");
@@ -124,6 +125,97 @@ RULES:
 	return translatedText;
 }
 
+const BATCH_MAX_CHARS = 12000;
+
+function packBatches(texts) {
+	const batches = [];
+	let current = [];
+	let currentChars = 0;
+	texts.forEach((text, idx) => {
+		if (typeof text !== "string" || text.trim().length === 0) return;
+		if (current.length > 0 && currentChars + text.length > BATCH_MAX_CHARS) {
+			batches.push(current);
+			current = [];
+			currentChars = 0;
+		}
+		current.push(idx);
+		currentChars += text.length;
+	});
+	if (current.length > 0) batches.push(current);
+	return batches;
+}
+
+function joinBatch(parts) {
+	return parts.map((text, pos) => `<<${pos + 1}>>\n${text}`).join("\n\n");
+}
+
+function splitBatch(translated, count) {
+	if (typeof translated !== "string") return null;
+	const pieces = translated.split(/<<(\d+)>>/);
+	if (pieces.length !== count * 2 + 1 || pieces[0].trim().length > 0) return null;
+	const parts = [];
+	for (let pos = 0; pos < count; pos++) {
+		const segment = pieces[pos * 2 + 2].trim();
+		if (pieces[pos * 2 + 1] !== String(pos + 1) || segment.length === 0) return null;
+		parts.push(segment);
+	}
+	return parts;
+}
+
+async function llmTranslateMany(texts, targetLanguage, llmService) {
+	const batches = packBatches(texts);
+	if (batches.length === 0) return [...texts];
+	return telemetry.withSpan(
+		"translate batch",
+		{ attributes: { "ravena.translate.parts": batches.flat().length } },
+		async (span) => {
+			const results = [...texts];
+			let fallbacks = 0;
+			const translateOne = async (idx) => {
+				try {
+					results[idx] = await llmTranslate(texts[idx], targetLanguage, llmService);
+				} catch (e) {
+					logger.error(`[llmTranslateMany] Translation error: ${e.message}`);
+				}
+			};
+			for (const batch of batches) {
+				if (batch.length === 1) {
+					await translateOne(batch[0]);
+					continue;
+				}
+				let parts = null;
+				try {
+					const translated = await llmTranslate(
+						joinBatch(batch.map((idx) => texts[idx])),
+						targetLanguage,
+						llmService
+					);
+					parts = splitBatch(translated, batch.length);
+				} catch (e) {
+					logger.warn(`[llmTranslateMany] Batch translation failed: ${e.message}`);
+				}
+				if (parts) {
+					batch.forEach((idx, pos) => {
+						results[idx] = parts[pos];
+					});
+					continue;
+				}
+				fallbacks++;
+				logger.warn(
+					`[llmTranslateMany] Could not split batch of ${batch.length} parts, translating one by one`
+				);
+				for (const idx of batch) await translateOne(idx);
+			}
+			telemetry.setAttrs(
+				{ "ravena.translate.batches": batches.length, "ravena.translate.fallbacks": fallbacks },
+				span
+			);
+			return results;
+		}
+	);
+}
+
 module.exports = {
-	llmTranslate
+	llmTranslate,
+	llmTranslateMany
 };
