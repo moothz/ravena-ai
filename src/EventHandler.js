@@ -2827,95 +2827,52 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 										`[processGroupLeave] Bot '${bot.id}' saiu do grupo '${group.name}' (${groupId}). Removidas configurações de streams: ${parts.join(" | ")}`
 									);
 
-						let recentMessagesText = "";
-						try {
-							const recentMessages = await telemetry.withSpan(
-								"group leave.recent_messages",
-								{ attributes: { "ravena.chat.id": telemetry.chatIdAttr(groupId) } },
-								async (span) => {
-									const msgs = await SummaryCommands.getRecentMessages(groupId, 15);
-									const count = Array.isArray(msgs) ? msgs.length : 0;
-									if (span) span.setAttribute("ravena.group.recent_messages_count", count);
-									return Array.isArray(msgs) ? msgs : [];
-								}
-							);
-							recentMessagesText = formatLeaveRecentMessages(recentMessages);
-						} catch (recentErr) {
-							this.logger.error("Erro ao carregar últimas mensagens para log de saída:", recentErr);
-						}
-
-						// Auto-bloqueio se removido em menos de 7 dias e quem removeu não é doador
-						// Aplica-se a bots normais e comunitários (apenas VIP e privado são isentos)
-						let blockLogsText = "";
-						const msgSubsequentCommands = "";
-						const shouldPunishRemoval = !bot.vip && !bot.privado;
-
-						const currentPeriod =
-							periods && periods.length > 0 ? periods[periods.length - 1] : null;
-						const durationMs =
-							currentPeriod?.duration ??
-							(currentPeriod?.join_timestamp ? Date.now() - currentPeriod.join_timestamp : null);
-						const isLessThan24Hours =
-							durationMs !== null
-								? durationMs < 24 * 60 * 60 * 1000
-								: group.date
-									? Date.now() - group.date < 24 * 60 * 60 * 1000
-									: false;
-						const isLessThan7Days =
-							durationMs !== null
-								? durationMs < 7 * 24 * 60 * 60 * 1000
-								: group.date
-									? Date.now() - group.date < 7 * 24 * 60 * 60 * 1000
-									: false;
-
-											for (const ch of oldKick) {
-												const chName = ch.channel;
-												const stillUsed = allGroups.some(
-													(g) =>
-														g.id !== groupId &&
-														Array.isArray(g.kick) &&
-														g.kick.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+									try {
+										for (const ch of oldKick) {
+											const chName = ch.channel;
+											const stillUsed = allGroups.some(
+												(g) =>
+													g.id !== groupId &&
+													Array.isArray(g.kick) &&
+													g.kick.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+											);
+											if (!stillUsed) {
+												streamMonitor.unsubscribe(chName, "kick");
+												this.logger.debug(
+													`[processGroupLeave] Desinscrito canal Kick sem grupos restantes: ${chName}`
 												);
-												if (!stillUsed) {
-													streamMonitor.unsubscribe(chName, "kick");
-													this.logger.debug(
-														`[processGroupLeave] Desinscrito canal Kick sem grupos restantes: ${chName}`
-													);
-												}
 											}
+										}
 
-											for (const ch of oldYoutube) {
-												const chName = ch.channel;
-												const stillUsed = allGroups.some(
-													(g) =>
-														g.id !== groupId &&
-														Array.isArray(g.youtube) &&
-														g.youtube.some(
-															(c) => c.channel?.toLowerCase() === chName?.toLowerCase()
-														)
+										for (const ch of oldYoutube) {
+											const chName = ch.channel;
+											const stillUsed = allGroups.some(
+												(g) =>
+													g.id !== groupId &&
+													Array.isArray(g.youtube) &&
+													g.youtube.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+											);
+											if (!stillUsed) {
+												streamMonitor.unsubscribe(chName, "youtube");
+												this.logger.debug(
+													`[processGroupLeave] Desinscrito canal YouTube sem grupos restantes: ${chName}`
 												);
-												if (!stillUsed) {
-													streamMonitor.unsubscribe(chName, "youtube");
-													this.logger.debug(
-														`[processGroupLeave] Desinscrito canal YouTube sem grupos restantes: ${chName}`
-													);
-												}
 											}
+										}
 
-											for (const ch of oldTiktok) {
-												const chName = ch.channel;
-												const stillUsed = allGroups.some(
-													(g) =>
-														g.id !== groupId &&
-														Array.isArray(g.tiktok) &&
-														g.tiktok.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+										for (const ch of oldTiktok) {
+											const chName = ch.channel;
+											const stillUsed = allGroups.some(
+												(g) =>
+													g.id !== groupId &&
+													Array.isArray(g.tiktok) &&
+													g.tiktok.some((c) => c.channel?.toLowerCase() === chName?.toLowerCase())
+											);
+											if (!stillUsed) {
+												streamMonitor.unsubscribe(chName, "tiktok");
+												this.logger.debug(
+													`[processGroupLeave] Desinscrito perfil TikTok sem grupos restantes: ${chName}`
 												);
-												if (!stillUsed) {
-													streamMonitor.unsubscribe(chName, "tiktok");
-													this.logger.debug(
-														`[processGroupLeave] Desinscrito perfil TikTok sem grupos restantes: ${chName}`
-													);
-												}
 											}
 										}
 									} catch (streamErr) {
@@ -2967,6 +2924,26 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 									this.logger.error(
 										"Erro ao carregar histórico de estadias para log de saída:",
 										historyErr
+									);
+								}
+
+								let recentMessagesText = "";
+								try {
+									const recentMessages = await telemetry.withSpan(
+										"group leave.recent_messages",
+										{ attributes: { "ravena.chat.id": telemetry.chatIdAttr(groupId) } },
+										async (span) => {
+											const msgs = await SummaryCommands.getRecentMessages(groupId, 15);
+											const count = Array.isArray(msgs) ? msgs.length : 0;
+											if (span) span.setAttribute("ravena.group.recent_messages_count", count);
+											return Array.isArray(msgs) ? msgs : [];
+										}
+									);
+									recentMessagesText = formatLeaveRecentMessages(recentMessages);
+								} catch (recentErr) {
+									this.logger.error(
+										"Erro ao carregar últimas mensagens para log de saída:",
+										recentErr
 									);
 								}
 
