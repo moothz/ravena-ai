@@ -106,7 +106,7 @@ async function runTests() {
 	const singleReturn = Array.isArray(singleRes) ? singleRes[0] : singleRes;
 	const singleText = singleReturn.options?.caption || singleReturn.content;
 
-	const expectedSingleUrl = `${WEB_BASE}/character/momoka-sagara`;
+	const expectedSingleUrl = `${WEB_BASE}/c/momoka-sagara`;
 	assert.ok(
 		singleText.includes(expectedSingleUrl),
 		`Roll único deveria conter o link ${expectedSingleUrl}. Texto:\n${singleText}`
@@ -124,7 +124,7 @@ async function runTests() {
 	);
 	console.log("✓ 1.2. extractCharacterFromRollText continua funcionando após o link.");
 
-	// ─── 2. Multi-roll: sem [Raridade], com !mu-casar <id>, link e dica !mu-c ─
+	// ─── 2. Multi-roll: sem [Raridade], sem comando !mu-casar <id>, link e dica !mu-c ─
 	console.log("2. Testando !mu-roll 3 (rolls múltiplos)...");
 	rollCallIndex = 0;
 	const msgMulti = createMessage({
@@ -139,7 +139,7 @@ async function runTests() {
 
 	["momoka-sagara", "artoria-pendragon"].forEach((id) => {
 		assert.ok(
-			multiText.includes(`> ${WEB_BASE}/character/${id}`),
+			multiText.includes(`> ${WEB_BASE}/c/${id}`),
 			`Multi-roll deveria trazer o link de ${id}. Texto:\n${multiText}`
 		);
 	});
@@ -147,11 +147,11 @@ async function runTests() {
 
 	["momoka-sagara", "artoria-pendragon"].forEach((id) => {
 		assert.ok(
-			multiText.includes(`> !mu-casar ${id}`),
-			`Multi-roll deve listar "> !mu-casar ${id}" para casar pelo nome. Texto:\n${multiText}`
+			!multiText.includes(`> !mu-casar ${id}`) && !multiText.includes(`!mu-casar ${id}`),
+			`Multi-roll não deve listar comando !mu-casar ${id}. Texto:\n${multiText}`
 		);
 	});
-	console.log('✓ 2.2. Linha "> !mu-casar <id>" presente para cada personagem livre.');
+	console.log('✓ 2.2. Linha "> !mu-casar <id>" removida para economizar caracteres.');
 
 	assert.ok(
 		!/\[(Comum|Raro|Incomum|Épico|Lendário)\]/.test(multiText),
@@ -164,13 +164,13 @@ async function runTests() {
 	console.log("✓ 2.3. Raridade exibida apenas pelo emoji (⚪🔵...) sem [Comum]/[Raro].");
 
 	const hint =
-		"*Para Casar*: Reagir com o emoji do número, responder a mensagem com !mu-c # (número do personagem) ou usar !mu-casar <nome>";
+		"*Para Casar*: Reagir com o emoji do número ou responder com !mu-c # (número do personagem)";
 	assert.ok(
 		multiText.includes(hint),
 		`Multi-roll deve trazer a dica de casamento. Texto:\n${multiText}`
 	);
 	const hintPos = multiText.indexOf(hint);
-	const lastLinkPos = multiText.lastIndexOf(`> ${WEB_BASE}/character/`);
+	const lastLinkPos = multiText.lastIndexOf(`> ${WEB_BASE}/c/`);
 	const casadosPos = multiText.indexOf("💔 *Casados:*");
 	assert.ok(hintPos > lastLinkPos, "A dica *Para Casar* deve vir após a lista de solteiros.");
 	assert.ok(
@@ -242,14 +242,14 @@ async function runTests() {
 
 	// ─── 5. getCharacterWebUrl / parse fazem encode e decode do slug ─────────
 	const customUrl = WaifuCommands.getCharacterWebUrl("waifu especial/2");
-	assert.strictEqual(customUrl, `${WEB_BASE}/character/waifu%20especial%2F2`);
+	assert.strictEqual(customUrl, `${WEB_BASE}/c/waifu%20especial%2F2`);
 	const encodedSlots = WaifuCommands.extractMultiRollSlotsFromText(
 		[
 			"🎲 Waifuletes! *2* rolls:",
 			"1️⃣ ⚪ Nome Um — Serie",
-			`> ${WEB_BASE}/character/waifu%20especial%2F2`,
+			`> ${WEB_BASE}/c/waifu%20especial%2F2`,
 			"2️⃣ ⚪ Nome Dois — Serie",
-			`> ${WEB_BASE}/character/segundo-id`
+			`> ${WEB_BASE}/c/segundo-id`
 		].join("\n")
 	);
 	assert.strictEqual(
