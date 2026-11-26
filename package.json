@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node --dns-result-order=ipv4first --require ./src/telemetry/otel.js index.js",
+    "test": "node --test --test-concurrency=1 --test-timeout=120000 src/testing/test_*.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
