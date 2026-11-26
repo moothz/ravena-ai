@@ -2828,6 +2828,10 @@ Para fazer a configuração do grupo sem poluir aqui, envie \`!g-painel\`, ou me
 									);
 
 									try {
+										const StreamMonitor = require("./services/StreamMonitor");
+										const streamMonitor = StreamMonitor.getInstance();
+										const allGroups = await this.database.getGroups();
+
 										for (const ch of oldKick) {
 											const chName = ch.channel;
 											const stillUsed = allGroups.some(
