@@ -66,14 +66,13 @@ async function sendGameNotice(api, chatId, text) {
 	const isWhatsAppChat =
 		chatId.includes("@") || (/^\d+$/.test(chatId) && chatId.length >= 10 && chatId.length <= 15);
 
-	let candidates = [];
 	if (isWhatsAppChat) {
-		candidates = api.bots.filter((b) => b.isConnected && !b.useTelegram && !b.useDiscord);
-		if (candidates.length === 0) {
-			const fallbackWa = api.bots.find((b) => !b.useTelegram && !b.useDiscord);
-			if (fallbackWa) candidates = [fallbackWa];
-		}
-	} else if (/^\d{17,20}$/.test(chatId)) {
+		// Bots de WhatsApp nunca devem enviar avisos proativos no PV (apenas Telegram/Discord).
+		return false;
+	}
+
+	let candidates = [];
+	if (/^\d{17,20}$/.test(chatId)) {
 		candidates = [
 			api.bots.find((b) => b.useDiscord && b.isConnected) || api.bots.find((b) => b.useDiscord)
 		].filter(Boolean);

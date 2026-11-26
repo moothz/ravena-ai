@@ -661,7 +661,7 @@ async function runTests() {
 	assert.ok(!coldResults[0].id, "Bloqueio não pode devolver id de mensagem falso");
 	assert.strictEqual(publicGo.calls.length, 0);
 
-	// Loop de fallback entre bots (ex.: gamesRoutes.sendGameNotice) deve pular o bot bloqueado
+	// gamesRoutes.sendGameNotice nunca deve enviar mensagens proativas no PV do WhatsApp
 	const { sendGameNotice } = require("../BotAPI/routes/gamesRoutes");
 	const fallbackCold = createSpyBot({
 		id: "fallback-cold",
@@ -686,10 +686,13 @@ async function runTests() {
 		fallbackTarget,
 		"Bônus creditado!"
 	);
-	assert.strictEqual(delivered, true, "Algum bot com PV prévio deve entregar o aviso");
-	assert.strictEqual(fallbackCold.calls.length, 0, "Bot sem PV prévio não pode enviar");
-	assert.strictEqual(fallbackWarm.calls.length, 1, "Fallback deve seguir para o próximo bot");
-	assert.strictEqual(fallbackWarm.calls[0].payload.text, "Bônus creditado!");
+	assert.strictEqual(delivered, false, "WhatsApp nunca deve enviar aviso proativo no PV");
+	assert.strictEqual(fallbackCold.calls.length, 0, "Bot WhatsApp não pode enviar aviso no PV");
+	assert.strictEqual(
+		fallbackWarm.calls.length,
+		0,
+		"Bot WhatsApp não pode enviar aviso no PV mesmo com interação prévia"
+	);
 
 	// Grupos (@g.us e legado 120363...) e o próprio número não são bloqueados
 	await publicGo.inst.sendMessage("120363041254059254@g.us", "log normal");
