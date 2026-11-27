@@ -37,6 +37,7 @@ graph TD
     end
 
     subgraph GAMES ["🎮 Jogos"]
+        bicho["bicho.db → bicho_config, bicho_draws, bicho_bets, bicho_subscriptions"]
         slots["slots.db → slots_users, slots_group_stats"]
         tarot["tarot.db → tarot_users"]
         pinto["pinto.db → pinto_users, pinto_group_stats"]
@@ -309,6 +310,14 @@ Histórico de temporadas encerradas por grupo.
 ---
 
 ## 🎮 Jogos
+
+### `bicho.db`
+Jogo do Bicho tradicional em Runas (ᚱ).
+Tabelas:
+- `bicho_config`: Configurações dinâmicas de cotações, limites e horários de sorteio/corte editáveis via `/admin`.
+- `bicho_draws`: Registro histórico das extrações diárias oficiais (5 milhares, total apostado, total pago e contagem de ganhadores).
+- `bicho_bets`: Bilhetes de apostas registrados pelos usuários (`OPEN`, `WON`, `LOST`), valores, cotações e teto de pagamento.
+- `bicho_subscriptions`: Grupos cadastrados para receber os avisos automáticos do sorteio das 19:00 BRT.
 
 ### `fazenda.db`
 Minigame Jardim das Sombras.

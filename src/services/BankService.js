@@ -643,6 +643,64 @@ class BankService {
 	}
 
 	/**
+	 * Debita Runas da conta do usuário de forma atômica (Compare-And-Swap)
+	 * Utilizado para pagamentos de apostas (ex: Jogo do Bicho) ou compras de serviços
+	 * @param {string} userId
+	 * @param {number} amount
+	 * @param {Object} options
+	 * @returns {Promise<Object>} Conta atualizada
+	 */
+	async debitRunas(userId, amount, options = {}) {
+		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+		amount = Math.max(0, Number(amount) || 0);
+		if (amount <= 0) {
+			throw new Error("O valor para débito de Runas deve ser maior que zero.");
+		}
+
+		const account = await this.getAccount(cleanUser);
+		if (!account || account.runas < amount) {
+			const atual = account?.runas || 0;
+			throw new Error(
+				`Saldo insuficiente de Runas. Você possui ${atual.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ᚱ, mas a aposta/operação requer ${amount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })} ᚱ.`
+			);
+		}
+
+		const now = Date.now();
+		const debitRes = await database.dbRun(
+			dbName,
+			`UPDATE bank_accounts SET 
+				runas = runas - ?, 
+				total_withdrawn_runas = total_withdrawn_runas + ?, 
+				updated_at = ? 
+			WHERE (user_id = ? OR user_id = ?) AND runas >= ?`,
+			[amount, amount, now, userId, cleanUser, amount]
+		);
+
+		if (!debitRes || debitRes.changes === 0) {
+			throw new Error("Falha de concorrência ou saldo insuficiente no momento do débito.");
+		}
+
+		if (options.recordTransaction !== false) {
+			await database.dbRun(
+				dbName,
+				`INSERT INTO bank_transactions (user_id, type, game, game_amount, runas_amount, spread_rate, spread_fee_runas, details_json, timestamp)
+				VALUES (?, ?, ?, ?, ?, 0, 0, ?, ?)`,
+				[
+					cleanUser,
+					options.type || "BET",
+					options.source || "bicho",
+					0,
+					amount,
+					JSON.stringify(options.details || {}),
+					now
+				]
+			);
+		}
+
+		return await this.getAccount(cleanUser);
+	}
+
+	/**
 	 * Consulta as cotas diárias de câmbio usadas e restantes
 	 */
 	async getDailyQuota(userId) {

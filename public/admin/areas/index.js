@@ -11,10 +11,22 @@ import logs from "./logs.js";
 import banco from "./banco.js";
 import eventos from "./eventos.js";
 import carga from "./carga.js";
+import bicho from "./bicho.js";
 import pessoas from "./pessoas.js";
 import mais from "./mais.js";
 
-export const AREAS = [geral, instancias, provedores, logs, banco, eventos, carga, pessoas, mais];
+export const AREAS = [
+	geral,
+	instancias,
+	provedores,
+	logs,
+	banco,
+	eventos,
+	carga,
+	bicho,
+	pessoas,
+	mais
+];
 
 /** Grupos do menu lateral, na ordem. */
 export const GROUPS = ["Operação", "Jogos", "Pessoas"];
