@@ -80,7 +80,7 @@ async function runTests() {
 	// --------------------------------------------------------------------------
 	console.log("\n[3] Testando início de sessão no PV com usuário alvo...");
 	bot.resetCapture();
-	const targetUser = "553183954435";
+	const targetUser = "550000000000";
 	const msgStart = createMessage({
 		content: `!sa-analisaReport ${targetUser}`,
 		author: adminPhone,

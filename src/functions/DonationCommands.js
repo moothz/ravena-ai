@@ -147,8 +147,9 @@ async function showTopDonors(bot, message, args, group) {
 	try {
 		const chatId = message.group ?? message.author;
 
-		// Obtém todas as doações
-		const donations = await database.getDonations();
+		// Obtém todas as doações com valor >= R$ 1
+		const allDonations = await database.getDonations();
+		const donations = (allDonations || []).filter((d) => (Number(d.valor) || 0) >= 1);
 
 		if (!donations || donations.length === 0) {
 			return new ReturnMessage({
@@ -157,20 +158,21 @@ async function showTopDonors(bot, message, args, group) {
 			});
 		}
 
-		// 1. Encontra a última doação absoluta
+		// 1. Encontra a última doação absoluta (com valor >= R$ 1)
 		let lastDonationEntry = null;
 		let lastDonorName = "";
 
 		donations.forEach((donor) => {
-			if (donor.historico && donor.historico.length > 0) {
-				const donorLatest = donor.historico.reduce((latest, h) =>
+			const validHistory = (donor.historico || []).filter((h) => (Number(h.valor) || 0) >= 1);
+			if (validHistory.length > 0) {
+				const donorLatest = validHistory.reduce((latest, h) =>
 					h.ts > (latest.ts || 0) ? h : latest
 				);
 				if (!lastDonationEntry || donorLatest.ts > lastDonationEntry.ts) {
 					lastDonationEntry = donorLatest;
 					lastDonorName = donor.nome;
 				}
-			} else if (donor.timestamp) {
+			} else if (donor.timestamp && (Number(donor.valor) || 0) >= 1) {
 				if (!lastDonationEntry || donor.timestamp > (lastDonationEntry.ts || 0)) {
 					lastDonationEntry = { ts: donor.timestamp, valor: donor.valor };
 					lastDonorName = donor.nome;
@@ -193,7 +195,7 @@ async function showTopDonors(bot, message, args, group) {
 
 		donations.forEach((donor) => {
 			const recentAmount = (donor.historico ?? [])
-				.filter((h) => h.ts > threeMonthsAgoTs)
+				.filter((h) => h.ts > threeMonthsAgoTs && (Number(h.valor) || 0) >= 1)
 				.reduce((sum, h) => sum + h.valor, 0);
 
 			// Fallback: se não há histórico, mas o timestamp principal é recente, usa o valor total.
@@ -205,11 +207,11 @@ async function showTopDonors(bot, message, args, group) {
 				donor.timestamp > threeMonthsAgoTs
 			) {
 				const fallbackAmount = donor.valor;
-				if (fallbackAmount > 0) {
+				if (fallbackAmount >= 1) {
 					totalRecentAmount += fallbackAmount;
 					recentDonorsSummary[donor.nome] = { nome: donor.nome, valor: fallbackAmount };
 				}
-			} else if (recentAmount > 0) {
+			} else if (recentAmount >= 1) {
 				totalRecentAmount += recentAmount;
 				recentDonorsSummary[donor.nome] = { nome: donor.nome, valor: recentAmount };
 			}

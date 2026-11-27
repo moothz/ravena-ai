@@ -192,7 +192,9 @@ function registerWebhooksRoutes(api) {
 	app.get("/top-donates", async (req, res) => {
 		try {
 			const donations = await api.database.getDonations();
-			const publicDonations = donations.map(({ nome, valor }) => ({ nome, valor }));
+			const publicDonations = donations
+				.filter(({ valor }) => (Number(valor) || 0) >= 1)
+				.map(({ nome, valor }) => ({ nome, valor }));
 			res.json(publicDonations);
 		} catch (error) {
 			if (error.code === "ENOENT") {
@@ -221,11 +223,13 @@ function registerWebhooksRoutes(api) {
 				nome: donor.nome,
 				valor: donor.valor,
 				timestamp: donor.timestamp,
-				historico: (donor.historico || []).map((h) => ({
-					ts: h.ts,
-					valor: h.valor,
-					msg: h.msg || ""
-				}))
+				historico: (donor.historico || [])
+					.filter((h) => (Number(h.valor) || 0) >= 1)
+					.map((h) => ({
+						ts: h.ts,
+						valor: h.valor,
+						msg: h.msg || ""
+					}))
 			});
 		} catch (error) {
 			api.logger.error("Erro ao buscar detalhes do doador:", error);
@@ -247,7 +251,7 @@ function registerWebhooksRoutes(api) {
 
 			donations.forEach((donor) => {
 				const recentAmount = (donor.historico ?? [])
-					.filter((h) => h.ts > threeMonthsAgoTs)
+					.filter((h) => h.ts > threeMonthsAgoTs && (Number(h.valor) || 0) >= 1)
 					.reduce((sum, h) => sum + h.valor, 0);
 
 				if (
@@ -257,11 +261,11 @@ function registerWebhooksRoutes(api) {
 					donor.timestamp > threeMonthsAgoTs
 				) {
 					const fallbackAmount = donor.valor;
-					if (fallbackAmount > 0) {
+					if (fallbackAmount >= 1) {
 						totalRecentAmount += fallbackAmount;
 						recentDonorsSummary[donor.nome] = { nome: donor.nome, valor: fallbackAmount };
 					}
-				} else if (recentAmount > 0) {
+				} else if (recentAmount >= 1) {
 					totalRecentAmount += recentAmount;
 					recentDonorsSummary[donor.nome] = { nome: donor.nome, valor: recentAmount };
 				}
