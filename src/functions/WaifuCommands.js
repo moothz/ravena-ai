@@ -2326,9 +2326,10 @@ function makeRollHandler(genderFilter) {
 				firstRollData?.isMythic ||
 				String(firstRollData?.character?.rarity || "").toUpperCase() === "MYTHIC"
 			);
+			const firstMarriedRefunded = Boolean(firstRollData?.marriedRollRefunded);
 
-			// Roll sem resultado ou mítico (míticos não consomem o bônus da fazenda): devolve a reserva
-			if (!firstRollData || firstIsMythic) {
+			// Roll sem resultado, mítico ou casado devolvido: devolve a reserva da fazenda
+			if (!firstRollData || firstIsMythic || firstMarriedRefunded) {
 				await releaseFarmReservation(userId, firstReservation);
 			} else if (firstReservation.reserved) {
 				consumedFarmBonus = { consumed: true, type: firstReservation.type };
@@ -2477,6 +2478,9 @@ function makeRollHandler(genderFilter) {
 					} else {
 						const keys = keyProgress?.currentKeys ?? 1;
 						text += `✨ *Você rolou seu próprio personagem!*\n🔑 Chaves acumuladas: *${keys}/10*`;
+						if (firstRollData?.soulmateBonusRolls > 0) {
+							text += `\n💖 *Já é Soulmate!* +*${firstRollData.soulmateBonusRolls} rolls grátis* adicionados ao seu saldo!`;
+						}
 						if (keyProgress?.becameSoulmateNow) {
 							text += `\n\n💖 *PARABÉNS! ${character.name} agora é oficialmente sua SOULMATE permanente!*`;
 							notifySoulmateAchievement(bot, character, name).catch((eNotif) => {
@@ -2515,6 +2519,15 @@ function makeRollHandler(genderFilter) {
 
 				if (firstRollData?.mythicRollRefunded || isMythic) {
 					text += `\n\n🔮 *Roll Mítico!* Nenhum roll foi gasto (devolvido ao seu saldo).`;
+				} else if (firstRollData?.marriedRollRefunded) {
+					text += `\n\n💔 *Roll de Casado devolvido!* Nenhum roll foi gasto (devolvido ao seu saldo).`;
+				}
+
+				if (telemetry && typeof telemetry.setAttrs === "function") {
+					telemetry.setAttrs({
+						"ravena.waifu.married_refunded_count": firstMarriedRefunded ? 1 : 0,
+						"ravena.waifu.soulmate_bonus_rolls": Number(firstRollData?.soulmateBonusRolls) || 0
+					});
 				}
 
 				if (typeof rollsRemaining === "number" && typeof maxRolls === "number") {
@@ -2681,8 +2694,10 @@ function makeRollHandler(genderFilter) {
 							stepData.isMythic ||
 							String(stepData.character?.rarity || "").toUpperCase() === "MYTHIC"
 						);
+						const stepMarriedRefunded = Boolean(stepData.marriedRollRefunded);
+						const stepSoulmateBonus = Number(stepData.soulmateBonusRolls) || 0;
 						allRollResults.push(stepData);
-						if (stepIsMythic) {
+						if (stepIsMythic || stepMarriedRefunded) {
 							await releaseFarmReservation(userId, stepReservation);
 						} else if (stepReservation.reserved) {
 							totalFarmConsumedInBatch++;
@@ -2690,8 +2705,10 @@ function makeRollHandler(genderFilter) {
 								farmBonusesConsumedList.push(stepReservation.type);
 							}
 						}
-						if (stepIsMythic && rollsToExecute < requestedRolls) {
+						if ((stepIsMythic || stepMarriedRefunded) && rollsToExecute < requestedRolls) {
 							rollsToExecute++;
+						} else if (stepSoulmateBonus > 0 && rollsToExecute < requestedRolls) {
+							rollsToExecute = Math.min(requestedRolls, rollsToExecute + stepSoulmateBonus);
 						}
 					} else {
 						await releaseFarmReservation(userId, stepReservation);
@@ -2736,6 +2753,8 @@ function makeRollHandler(genderFilter) {
 					series: char.series,
 					rarity,
 					isMythic,
+					marriedRollRefunded: Boolean(r.marriedRollRefunded),
+					soulmateBonusRolls: Number(r.soulmateBonusRolls) || 0,
 					available: isAvailable,
 					isMarried,
 					isOwner: Boolean(r.isOwner),
@@ -2864,7 +2883,9 @@ function makeRollHandler(genderFilter) {
 						const isSoulmateNow = s.keyProgress?.becameSoulmateNow;
 						const soulmateTag = isSoulmateNow
 							? " (💖 SOULMATE ALCANÇADO! 10/10)"
-							: ` (🔑 Chaves: ${keysCount}/10)`;
+							: s.soulmateBonusRolls > 0
+								? ` (💖 Soulmate • +${s.soulmateBonusRolls} rolls)`
+								: ` (🔑 Chaves: ${keysCount}/10)`;
 						text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${soulmateTag}\n`;
 						if (isSoulmateNow) {
 							notifySoulmateAchievement(
@@ -2940,7 +2961,8 @@ function makeRollHandler(genderFilter) {
 					const emojiRarity = RARITY_EMOJI[normRarity] || "⚪";
 					const ownerInfo = s.owner?.name ? ` (${s.owner.name})` : "";
 					const mythicTag = s.isMythic ? " 🔮 [Mítico]" : "";
-					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${ownerInfo}${mythicTag}\n`;
+					const refundTag = s.marriedRollRefunded ? " 🎟️ [Refund]" : "";
+					text += `${emojiNum} ${emojiRarity} ${truncateRollText(s.characterName, 20)} — ${truncateRollText(s.series || "", 20)}${ownerInfo}${mythicTag}${refundTag}\n`;
 				});
 				text += "\n";
 			}
@@ -2964,10 +2986,30 @@ function makeRollHandler(genderFilter) {
 					r.character?.isMythic ||
 					String(r.character?.rarity || "").toUpperCase() === "MYTHIC"
 			).length;
+			const marriedRefundCount = allRollResults.filter((r) =>
+				Boolean(r.marriedRollRefunded)
+			).length;
+			const soulmateBonusTotal = allRollResults.reduce(
+				(sum, r) => sum + (Number(r.soulmateBonusRolls) || 0),
+				0
+			);
+
+			if (telemetry && typeof telemetry.setAttrs === "function") {
+				telemetry.setAttrs({
+					"ravena.waifu.married_refunded_count": marriedRefundCount,
+					"ravena.waifu.soulmate_bonus_rolls": soulmateBonusTotal
+				});
+			}
 
 			text += `✨ *Fragmentos colhidos:* +${totalScrap} Zinthos\n\n`;
 			if (mythicRefundCount > 0) {
 				text += `🔮 *${mythicRefundCount} Roll(s) Mítico(s) devolvido(s)!*\n`;
+			}
+			if (marriedRefundCount > 0) {
+				text += `💔 *${marriedRefundCount} Roll(s) de Casado(s) devolvido(s)!*\n`;
+			}
+			if (soulmateBonusTotal > 0) {
+				text += `💖 *+${soulmateBonusTotal} Roll(s) Bônus de Soulmate!*\n`;
 			}
 			text += `🎟️ Rolls restantes: ${lastRemaining}/${lastMax}`;
 			if (totalFarmConsumedInBatch > 0) {

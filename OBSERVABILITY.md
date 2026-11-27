@@ -171,6 +171,7 @@ Versões: o SDK está fixado na linha `@opentelemetry/sdk-node@0.223.x`, a últi
 | `sticker sound.fuse` | INTERNAL | Fusão de figurinha citada com áudio (`[figurinha] -> [áudio] -> !s`): `ravena.sticker.crop_type`, `ravena.sticker.has_audio`, `ravena.sticker.audio_mime`, `app.outcome`/`app.reject.reason` (`audio_without_quoted_sticker`). Atributos extras em `command sticker`/`command s`: `ravena.sticker.crop_type`, `ravena.sticker.has_audio`, `ravena.sticker.extracted_audio` |
 | `sticker text.render` | INTERNAL | Renderização de bubble estilo WhatsApp para `!s` em reply de mensagem de texto: `ravena.sticker.text_length`, `ravena.sticker.text_truncated` |
 | `group leave.recent_messages` | INTERNAL | Busca até 15 mensagens recentes do grupo (`SummaryCommands.getRecentMessages`) para compor a notificação de saída do bot: `ravena.chat.id`, `ravena.group.recent_messages_count` |
+| `command mu-roll` / `command mu-rollm` / `command mu-rollf` (atributos extras) | INTERNAL | `ravena.waifu.married_refunded_count` (inteiro: rolls devolvidos por casado no lote) e `ravena.waifu.soulmate_bonus_rolls` (inteiro: rolls grátis somados por soulmate no lote) |
 
 **Resultado do comando quando o microsserviço rejeita.** Os hooks de HTTP ligam cada chamada ao waifuletes/Jardim ao span do comando. Se o código do comando não definiu `app.outcome`, vale a última resposta de parceiro a uma **operação mutável** (POST/PUT/PATCH/DELETE). Se o comando só fez leituras, vale a última resposta:
 - 4xx → `rejected` + `downstream_<status>`;
