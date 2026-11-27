@@ -702,7 +702,8 @@ class BotAPI {
 	 */
 	async notifyGroupsAboutDonation(name, amount, message, donationTotal = 0, existingDonor = null) {
 		try {
-			const ignorar = message.includes("#ravprivate") ?? false;
+			const ignorar =
+				typeof message === "string" && /#\s*rav(?:ena)?\s*priva(?:da|te)/i.test(message);
 
 			const totalMsg =
 				donationTotal > 0
