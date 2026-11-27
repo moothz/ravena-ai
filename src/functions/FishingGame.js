@@ -12,6 +12,7 @@ const ReturnMessage = require("../models/ReturnMessage");
 const ProfilePictureHelper = require("../utils/ProfilePictureHelper");
 const LLMService = require("../services/LLMService");
 const GameEventService = require("../services/GameEventService");
+const { CAP_OVERFLOW_RUNAS_FACTOR } = require("../services/economyConstants");
 const { broadcastToWhatsAppNoticeChannels } = require("../utils/BroadcastHelper");
 
 const logger = new Logger("fishing-game");
@@ -747,8 +748,9 @@ function getCarteiraRunasPerCast() {
 
 function computeOverflowRunasValue(item) {
 	const groupSize = UPGRADES.filter((u) => u.effect === item?.effect).length || 1;
-	if (!item?.chance) return 50;
-	return Math.max(50, Math.round(getCarteiraRunasPerCast() / groupSize / item.chance / 50) * 50);
+	if (!item?.chance) return Math.max(1, Math.round(50 * CAP_OVERFLOW_RUNAS_FACTOR));
+	const baseVal = Math.max(50, Math.round(getCarteiraRunasPerCast() / groupSize / item.chance / 50) * 50);
+	return Math.max(1, Math.round(baseVal * CAP_OVERFLOW_RUNAS_FACTOR));
 }
 
 // Inventário: Bolso 450 | Calça 900 | Mochilão 36.650 — Limite de iscas: Pochete 650 | Caixa 1.300 |

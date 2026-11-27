@@ -40,6 +40,7 @@ const {
 	BASE_RUNAS_PER_ZINTHOS,
 	BASE_RUNAS_PER_JARDIM,
 	DAILY_LIMITS,
+	WEEKLY_LIMITS,
 	STORE_PRICES,
 	STORE_LIMITS,
 	economyParams
@@ -294,6 +295,46 @@ class BankService {
 	getLastResetTimestamp(date = new Date()) {
 		const todayDateStr = this.getTodayDateString(date);
 		return Date.parse(`${todayDateStr}T07:00:00.000Z`);
+	}
+
+	getWeekStartTimestamp(date = new Date()) {
+		// Semana bancária começa na segunda-feira às 04:00 AM BRT (07:00 UTC)
+		const bankingTime = new Date(date.getTime() - 7 * 3600 * 1000);
+		const utcDay = bankingTime.getUTCDay();
+		const daysSinceMonday = (utcDay + 6) % 7;
+		const mondayBanking = new Date(bankingTime.getTime() - daysSinceMonday * 86400000);
+		const mondayDateStr = mondayBanking.toISOString().split("T")[0];
+		return Date.parse(`${mondayDateStr}T07:00:00.000Z`);
+	}
+
+	/**
+	 * Consulta a cota semanal de vendas/depósitos (500k base + inflação, independente da fonte)
+	 */
+	async getWeeklyDepositQuota(userId, rates = null) {
+		const cleanUser = String(userId).replace(/\D/g, "") || String(userId);
+		const r = rates || (await this.getRates());
+		const inflationPct = Math.max(0, Number(r?.waifuInflationPercent || 0));
+		const limit = Math.round(WEEKLY_LIMITS.venda_runas_base * (1 + inflationPct / 100));
+		const weekStart = this.getWeekStartTimestamp();
+
+		const row = await database.dbGet(
+			dbName,
+			`SELECT COALESCE(SUM(runas_amount), 0) AS total
+			 FROM bank_transactions
+			 WHERE (user_id = ? OR user_id = ?)
+			   AND type = 'DEPOSIT'
+			   AND timestamp >= ?`,
+			[userId, cleanUser, weekStart]
+		);
+
+		const used = Number(row?.total || 0);
+		return {
+			weekStart,
+			limit,
+			used,
+			remaining: Math.max(0, limit - used),
+			inflationPercent: inflationPct
+		};
 	}
 
 	/**
@@ -666,6 +707,7 @@ class BankService {
 		const iscasCompraUsed = Number(row?.iscas_compra_used || 0);
 
 		const rates = await this.getRates();
+		const weekly = await this.getWeeklyDepositQuota(cleanUser, rates);
 		const limits = {
 			...DAILY_LIMITS,
 			compra_zinthos: rates.quotaCompraZinthos || DAILY_LIMITS.compra_zinthos,
@@ -674,9 +716,13 @@ class BankService {
 			jardim: rates.quotaCompraJardim || DAILY_LIMITS.compra_jardim
 		};
 
+		const dailyVendaRemaining = Math.max(0, limits.venda_runas - runasVendaUsed);
+		const effectiveVendaRemaining = Math.min(dailyVendaRemaining, weekly.remaining);
+
 		return {
 			date: today,
 			limits,
+			weekly,
 			used: {
 				venda_runas: runasVendaUsed,
 				compra_zinthos: zinthosCompraUsed,
@@ -689,14 +735,16 @@ class BankService {
 				compra: compraUsed
 			},
 			remaining: {
-				venda_runas: Math.max(0, limits.venda_runas - runasVendaUsed),
+				venda_runas: effectiveVendaRemaining,
+				venda_runas_diaria: dailyVendaRemaining,
+				venda_runas_semanal: weekly.remaining,
 				compra_zinthos: Math.max(0, limits.compra_zinthos - zinthosCompraUsed),
 				compra_jardim: Math.max(0, limits.compra_jardim - jardimCompraUsed),
 				compra_moedas: Math.max(0, limits.compra_moedas - moedasCompraUsed),
 				compra_iscas: Math.max(0, limits.compra_iscas - iscasCompraUsed),
-				venda: Math.max(0, limits.venda_runas - runasVendaUsed),
-				compra: Math.max(0, limits.venda_runas - runasVendaUsed),
-				pesca: Math.max(0, limits.venda_runas - runasVendaUsed),
+				venda: effectiveVendaRemaining,
+				compra: effectiveVendaRemaining,
+				pesca: effectiveVendaRemaining,
 				zinthos: Math.max(0, limits.compra_zinthos - zinthosCompraUsed),
 				jardim: Math.max(0, limits.compra_jardim - jardimCompraUsed)
 			}
@@ -798,9 +846,14 @@ class BankService {
 			throw new Error("Informe uma quantidade válida de kg para vender (ex: 300 ou 'tudo').");
 		}
 
-		// Checa teto de cota diária de venda (300.000 Runas)
+		// Checa teto de cota diária e semanal de venda
 		const quotaRemainingRunas = quota.remaining.venda_runas;
 		if (quotaRemainingRunas <= 0) {
+			if (quota.weekly && quota.weekly.remaining <= 0) {
+				throw new Error(
+					`Você já atingiu seu limite semanal de vendas (${quota.weekly.limit.toLocaleString("pt-BR")} ᚱ/semana). O limite reseta segunda-feira às 04:00 AM!`
+				);
+			}
 			throw new Error(
 				`Você já atingiu sua cota diária de venda (${DAILY_LIMITS.venda_runas.toLocaleString("pt-BR")} ᚱ/dia). Volte amanhã às 04:00 AM!`
 			);
@@ -937,6 +990,11 @@ class BankService {
 
 		const quotaRemainingRunas = quota.remaining.venda_runas;
 		if (quotaRemainingRunas <= 0) {
+			if (quota.weekly && quota.weekly.remaining <= 0) {
+				throw new Error(
+					`Você já atingiu seu limite semanal de vendas (${quota.weekly.limit.toLocaleString("pt-BR")} ᚱ/semana). O limite reseta segunda-feira às 04:00 AM!`
+				);
+			}
 			throw new Error(
 				`Sua cota diária de venda (${DAILY_LIMITS.venda_runas.toLocaleString("pt-BR")} ᚱ/dia) já foi esgotada hoje. Volte amanhã às 04:00 AM!`
 			);
@@ -1069,6 +1127,11 @@ class BankService {
 
 		const quotaRemainingRunas = quota.remaining.venda_runas;
 		if (quotaRemainingRunas <= 0) {
+			if (quota.weekly && quota.weekly.remaining <= 0) {
+				throw new Error(
+					`Você já atingiu seu limite semanal de vendas (${quota.weekly.limit.toLocaleString("pt-BR")} ᚱ/semana). O limite reseta segunda-feira às 04:00 AM!`
+				);
+			}
 			throw new Error(
 				`Sua cota diária de venda (${DAILY_LIMITS.venda_runas.toLocaleString("pt-BR")} ᚱ/dia) já foi esgotada hoje. Volte amanhã às 04:00 AM!`
 			);

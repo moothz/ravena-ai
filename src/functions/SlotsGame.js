@@ -5,6 +5,7 @@ const Command = require("../models/Command");
 const ReturnMessage = require("../models/ReturnMessage");
 const FishingGame = require("./FishingGame");
 const GameEventService = require("../services/GameEventService");
+const { SLOTS_RUNAS_FACTOR } = require("../services/economyConstants");
 const telemetry = require("../telemetry");
 
 const logger = new Logger("slots-game");
@@ -251,9 +252,9 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			cashbackPercent
 		};
 	} else if (r < 100) {
-		// 15%: 600 a 2000 Runas (ᚱ) no RavenaBank, 3 tickets de waifus
+		// 15%: 600 a 2000 Runas (ᚱ) no RavenaBank (ajustado por SLOTS_RUNAS_FACTOR), 3 tickets de waifus
 		let runas = Math.floor(Math.random() * (2000 - 600 + 1)) + 600;
-		runas *= mult;
+		runas = Math.max(1, Math.round(runas * mult * SLOTS_RUNAS_FACTOR));
 		let waifuTickets = 0;
 		if (isPartial) {
 			runas = Math.max(1, Math.floor(runas * cashbackRate));
@@ -274,9 +275,9 @@ function rollSingleReward(isPartial = false, isDiamond = false) {
 			cashbackPercent
 		};
 	} else {
-		// 10%: 1600 a 3000 Runas (ᚱ) no RavenaBank, 5 tickets de waifus
+		// 10%: 1600 a 3000 Runas (ᚱ) no RavenaBank (ajustado por SLOTS_RUNAS_FACTOR), 5 tickets de waifus
 		let runas = Math.floor(Math.random() * (3000 - 1600 + 1)) + 1600;
-		runas *= mult;
+		runas = Math.max(1, Math.round(runas * mult * SLOTS_RUNAS_FACTOR));
 		let waifuTickets = 0;
 		if (isPartial) {
 			runas = Math.max(1, Math.floor(runas * cashbackRate));

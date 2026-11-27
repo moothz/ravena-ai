@@ -32,6 +32,15 @@ const DAILY_LIMITS = {
 	compra: 300000
 };
 
+// Cota semanal de vendas/depósitos no RavenaBank (500.000 ᚱ base + inflação atual)
+const WEEKLY_LIMITS = {
+	venda_runas_base: 500000
+};
+
+// Fatores de ajuste de recompensas em Runas dos jogos
+const CAP_OVERFLOW_RUNAS_FACTOR = 0.3; // Bônus de upgrades/iscas no teto da pesca reduzido para 30% do atual
+const SLOTS_RUNAS_FACTOR = 0.8; // Prêmios em Runas nos slots reduzidos em 20% (80% do atual)
+
 // Configurações da Loja do RavenaBank (compra de consumíveis com Runas)
 const STORE_PRICES = {
 	moeda: 55, // 55 Runas por moedinha de Slots
@@ -50,8 +59,10 @@ const STORE_LIMITS = {
 function economyParams() {
 	return {
 		cambio: { BASE_RUNAS_PER_KG_FISH, BASE_RUNAS_PER_ZINTHOS, BASE_RUNAS_PER_JARDIM },
-		cotas: { DAILY_LIMITS },
-		loja: { STORE_PRICES, STORE_LIMITS }
+		cotas: { DAILY_LIMITS, WEEKLY_LIMITS },
+		loja: { STORE_PRICES, STORE_LIMITS },
+		pesca: { CAP_OVERFLOW_RUNAS_FACTOR },
+		slots: { SLOTS_RUNAS_FACTOR }
 	};
 }
 
@@ -63,6 +74,9 @@ module.exports = {
 	BASE_RUNAS_PER_ZINTHOS,
 	BASE_RUNAS_PER_JARDIM,
 	DAILY_LIMITS,
+	WEEKLY_LIMITS,
+	CAP_OVERFLOW_RUNAS_FACTOR,
+	SLOTS_RUNAS_FACTOR,
 	STORE_PRICES,
 	STORE_LIMITS,
 	economyParams,
