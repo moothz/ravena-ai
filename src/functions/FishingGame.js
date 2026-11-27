@@ -749,7 +749,10 @@ function getCarteiraRunasPerCast() {
 function computeOverflowRunasValue(item) {
 	const groupSize = UPGRADES.filter((u) => u.effect === item?.effect).length || 1;
 	if (!item?.chance) return Math.max(1, Math.round(50 * CAP_OVERFLOW_RUNAS_FACTOR));
-	const baseVal = Math.max(50, Math.round(getCarteiraRunasPerCast() / groupSize / item.chance / 50) * 50);
+	const baseVal = Math.max(
+		50,
+		Math.round(getCarteiraRunasPerCast() / groupSize / item.chance / 50) * 50
+	);
 	return Math.max(1, Math.round(baseVal * CAP_OVERFLOW_RUNAS_FACTOR));
 }
 

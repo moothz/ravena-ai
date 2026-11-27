@@ -2441,7 +2441,10 @@ async function main() {
 			);
 			const byReason = readAll(
 				file,
-				dashboardSql("De onde vem e para onde vai: tabela por motivo (últimos 7 dias)", { from: 0, to })
+				dashboardSql("De onde vem e para onde vai: tabela por motivo (últimos 7 dias)", {
+					from: 0,
+					to
+				})
 			);
 			const get = (m) => byReason.find((x) => x.Motivo === m);
 			assert.deepStrictEqual(Object.keys(byReason[0]), [
@@ -2466,24 +2469,46 @@ async function main() {
 			// nem fora do dinheiro; saldo da semana em texto, âmbar acima de 1% da massa
 			const bars = readAll(
 				file,
-				dashboardSql("De onde vem e para onde vai — ${moedas:text} (últimos 7 dias)", { from: 0, to, moeda: "zinthos" })
+				dashboardSql("De onde vem e para onde vai — ${moedas:text} (últimos 7 dias)", {
+					from: 0,
+					to,
+					moeda: "zinthos"
+				})
 			);
 			const bar = (m) => bars.find((x) => x.Motivo === m);
-			assert.deepStrictEqual(Object.keys(bars[0]), ["Motivo", "${moedas:text}: saiu", "${moedas:text}: entrou"]);
+			assert.deepStrictEqual(Object.keys(bars[0]), [
+				"Motivo",
+				"${moedas:text}: saiu",
+				"${moedas:text}: entrou"
+			]);
 			assert.deepStrictEqual(
-				[bar("Recompensa diária")["${moedas:text}: entrou"], bar("Taxa de hospedagem")["${moedas:text}: saiu"]],
+				[
+					bar("Recompensa diária")["${moedas:text}: entrou"],
+					bar("Taxa de hospedagem")["${moedas:text}: saiu"]
+				],
 				[100, -30]
 			);
-			assert.ok(!bars.some((x) => /Mercado|waifu confiscada/.test(x.Motivo)), "transferência/fora do dinheiro nas barras");
+			assert.ok(
+				!bars.some((x) => /Mercado|waifu confiscada/.test(x.Motivo)),
+				"transferência/fora do dinheiro nas barras"
+			);
 			const saldo = readAll(
 				file,
-				dashboardSql("Saldo da semana — ${moedas:text} (últimos 7 dias)", { from: 0, to, moeda: "zinthos" })
+				dashboardSql("Saldo da semana — ${moedas:text} (últimos 7 dias)", {
+					from: 0,
+					to,
+					moeda: "zinthos"
+				})
 			)[0];
 			assert.strictEqual(saldo["Saldo da semana"], "+122 Zinthos, criou bem mais do que destruiu");
 			assert.strictEqual(saldo["Entrou e saiu"], "entrou 197 · saiu 75");
 			const semExtrato = readAll(
 				file,
-				dashboardSql("Saldo da semana — ${moedas:text} (últimos 7 dias)", { from: 0, to, moeda: "petalitas" })
+				dashboardSql("Saldo da semana — ${moedas:text} (últimos 7 dias)", {
+					from: 0,
+					to,
+					moeda: "petalitas"
+				})
 			)[0];
 			assert.strictEqual(semExtrato["Saldo da semana"], null);
 			const daily = readAll(
@@ -2631,11 +2656,17 @@ async function main() {
 			assert.strictEqual(sep.spec.layout.spec.items[0].spec.repeat.value, "moedas");
 			const cond = (sec) => sec.conditional?.spec.items[0].spec;
 			const alma = layout[1].sections.find((s) => s.title === "Ciclo da alma gêmea (Zinthos)");
-			assert.deepStrictEqual(cond(alma), { variable: "moedas", operator: "equals", value: "zinthos" });
+			assert.deepStrictEqual(cond(alma), {
+				variable: "moedas",
+				operator: "equals",
+				value: "zinthos"
+			});
 			// Botões de moeda (Business Variable, variável moedas) no topo das abas com moeda, ao lado da pergunta
 			const repeatOf = (t) =>
 				dash.spec.layout.spec.tabs[t].spec.layout.spec.rows.flatMap((r) =>
-					r.spec.layout.spec.items.filter((i) => i.spec.repeat).map((i) => byName.get(i.spec.element.name).title)
+					r.spec.layout.spec.items
+						.filter((i) => i.spec.repeat)
+						.map((i) => byName.get(i.spec.element.name).title)
 				);
 			for (const t of [0, 1, 2, 4]) {
 				const first = layout[t].sections[0].elements.map((n) => byName.get(n));
@@ -2661,7 +2692,10 @@ async function main() {
 			const jogRows = dash.spec.layout.spec.tabs[2].spec.layout.spec.rows;
 			assert.strictEqual(jogRows[1].spec.repeat.value, "moedas");
 			for (const p of dashboardPanels().filter((x) => /\$\{moedas:text\}/.test(x.title)))
-				assert.ok(!/= '\$\{moeda/.test(p.targets[0]?.queryText || ""), `${p.title}: usa IN (\${moedas})`);
+				assert.ok(
+					!/= '\$\{moeda/.test(p.targets[0]?.queryText || ""),
+					`${p.title}: usa IN (\${moedas})`
+				);
 			// Ficha do jogador só com jogador escolhido; sem ele, a instrução
 			const jogSecs = dashboardLayout(DASHBOARD_JOGADORES)[0].sections;
 			assert.deepStrictEqual(

@@ -1,77 +1,79 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const commandList = document.getElementById('command-list');
-    const loading = document.getElementById('loading');
-    const toast = document.getElementById('toast');
-    const toastText = document.getElementById('toast-text');
-    const searchInput = document.getElementById('command-search');
-    const clearSearchBtn = document.getElementById('clear-search');
-    const noResults = document.getElementById('no-results');
-    const searchTermSpan = document.getElementById('search-term');
-    const categoryPillsContainer = document.getElementById('category-pills');
-    const categorySelect = document.getElementById('category-select');
-    const btnExpandAll = document.getElementById('btn-expand-all');
-    const btnCollapseAll = document.getElementById('btn-collapse-all');
-    const statTotalCmds = document.getElementById('stat-total-cmds');
-    const statTotalCats = document.getElementById('stat-total-cats');
+document.addEventListener("DOMContentLoaded", () => {
+	const commandList = document.getElementById("command-list");
+	const loading = document.getElementById("loading");
+	const toast = document.getElementById("toast");
+	const toastText = document.getElementById("toast-text");
+	const searchInput = document.getElementById("command-search");
+	const clearSearchBtn = document.getElementById("clear-search");
+	const noResults = document.getElementById("no-results");
+	const searchTermSpan = document.getElementById("search-term");
+	const categoryPillsContainer = document.getElementById("category-pills");
+	const categorySelect = document.getElementById("category-select");
+	const btnExpandAll = document.getElementById("btn-expand-all");
+	const btnCollapseAll = document.getElementById("btn-collapse-all");
+	const statTotalCmds = document.getElementById("stat-total-cmds");
+	const statTotalCats = document.getElementById("stat-total-cats");
 
-    // Nomes de exibição com acentuação/capitalização (as chaves das categorias vêm sem acento)
-    const CATEGORY_LABELS = {
-        interacao: 'Interação',
-        midia: 'Mídia',
-        voz: 'Voz',
-        audio: 'Áudio',
-        ravenabank: 'RavenaBank',
-        ia: 'IA'
-    };
-    const categoryLabel = (name) => CATEGORY_LABELS[String(name).toLowerCase()] || name;
+	// Nomes de exibição com acentuação/capitalização (as chaves das categorias vêm sem acento)
+	const CATEGORY_LABELS = {
+		interacao: "Interação",
+		midia: "Mídia",
+		voz: "Voz",
+		audio: "Áudio",
+		ravenabank: "RavenaBank",
+		ia: "IA"
+	};
+	const categoryLabel = (name) => CATEGORY_LABELS[String(name).toLowerCase()] || name;
 
-    let allLoadedCommands = [];
-    let activeCategoryFilter = 'all';
-    let lastTap = 0;
-    let toastTimeout = null;
+	const allLoadedCommands = [];
+	let activeCategoryFilter = "all";
+	let lastTap = 0;
+	let toastTimeout = null;
 
-    // Configuração do botão "Todas"
-    const allPill = categoryPillsContainer ? categoryPillsContainer.querySelector('[data-cat="all"]') : null;
-    if (allPill) {
-        allPill.addEventListener('click', () => {
-            resetCategoryFilterToAll();
-        });
-    }
+	// Configuração do botão "Todas"
+	const allPill = categoryPillsContainer
+		? categoryPillsContainer.querySelector('[data-cat="all"]')
+		: null;
+	if (allPill) {
+		allPill.addEventListener("click", () => {
+			resetCategoryFilterToAll();
+		});
+	}
 
-    // Configuração do select "Filtrar por Categoria" no Mobile
-    if (categorySelect) {
-        categorySelect.addEventListener('change', (e) => {
-            const cat = e.target.value;
-            document.querySelectorAll('.cat-pill').forEach(p => {
-                if (p.dataset.cat === cat) {
-                    p.classList.add('active');
-                } else {
-                    p.classList.remove('active');
-                }
-            });
-            filterByCategory(cat);
-        });
-    }
+	// Configuração do select "Filtrar por Categoria" no Mobile
+	if (categorySelect) {
+		categorySelect.addEventListener("change", (e) => {
+			const cat = e.target.value;
+			document.querySelectorAll(".cat-pill").forEach((p) => {
+				if (p.dataset.cat === cat) {
+					p.classList.add("active");
+				} else {
+					p.classList.remove("active");
+				}
+			});
+			filterByCategory(cat);
+		});
+	}
 
-    function resetCategoryFilterToAll() {
-        document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
-        if (allPill) allPill.classList.add('active');
-        if (categorySelect) categorySelect.value = 'all';
-        filterByCategory('all');
-    }
+	function resetCategoryFilterToAll() {
+		document.querySelectorAll(".cat-pill").forEach((p) => p.classList.remove("active"));
+		if (allPill) allPill.classList.add("active");
+		if (categorySelect) categorySelect.value = "all";
+		filterByCategory("all");
+	}
 
-    // Fetch and load public commands
-    async function fetchCommands() {
-        try {
-            const response = await fetch('/api/public-commands');
-            if (!response.ok) throw new Error('Falha ao carregar comandos do servidor');
-            const data = await response.json();
-            renderApp(data);
-            startRandomPlaceholder();
-        } catch (error) {
-            console.error('[cmd.js] Erro ao carregar comandos:', error);
-            if (loading) {
-                loading.innerHTML = `
+	// Fetch and load public commands
+	async function fetchCommands() {
+		try {
+			const response = await fetch("/api/public-commands");
+			if (!response.ok) throw new Error("Falha ao carregar comandos do servidor");
+			const data = await response.json();
+			renderApp(data);
+			startRandomPlaceholder();
+		} catch (error) {
+			console.error("[cmd.js] Erro ao carregar comandos:", error);
+			if (loading) {
+				loading.innerHTML = `
                     <div style="color: var(--danger-color); padding: 2rem 1rem;">
                         <i class="fas fa-exclamation-circle" style="font-size: 2rem; margin-bottom: 10px; display: block;"></i>
                         <p><strong>Erro ao carregar comandos:</strong> ${error.message}</p>
@@ -80,133 +82,131 @@ document.addEventListener('DOMContentLoaded', () => {
                         </button>
                     </div>
                 `;
-            }
-        }
-    }
+			}
+		}
+	}
 
-    function renderApp(data) {
-        if (loading) loading.remove();
+	function renderApp(data) {
+		if (loading) loading.remove();
 
-        let totalCmdsCount = 0;
-        let totalCatsCount = 0;
+		let totalCmdsCount = 0;
+		let totalCatsCount = 0;
 
-        // Limpa lista mantendo banners de aviso e info
-        const existingSections = commandList.querySelectorAll('.category-section');
-        existingSections.forEach(s => s.remove());
+		// Limpa lista mantendo banners de aviso e info
+		const existingSections = commandList.querySelectorAll(".category-section");
+		existingSections.forEach((s) => s.remove());
 
-        if (categorySelect) {
-            categorySelect.innerHTML = '<option value="all">🌟 Filtrar por Categoria (Todas)</option>';
-        }
+		if (categorySelect) {
+			categorySelect.innerHTML = '<option value="all">🌟 Filtrar por Categoria (Todas)</option>';
+		}
 
-        // 1. Processa Categorias Fixas
-        if (Array.isArray(data.categories)) {
-            data.categories.forEach((category, index) => {
-                if (!category.commands || category.commands.length === 0) return;
-                totalCatsCount++;
-                totalCmdsCount += category.commands.length;
+		// 1. Processa Categorias Fixas
+		if (Array.isArray(data.categories)) {
+			data.categories.forEach((category, index) => {
+				if (!category.commands || category.commands.length === 0) return;
+				totalCatsCount++;
+				totalCmdsCount += category.commands.length;
 
-                // Renderiza seção da categoria (primeira categoria aberta por padrão)
-                const section = createCategorySection(category, index === 0);
-                commandList.appendChild(section);
+				// Renderiza seção da categoria (primeira categoria aberta por padrão)
+				const section = createCategorySection(category, index === 0);
+				commandList.appendChild(section);
 
-                // Armazena comandos para autocomplete/placeholder
-                category.commands.forEach(cmd => {
-                    allLoadedCommands.push({
-                        ...cmd,
-                        categoryName: category.name,
-                        categoryEmoji: category.emoji
-                    });
-                });
+				// Armazena comandos para autocomplete/placeholder
+				category.commands.forEach((cmd) => {
+					allLoadedCommands.push({
+						...cmd,
+						categoryName: category.name,
+						categoryEmoji: category.emoji
+					});
+				});
 
-                // Cria Pill de Categoria
-                createCategoryPill(category.name, category.emoji, category.commands.length);
-            });
-        }
+				// Cria Pill de Categoria
+				createCategoryPill(category.name, category.emoji, category.commands.length);
+			});
+		}
 
-        // 2. Processa Comandos de Gerenciamento
-        if (data.management && Object.keys(data.management).length > 0) {
-            const mgmtCommands = Object.entries(data.management).map(([key, data]) => {
-                return {
-                    name: data.name || `g-${key}`,
-                    description: data.description || 'Comando de administração do grupo.',
-                    aliases: data.aliases || [],
-                    usage: data.usage || [`!g-${key}`],
-                    examples: data.examples || [`!g-${key}`],
-                    about: data.about || 'Configurações e moderação de grupos',
-                    isManagement: true
-                };
-            });
+		// 2. Processa Comandos de Gerenciamento
+		if (data.management && Object.keys(data.management).length > 0) {
+			const mgmtCommands = Object.entries(data.management).map(([key, data]) => ({
+				name: data.name || `g-${key}`,
+				description: data.description || "Comando de administração do grupo.",
+				aliases: data.aliases || [],
+				usage: data.usage || [`!g-${key}`],
+				examples: data.examples || [`!g-${key}`],
+				about: data.about || "Configurações e moderação de grupos",
+				isManagement: true
+			}));
 
-            totalCatsCount++;
-            totalCmdsCount += mgmtCommands.length;
+			totalCatsCount++;
+			totalCmdsCount += mgmtCommands.length;
 
-            const mgmtCategory = {
-                name: 'Gerenciamento',
-                emoji: '⚙️',
-                commands: mgmtCommands
-            };
+			const mgmtCategory = {
+				name: "Gerenciamento",
+				emoji: "⚙️",
+				commands: mgmtCommands
+			};
 
-            const mgmtSection = createCategorySection(mgmtCategory, false);
-            commandList.appendChild(mgmtSection);
+			const mgmtSection = createCategorySection(mgmtCategory, false);
+			commandList.appendChild(mgmtSection);
 
-            mgmtCommands.forEach(cmd => {
-                allLoadedCommands.push({
-                    ...cmd,
-                    categoryName: 'Gerenciamento',
-                    categoryEmoji: '⚙️'
-                });
-            });
+			mgmtCommands.forEach((cmd) => {
+				allLoadedCommands.push({
+					...cmd,
+					categoryName: "Gerenciamento",
+					categoryEmoji: "⚙️"
+				});
+			});
 
-            createCategoryPill('Gerenciamento', '⚙️', mgmtCommands.length);
-        }
+			createCategoryPill("Gerenciamento", "⚙️", mgmtCommands.length);
+		}
 
-        // Atualiza contadores do Hero e Badge Todas
-        if (statTotalCmds) statTotalCmds.textContent = totalCmdsCount;
-        if (statTotalCats) statTotalCats.textContent = totalCatsCount;
-        const allBadge = categoryPillsContainer.querySelector('#badge-all-count');
-        if (allBadge) allBadge.textContent = totalCmdsCount;
-        categoryPillsContainer.classList.add('is-loaded');
-    }
+		// Atualiza contadores do Hero e Badge Todas
+		if (statTotalCmds) statTotalCmds.textContent = totalCmdsCount;
+		if (statTotalCats) statTotalCats.textContent = totalCatsCount;
+		const allBadge = categoryPillsContainer.querySelector("#badge-all-count");
+		if (allBadge) allBadge.textContent = totalCmdsCount;
+		categoryPillsContainer.classList.add("is-loaded");
+	}
 
-    function createCategoryPill(name, emoji, count) {
-        const pill = document.createElement('button');
-        pill.className = 'cat-pill';
-        pill.dataset.cat = name.toLowerCase();
-        pill.type = 'button';
-        pill.innerHTML = `<span aria-hidden="true">${emoji}</span> ${escapeHtml(categoryLabel(name))} <span class="badge-count">${count}</span>`;
+	function createCategoryPill(name, emoji, count) {
+		const pill = document.createElement("button");
+		pill.className = "cat-pill";
+		pill.dataset.cat = name.toLowerCase();
+		pill.type = "button";
+		pill.innerHTML = `<span aria-hidden="true">${emoji}</span> ${escapeHtml(categoryLabel(name))} <span class="badge-count">${count}</span>`;
 
-        pill.addEventListener('click', () => {
-            if (pill.classList.contains('active')) {
-                resetCategoryFilterToAll();
-                return;
-            }
+		pill.addEventListener("click", () => {
+			if (pill.classList.contains("active")) {
+				resetCategoryFilterToAll();
+				return;
+			}
 
-            document.querySelectorAll('.cat-pill').forEach(p => p.classList.remove('active'));
-            pill.classList.add('active');
-            filterByCategory(name.toLowerCase());
-        });
+			document.querySelectorAll(".cat-pill").forEach((p) => p.classList.remove("active"));
+			pill.classList.add("active");
+			filterByCategory(name.toLowerCase());
+		});
 
-        categoryPillsContainer.appendChild(pill);
+		categoryPillsContainer.appendChild(pill);
 
-        if (categorySelect) {
-            const opt = document.createElement('option');
-            opt.value = name.toLowerCase();
-            opt.textContent = `${emoji} ${categoryLabel(name)} (${count})`;
-            categorySelect.appendChild(opt);
-        }
-    }
+		if (categorySelect) {
+			const opt = document.createElement("option");
+			opt.value = name.toLowerCase();
+			opt.textContent = `${emoji} ${categoryLabel(name)} (${count})`;
+			categorySelect.appendChild(opt);
+		}
+	}
 
-    function createCategorySection(category, isOpen) {
-        const section = document.createElement('div');
-        section.className = `category-section ${isOpen ? 'active' : ''}`;
-        section.dataset.catName = category.name.toLowerCase();
+	function createCategorySection(category, isOpen) {
+		const section = document.createElement("div");
+		section.className = `category-section ${isOpen ? "active" : ""}`;
+		section.dataset.catName = category.name.toLowerCase();
 
-        const header = document.createElement('div');
-        header.className = 'category-header';
-        header.setAttribute('role', 'button');
-        header.tabIndex = 0;
-        header.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-        header.innerHTML = `
+		const header = document.createElement("div");
+		header.className = "category-header";
+		header.setAttribute("role", "button");
+		header.tabIndex = 0;
+		header.setAttribute("aria-expanded", isOpen ? "true" : "false");
+		header.innerHTML = `
             <h2 class="category-title">
                 <span aria-hidden="true">${category.emoji}</span>
                 <span>${escapeHtml(categoryLabel(category.name))}</span>
@@ -215,92 +215,100 @@ document.addEventListener('DOMContentLoaded', () => {
             <i class="fas fa-chevron-down arrow" aria-hidden="true"></i>
         `;
 
-        const toggleSection = () => {
-            section.classList.toggle('active');
-        };
-        header.addEventListener('click', toggleSection);
-        header.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                toggleSection();
-            }
-        });
+		const toggleSection = () => {
+			section.classList.toggle("active");
+		};
+		header.addEventListener("click", toggleSection);
+		header.addEventListener("keydown", (e) => {
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				toggleSection();
+			}
+		});
 
-        const content = document.createElement('div');
-        content.className = 'category-content';
+		const content = document.createElement("div");
+		content.className = "category-content";
 
-        const list = document.createElement('ul');
-        list.className = 'command-list';
+		const list = document.createElement("ul");
+		list.className = "command-list";
 
-        category.commands.forEach(cmd => {
-            const item = createCommandItem(cmd, category);
-            list.appendChild(item);
-        });
+		category.commands.forEach((cmd) => {
+			const item = createCommandItem(cmd, category);
+			list.appendChild(item);
+		});
 
-        content.appendChild(list);
-        section.appendChild(header);
-        section.appendChild(content);
+		content.appendChild(list);
+		section.appendChild(header);
+		section.appendChild(content);
 
-        // Mantém aria-expanded em sincronia (a classe .active também é alterada por filtros/busca)
-        new MutationObserver(() => {
-            header.setAttribute('aria-expanded', section.classList.contains('active') ? 'true' : 'false');
-        }).observe(section, { attributes: true, attributeFilter: ['class'] });
+		// Mantém aria-expanded em sincronia (a classe .active também é alterada por filtros/busca)
+		new MutationObserver(() => {
+			header.setAttribute("aria-expanded", section.classList.contains("active") ? "true" : "false");
+		}).observe(section, { attributes: true, attributeFilter: ["class"] });
 
-        return section;
-    }
+		return section;
+	}
 
-    function createCommandItem(cmd, category) {
-        const li = document.createElement('li');
-        li.className = 'command-item';
-        
-        // Metadados para busca
-        const cmdName = cmd.name.toLowerCase();
-        const aliases = Array.isArray(cmd.aliases) ? cmd.aliases : [];
-        const aliasesStr = aliases.join(',').toLowerCase();
-        const desc = (cmd.description || '').toLowerCase();
-        const usages = Array.isArray(cmd.usage) ? cmd.usage : (cmd.usage ? [cmd.usage] : [`!${cmd.name}`]);
-        const usagesStr = usages.join(' ').toLowerCase();
+	function createCommandItem(cmd, category) {
+		const li = document.createElement("li");
+		li.className = "command-item";
 
-        li.dataset.name = cmdName;
-        li.dataset.aliases = aliasesStr;
-        li.dataset.desc = desc;
-        li.dataset.usage = usagesStr;
-        li.dataset.category = category.name.toLowerCase();
+		// Metadados para busca
+		const cmdName = cmd.name.toLowerCase();
+		const aliases = Array.isArray(cmd.aliases) ? cmd.aliases : [];
+		const aliasesStr = aliases.join(",").toLowerCase();
+		const desc = (cmd.description || "").toLowerCase();
+		const usages = Array.isArray(cmd.usage)
+			? cmd.usage
+			: cmd.usage
+				? [cmd.usage]
+				: [`!${cmd.name}`];
+		const usagesStr = usages.join(" ").toLowerCase();
 
-        // Linha de aliases formatados
-        let aliasesHtml = '';
-        if (aliases.length > 0) {
-            aliasesHtml = aliases.map(a => `<span class="alias-badge">!${escapeHtml(a)}</span>`).join(' ');
-        }
+		li.dataset.name = cmdName;
+		li.dataset.aliases = aliasesStr;
+		li.dataset.desc = desc;
+		li.dataset.usage = usagesStr;
+		li.dataset.category = category.name.toLowerCase();
 
-        // Badge de Administrador
-        const isAdmin = cmd.isManagement || cmd.name.startsWith('g-');
-        const adminBadgeHtml = isAdmin ? `<span class="cmd-badge-admin"><i class="fas fa-shield-alt"></i> Admin</span>` : '';
+		// Linha de aliases formatados
+		let aliasesHtml = "";
+		if (aliases.length > 0) {
+			aliasesHtml = aliases
+				.map((a) => `<span class="alias-badge">!${escapeHtml(a)}</span>`)
+				.join(" ");
+		}
 
-        // Container de reação
-        let reactionHtml = '';
-        if (cmd.reaction) {
-            reactionHtml = `
+		// Badge de Administrador
+		const isAdmin = cmd.isManagement || cmd.name.startsWith("g-");
+		const adminBadgeHtml = isAdmin
+			? `<span class="cmd-badge-admin"><i class="fas fa-shield-alt"></i> Admin</span>`
+			: "";
+
+		// Container de reação
+		let reactionHtml = "";
+		if (cmd.reaction) {
+			reactionHtml = `
                 <div class="cmd-reaction-pill" title="Reação de atalho no WhatsApp">
                     <span>${escapeHtml(cmd.reaction)}</span>
                 </div>
             `;
-        }
+		}
 
-        // Linha Principal do Comando (Resumo)
-        const summaryRow = document.createElement('div');
-        summaryRow.className = 'cmd-summary-row';
-        summaryRow.setAttribute('role', 'button');
-        summaryRow.tabIndex = 0;
-        summaryRow.setAttribute('aria-expanded', 'false');
-        summaryRow.innerHTML = `
+		// Linha Principal do Comando (Resumo)
+		const summaryRow = document.createElement("div");
+		summaryRow.className = "cmd-summary-row";
+		summaryRow.setAttribute("role", "button");
+		summaryRow.tabIndex = 0;
+		summaryRow.setAttribute("aria-expanded", "false");
+		summaryRow.innerHTML = `
             <div class="cmd-main-info">
                 <div class="cmd-name-line">
                     <span class="cmd-name">!${escapeHtml(cmd.name)}</span>
                     ${adminBadgeHtml}
                     ${aliasesHtml}
                 </div>
-                <div class="cmd-desc">${escapeHtml(cmd.description || 'Sem descrição.')}</div>
+                <div class="cmd-desc">${escapeHtml(cmd.description || "Sem descrição.")}</div>
             </div>
             <div class="cmd-right-info">
                 ${reactionHtml}
@@ -308,75 +316,82 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        // Drawer de Detalhes e Usage (Expandível ao Clicar)
-        const detailsDrawer = document.createElement('div');
-        detailsDrawer.className = 'cmd-details-drawer';
+		// Drawer de Detalhes e Usage (Expandível ao Clicar)
+		const detailsDrawer = document.createElement("div");
+		detailsDrawer.className = "cmd-details-drawer";
 
-        // O conteúdo detalhado só é montado na primeira vez que o comando é expandido:
-        // a página lista 400+ comandos e montar todos os drawers de início pesava no celular.
-        const renderDrawer = () => {
-            if (detailsDrawer.dataset.ready) return;
-            detailsDrawer.dataset.ready = '1';
+		// O conteúdo detalhado só é montado na primeira vez que o comando é expandido:
+		// a página lista 400+ comandos e montar todos os drawers de início pesava no celular.
+		const renderDrawer = () => {
+			if (detailsDrawer.dataset.ready) return;
+			detailsDrawer.dataset.ready = "1";
 
-            // Sintaxe principal (primeiro usage ou !nome)
-            const mainSyntax = usages[0] || `!${cmd.name}`;
+			// Sintaxe principal (primeiro usage ou !nome)
+			const mainSyntax = usages[0] || `!${cmd.name}`;
 
-            // Exemplos adicionais
-            let examplesHtml = '';
-            if (usages.length > 1) {
-                examplesHtml = `
+			// Exemplos adicionais
+			let examplesHtml = "";
+			if (usages.length > 1) {
+				examplesHtml = `
                     <div>
                         <div class="detail-section-title"><i class="fas fa-list-ul"></i> Outros Exemplos de Uso:</div>
                         <div class="examples-container">
-                            ${usages.slice(1).map(u => `
+                            ${usages
+															.slice(1)
+															.map(
+																(u) => `
                                 <div class="example-row">
                                     <span class="example-text">${escapeHtml(u)}</span>
                                     <button class="btn-copy-sm" data-copy="${escapeHtml(u)}" title="Copiar este exemplo">
                                         <i class="far fa-copy"></i>
                                     </button>
                                 </div>
-                            `).join('')}
+                            `
+															)
+															.join("")}
                         </div>
                     </div>
                 `;
-            }
+			}
 
-            // Sobre o módulo
-            let aboutHtml = '';
-            if (cmd.about) {
-                aboutHtml = `
+			// Sobre o módulo
+			let aboutHtml = "";
+			if (cmd.about) {
+				aboutHtml = `
                     <div class="detail-pill">
                         <i class="fas fa-info-circle"></i>
                         <span><strong>Sobre:</strong> ${escapeHtml(cmd.about)}</span>
                     </div>
                 `;
-            }
+			}
 
-            // Reação
-            let reactionNoticeHtml = '';
-            if (cmd.reaction) {
-                reactionNoticeHtml = `
+			// Reação
+			let reactionNoticeHtml = "";
+			if (cmd.reaction) {
+				reactionNoticeHtml = `
                     <div class="detail-pill reaction-pill">
                         <i class="far fa-smile-wink"></i>
                         <span>Atalho: Reaja à mensagem com <strong>${escapeHtml(cmd.reaction)}</strong> para executar automaticamente.</span>
                     </div>
                 `;
-            }
+			}
 
-            // Permissão
-            const permissionNoticeHtml = isAdmin ? `
+			// Permissão
+			const permissionNoticeHtml = isAdmin
+				? `
                 <div class="detail-pill admin-pill">
                     <i class="fas fa-lock"></i>
                     <span>Comando restrito aos administradores do grupo (prefixo <code>!g-</code>).</span>
                 </div>
-            ` : `
+            `
+				: `
                 <div class="detail-pill">
                     <i class="fas fa-unlock"></i>
                     <span>Comando livre para todos os membros do grupo e privado.</span>
                 </div>
             `;
 
-            detailsDrawer.innerHTML = `
+			detailsDrawer.innerHTML = `
                 <div class="details-card">
                     <div>
                         <div class="detail-section-title"><i class="fas fa-terminal"></i> Como Usar (Sintaxe):</div>
@@ -400,270 +415,284 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button class="btn-copy btn-copy-action" data-copy="!${escapeHtml(cmd.name)}" style="background: rgba(255,255,255,0.05); color: var(--text-highlight); border-color: var(--border-color);">
                             <i class="fas fa-hashtag"></i> Copiar <code>!${escapeHtml(cmd.name)}</code>
                         </button>
-                        ${mainSyntax !== `!${cmd.name}` ? `
+                        ${
+													mainSyntax !== `!${cmd.name}`
+														? `
                             <button class="btn-copy btn-copy-action" data-copy="${escapeHtml(mainSyntax)}">
                                 <i class="fas fa-play"></i> Copiar Exemplo Completo
                             </button>
-                        ` : ''}
+                        `
+														: ""
+												}
                     </div>
                 </div>
             `;
 
-            // Configura eventos de cópia dentro do drawer
-            detailsDrawer.querySelectorAll('.btn-copy-action, .btn-copy-sm').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    const textToCopy = btn.dataset.copy;
-                    if (textToCopy) {
-                        copyToClipboard(textToCopy);
-                    }
-                });
-            });
-        };
-        li._renderDrawer = renderDrawer;
+			// Configura eventos de cópia dentro do drawer
+			detailsDrawer.querySelectorAll(".btn-copy-action, .btn-copy-sm").forEach((btn) => {
+				btn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					const textToCopy = btn.dataset.copy;
+					if (textToCopy) {
+						copyToClipboard(textToCopy);
+					}
+				});
+			});
+		};
+		li._renderDrawer = renderDrawer;
 
-        const setExpanded = (expanded) => {
-            if (expanded) renderDrawer();
-            li.classList.toggle('expanded', expanded);
-            summaryRow.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-        };
-        li._setExpanded = setExpanded;
+		const setExpanded = (expanded) => {
+			if (expanded) renderDrawer();
+			li.classList.toggle("expanded", expanded);
+			summaryRow.setAttribute("aria-expanded", expanded ? "true" : "false");
+		};
+		li._setExpanded = setExpanded;
 
-        // Interação de Clique para Expandir / Recolher
-        summaryRow.addEventListener('click', (e) => {
-            // Previne disparar se clicou diretamente em algum botão de cópia
-            if (e.target.closest('button')) return;
+		// Interação de Clique para Expandir / Recolher
+		summaryRow.addEventListener("click", (e) => {
+			// Previne disparar se clicou diretamente em algum botão de cópia
+			if (e.target.closest("button")) return;
 
-            const now = Date.now();
-            if (now - lastTap < 400) {
-                // Duplo clique: copia o comando rapidamente
-                copyToClipboard(`!${cmd.name}`);
-                lastTap = 0;
-                return;
-            }
-            lastTap = now;
+			const now = Date.now();
+			if (now - lastTap < 400) {
+				// Duplo clique: copia o comando rapidamente
+				copyToClipboard(`!${cmd.name}`);
+				lastTap = 0;
+				return;
+			}
+			lastTap = now;
 
-            // Toggle expansion
-            setExpanded(!li.classList.contains('expanded'));
-        });
+			// Toggle expansion
+			setExpanded(!li.classList.contains("expanded"));
+		});
 
-        summaryRow.addEventListener('keydown', (e) => {
-            if (e.target !== summaryRow) return;
-            if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                setExpanded(!li.classList.contains('expanded'));
-            }
-        });
+		summaryRow.addEventListener("keydown", (e) => {
+			if (e.target !== summaryRow) return;
+			if (e.key === "Enter" || e.key === " ") {
+				e.preventDefault();
+				setExpanded(!li.classList.contains("expanded"));
+			}
+		});
 
-        li.appendChild(summaryRow);
-        li.appendChild(detailsDrawer);
+		li.appendChild(summaryRow);
+		li.appendChild(detailsDrawer);
 
-        return li;
-    }
+		return li;
+	}
 
-    // Filtro por Categoria via Pills e Select Mobile
-    function filterByCategory(catName) {
-        activeCategoryFilter = catName;
-        if (categorySelect && categorySelect.value !== catName) {
-            categorySelect.value = catName;
-        }
-        const categories = document.querySelectorAll('.category-section');
+	// Filtro por Categoria via Pills e Select Mobile
+	function filterByCategory(catName) {
+		activeCategoryFilter = catName;
+		if (categorySelect && categorySelect.value !== catName) {
+			categorySelect.value = catName;
+		}
+		const categories = document.querySelectorAll(".category-section");
 
-        categories.forEach(category => {
-            const thisCat = category.dataset.catName;
-            if (catName === 'all') {
-                category.classList.remove('hidden');
-            } else if (thisCat === catName) {
-                category.classList.remove('hidden');
-                category.classList.add('active'); // Abre a categoria selecionada
-            } else {
-                category.classList.add('hidden');
-            }
-        });
+		categories.forEach((category) => {
+			const thisCat = category.dataset.catName;
+			if (catName === "all") {
+				category.classList.remove("hidden");
+			} else if (thisCat === catName) {
+				category.classList.remove("hidden");
+				category.classList.add("active"); // Abre a categoria selecionada
+			} else {
+				category.classList.add("hidden");
+			}
+		});
 
-        // Se houver busca ativa, reaplica a busca respeitando o novo filtro
-        const currentSearch = searchInput ? searchInput.value.toLowerCase().trim() : '';
-        if (currentSearch) {
-            handleSearch(currentSearch);
-        }
+		// Se houver busca ativa, reaplica a busca respeitando o novo filtro
+		const currentSearch = searchInput ? searchInput.value.toLowerCase().trim() : "";
+		if (currentSearch) {
+			handleSearch(currentSearch);
+		}
 
-        // Scroll suave para a lista
-        commandList.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
+		// Scroll suave para a lista
+		commandList.scrollIntoView({ behavior: "smooth", block: "start" });
+	}
 
-    // Busca Dinâmica em Tempo Real
-    searchInput.addEventListener('input', (e) => {
-        const term = e.target.value.toLowerCase().trim();
-        handleSearch(term);
-    });
+	// Busca Dinâmica em Tempo Real
+	searchInput.addEventListener("input", (e) => {
+		const term = e.target.value.toLowerCase().trim();
+		handleSearch(term);
+	});
 
-    function handleSearch(term) {
-        if (term.length > 0) {
-            clearSearchBtn.classList.remove('hidden');
-        } else {
-            clearSearchBtn.classList.add('hidden');
-        }
+	function handleSearch(term) {
+		if (term.length > 0) {
+			clearSearchBtn.classList.remove("hidden");
+		} else {
+			clearSearchBtn.classList.add("hidden");
+		}
 
-        let totalMatches = 0;
-        const categories = document.querySelectorAll('.category-section');
+		let totalMatches = 0;
+		const categories = document.querySelectorAll(".category-section");
 
-        categories.forEach(category => {
-            const thisCatName = category.dataset.catName;
-            // Se houver filtro de categoria ativo, respeita-o
-            if (activeCategoryFilter !== 'all' && thisCatName !== activeCategoryFilter && term.length === 0) {
-                category.classList.add('hidden');
-                return;
-            }
+		categories.forEach((category) => {
+			const thisCatName = category.dataset.catName;
+			// Se houver filtro de categoria ativo, respeita-o
+			if (
+				activeCategoryFilter !== "all" &&
+				thisCatName !== activeCategoryFilter &&
+				term.length === 0
+			) {
+				category.classList.add("hidden");
+				return;
+			}
 
-            const commands = category.querySelectorAll('.command-item');
-            let categoryMatches = 0;
+			const commands = category.querySelectorAll(".command-item");
+			let categoryMatches = 0;
 
-            commands.forEach(cmd => {
-                const name = cmd.dataset.name;
-                const aliases = cmd.dataset.aliases;
-                const desc = cmd.dataset.desc;
-                const usage = cmd.dataset.usage;
+			commands.forEach((cmd) => {
+				const name = cmd.dataset.name;
+				const aliases = cmd.dataset.aliases;
+				const desc = cmd.dataset.desc;
+				const usage = cmd.dataset.usage;
 
-                const isMatch = !term ||
-                    name.includes(term) ||
-                    aliases.includes(term) ||
-                    desc.includes(term) ||
-                    usage.includes(term);
+				const isMatch =
+					!term ||
+					name.includes(term) ||
+					aliases.includes(term) ||
+					desc.includes(term) ||
+					usage.includes(term);
 
-                if (isMatch) {
-                    cmd.classList.remove('hidden');
-                    categoryMatches++;
-                    totalMatches++;
-                } else {
-                    cmd.classList.add('hidden');
-                }
-            });
+				if (isMatch) {
+					cmd.classList.remove("hidden");
+					categoryMatches++;
+					totalMatches++;
+				} else {
+					cmd.classList.add("hidden");
+				}
+			});
 
-            if (categoryMatches > 0) {
-                category.classList.remove('hidden');
-                if (term.length > 0) {
-                    category.classList.add('active'); // Abre categorias com resultados
-                }
-            } else {
-                category.classList.add('hidden');
-            }
-        });
+			if (categoryMatches > 0) {
+				category.classList.remove("hidden");
+				if (term.length > 0) {
+					category.classList.add("active"); // Abre categorias com resultados
+				}
+			} else {
+				category.classList.add("hidden");
+			}
+		});
 
-        if (totalMatches === 0 && term.length > 0) {
-            noResults.classList.remove('hidden');
-            if (searchTermSpan) searchTermSpan.textContent = term;
-        } else {
-            noResults.classList.add('hidden');
-        }
-    }
+		if (totalMatches === 0 && term.length > 0) {
+			noResults.classList.remove("hidden");
+			if (searchTermSpan) searchTermSpan.textContent = term;
+		} else {
+			noResults.classList.add("hidden");
+		}
+	}
 
-    // Limpar Busca
-    clearSearchBtn.addEventListener('click', () => {
-        searchInput.value = '';
-        clearSearchBtn.classList.add('hidden');
-        handleSearch('');
-        searchInput.focus();
-    });
+	// Limpar Busca
+	clearSearchBtn.addEventListener("click", () => {
+		searchInput.value = "";
+		clearSearchBtn.classList.add("hidden");
+		handleSearch("");
+		searchInput.focus();
+	});
 
-    // Expandir e Recolher Todos
-    if (btnExpandAll) {
-        btnExpandAll.addEventListener('click', () => {
-            document.querySelectorAll('.category-section').forEach(sec => sec.classList.add('active'));
-            document.querySelectorAll('.command-item').forEach(item => {
-                if (!item.classList.contains('hidden')) {
-                    if (item._setExpanded) item._setExpanded(true);
-                    else item.classList.add('expanded');
-                }
-            });
-        });
-    }
+	// Expandir e Recolher Todos
+	if (btnExpandAll) {
+		btnExpandAll.addEventListener("click", () => {
+			document.querySelectorAll(".category-section").forEach((sec) => sec.classList.add("active"));
+			document.querySelectorAll(".command-item").forEach((item) => {
+				if (!item.classList.contains("hidden")) {
+					if (item._setExpanded) item._setExpanded(true);
+					else item.classList.add("expanded");
+				}
+			});
+		});
+	}
 
-    if (btnCollapseAll) {
-        btnCollapseAll.addEventListener('click', () => {
-            document.querySelectorAll('.command-item').forEach(item => {
-                if (item._setExpanded) item._setExpanded(false);
-                else item.classList.remove('expanded');
-            });
-            document.querySelectorAll('.category-section').forEach(sec => sec.classList.remove('active'));
-        });
-    }
+	if (btnCollapseAll) {
+		btnCollapseAll.addEventListener("click", () => {
+			document.querySelectorAll(".command-item").forEach((item) => {
+				if (item._setExpanded) item._setExpanded(false);
+				else item.classList.remove("expanded");
+			});
+			document
+				.querySelectorAll(".category-section")
+				.forEach((sec) => sec.classList.remove("active"));
+		});
+	}
 
-    // Atalho de teclado para focar na busca ('/' ou 'Ctrl+K')
-    document.addEventListener('keydown', (e) => {
-        if (e.target === searchInput) {
-            if (e.key === 'Escape') {
-                searchInput.value = '';
-                handleSearch('');
-                searchInput.blur();
-            }
-            return;
-        }
+	// Atalho de teclado para focar na busca ('/' ou 'Ctrl+K')
+	document.addEventListener("keydown", (e) => {
+		if (e.target === searchInput) {
+			if (e.key === "Escape") {
+				searchInput.value = "";
+				handleSearch("");
+				searchInput.blur();
+			}
+			return;
+		}
 
-        if (e.key === '/' || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k')) {
-            e.preventDefault();
-            searchInput.focus();
-            searchInput.select();
-        }
-    });
+		if (e.key === "/" || ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k")) {
+			e.preventDefault();
+			searchInput.focus();
+			searchInput.select();
+		}
+	});
 
-    // Função de Cópia com Toast de Feedback
-    function copyToClipboard(text) {
-        if (!text) return;
-        navigator.clipboard.writeText(text).then(() => {
-            showToast(`Copiado: "${text}"`);
-        }).catch(err => {
-            // Fallback para navegadores legados
-            const textarea = document.createElement('textarea');
-            textarea.value = text;
-            textarea.style.position = 'fixed';
-            textarea.style.opacity = '0';
-            document.body.appendChild(textarea);
-            textarea.select();
-            try {
-                document.execCommand('copy');
-                showToast(`Copiado: "${text}"`);
-            } catch (copyErr) {
-                console.error('[cmd.js] Falha ao copiar:', copyErr);
-                showToast('Erro ao copiar');
-            }
-            document.body.removeChild(textarea);
-        });
-    }
+	// Função de Cópia com Toast de Feedback
+	function copyToClipboard(text) {
+		if (!text) return;
+		navigator.clipboard
+			.writeText(text)
+			.then(() => {
+				showToast(`Copiado: "${text}"`);
+			})
+			.catch((err) => {
+				// Fallback para navegadores legados
+				const textarea = document.createElement("textarea");
+				textarea.value = text;
+				textarea.style.position = "fixed";
+				textarea.style.opacity = "0";
+				document.body.appendChild(textarea);
+				textarea.select();
+				try {
+					document.execCommand("copy");
+					showToast(`Copiado: "${text}"`);
+				} catch (copyErr) {
+					console.error("[cmd.js] Falha ao copiar:", copyErr);
+					showToast("Erro ao copiar");
+				}
+				document.body.removeChild(textarea);
+			});
+	}
 
-    function showToast(message) {
-        if (!toast) return;
-        if (toastText) toastText.textContent = message;
-        toast.classList.remove('hidden');
+	function showToast(message) {
+		if (!toast) return;
+		if (toastText) toastText.textContent = message;
+		toast.classList.remove("hidden");
 
-        if (toastTimeout) clearTimeout(toastTimeout);
-        toastTimeout = setTimeout(() => {
-            toast.classList.add('hidden');
-        }, 2200);
-    }
+		if (toastTimeout) clearTimeout(toastTimeout);
+		toastTimeout = setTimeout(() => {
+			toast.classList.add("hidden");
+		}, 2200);
+	}
 
-    // Placeholder Aleatório no Input de Busca
-    function startRandomPlaceholder() {
-        if (allLoadedCommands.length === 0) return;
-        setInterval(() => {
-            if (document.activeElement !== searchInput && searchInput.value === '') {
-                const randomCmd = allLoadedCommands[Math.floor(Math.random() * allLoadedCommands.length)];
-                if (randomCmd && randomCmd.name) {
-                    searchInput.setAttribute('placeholder', `Buscar comando... ex: !${randomCmd.name}`);
-                }
-            }
-        }, 3200);
-    }
+	// Placeholder Aleatório no Input de Busca
+	function startRandomPlaceholder() {
+		if (allLoadedCommands.length === 0) return;
+		setInterval(() => {
+			if (document.activeElement !== searchInput && searchInput.value === "") {
+				const randomCmd = allLoadedCommands[Math.floor(Math.random() * allLoadedCommands.length)];
+				if (randomCmd && randomCmd.name) {
+					searchInput.setAttribute("placeholder", `Buscar comando... ex: !${randomCmd.name}`);
+				}
+			}
+		}, 3200);
+	}
 
-    function escapeHtml(text) {
-        if (typeof text !== 'string') return '';
-        return text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
+	function escapeHtml(text) {
+		if (typeof text !== "string") return "";
+		return text
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#039;");
+	}
 
-    // Inicialização
-    fetchCommands();
+	// Inicialização
+	fetchCommands();
 });

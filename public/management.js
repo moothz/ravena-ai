@@ -1,1536 +1,1791 @@
-document.addEventListener('DOMContentLoaded', () => {
-    const pathParts = window.location.pathname.split('/');
-    const token = pathParts[pathParts.length - 1];
-    
-    // State
-    let groupData = null;
-    let originalGroupData = null;
-    let customCommands = [];
-    let schedules = [];
-    let groupId = null;
-    let tokenData = null;
-    let expiresAt = null;
-    let isDirty = false;
-    let currentStream = null; // { platform, index, data }
-    let pickerMode = 'variable'; // 'variable', 'language', 'start-emoji', 'emoji'
-    let lastFocusedInput = null;
-    let currentCmdMentions = [];
-    let currentEditingCmd = null;
-    let activeEmojiTarget = 'cmd-emoji'; // 'cmd-emoji' or 'cmd-start-emoji'
-
-    // Constants
-    const API_BASE = '/api';
-
-    const TRUSTED_DOMAINS = [
-        "youtube.com",
-        "youtu.be",
-        "google.com",
-        "google.com.br",
-        "goo.gl",
-        "olx.com.br",
-        "mercadolivre.com.br",
-        "mercadolivre.com",
-        "mercadopago.com.br",
-        "mercadopago.com",
-        "facebook.com",
-        "fb.watch",
-        "fb.me",
-        "instagram.com",
-        "x.com",
-        "twitter.com",
-        "t.co",
-        "tiktok.com",
-        "vm.tiktok.com",
-        "amazon.com.br",
-        "amazon.com",
-        "amzn.to",
-        "shopee.com.br",
-        "shopee.com",
-        "pinterest.com",
-        "pin.it",
-        "reddit.com",
-        "redd.it",
-        "linkedin.com",
-        "lnkd.in",
-        "github.com",
-        "twitch.tv",
-        "spotify.com",
-        "spoti.fi"
-    ];
-
-    const AVAILABLE_LANGUAGES = [
-        { code: 'English (EN)', desc: 'Inglês' },
-        { code: 'Spanish (ES)', desc: 'Espanhol' },
-        { code: 'Russian (RU)', desc: 'Russo' },
-        { code: 'French (FR)', desc: 'Francês' },
-        { code: 'German (DE)', desc: 'Alemão' },
-        { code: 'Italian (IT)', desc: 'Italiano' },
-        { code: 'Japanese (JA)', desc: 'Japonês' },
-        { code: 'Chinese (ZH)', desc: 'Chinês' },
-        { code: 'Korean (KO)', desc: 'Coreano' },
-        { code: 'Arabic (AR)', desc: 'Árabe' },
-        { code: 'Hindi (HI)', desc: 'Hindi' },
-        { code: 'Turkish (TR)', desc: 'Turco' },
-        { code: 'Dutch (NL)', desc: 'Holandês' },
-        { code: 'Polish (PL)', desc: 'Polonês' },
-        { code: 'Indonesian (ID)', desc: 'Indonésio' },
-        { code: 'Vietnamese (VI)', desc: 'Vietnamita' },
-        { code: 'Thai (TH)', desc: 'Tailandês' }
-    ];
-
-    const AVAILABLE_VARIABLES = [
-        { code: '{day}', desc: 'Dia da semana (ex: Segunda-feira)' },
-        { code: '{date}', desc: 'Data atual (ex: 12/01/2026)' },
-        { code: '{time}', desc: 'Hora atual (ex: 14:30:00)' },
-        { code: '{data-hora}', desc: 'Hora (HH)' },
-        { code: '{data-minuto}', desc: 'Minuto (MM)' },
-        { code: '{data-segundo}', desc: 'Segundo (SS)' },
-        { code: '{data-dia}', desc: 'Dia (DD)' },
-        { code: '{data-mes}', desc: 'Mês (MM)' },
-        { code: '{data-ano}', desc: 'Ano (YYYY)' },
-        { code: '{randomPequeno}', desc: 'Número aleatório 1-10' },
-        { code: '{randomMedio}', desc: 'Número aleatório 1-100' },
-        { code: '{randomGrande}', desc: 'Número aleatório 1-1000' },
-        { code: '{randomMuitoGrande}', desc: 'Número aleatório 1-10000' },
-        { code: '{rndDado-6}', desc: 'Dado de 6 lados (exemplo)' },
-        { code: '{rndDadoRange-1-100}', desc: 'Número entre 1 e 100 (exemplo)' },
-        { code: '{somaRandoms}', desc: 'Soma dos números gerados anteriormente' },
-        { code: '{pessoa}', desc: 'Nome de quem enviou a mensagem' },
-        { code: '{group}', desc: 'Nome do grupo' },
-        { code: '{contador}', desc: 'Vezes que o comando foi usado' },
-        { code: '{membroRandom}', desc: 'Nome de um membro aleatório' },
-        { code: '{mention}', desc: 'Menciona usuário (autor/mencionado/aleatório)' },
-        { code: '{singleMention}', desc: 'Mesma menção repetida' },
-        { code: '{mentionOuEu}', desc: 'Menciona usuário ou autor' },
-        { code: '{mentionAll}', desc: 'Marca todos silenciosamente (exceto ignorados)' },
-        { code: '{reddit-memes}', desc: 'Post aleatório do r/memes (exemplo)' },
-        { code: '{nomeCanal}', desc: 'Stream: Nome do canal' },
-        { code: '{titulo}', desc: 'Stream: Título da live' },
-        { code: '{jogo}', desc: 'Stream: Jogo/Categoria' },
-        { code: '{author}', desc: 'YouTube/TikTok: Autor do vídeo' },
-        { code: '{title}', desc: 'YouTube/TikTok: Título do vídeo' },
-        { code: '{link}', desc: 'Link do vídeo ou da live' }
-    ];
-
-    const COMMON_EMOJIS = [
-        '😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '🙃', '😉', '😊', '😇',
-        '🥰', '😍', '🤩', '😘', '😗', '☺️', '😚', '😙', '😋', '😛', '😜', '🤪', '😝',
-        '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑', '😶', '😶‍🌫️', '😏', '😒',
-        '🙄', '😬', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮',
-        '🤧', '🥵', '🥶', '🥴', '😵', '😵‍💫', '🤯', '🤠', '🥳', '😎', '🤓', '🧐', '😕',
-        '😟', '🙁', '☹️', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨', '😰', '😥',
-        '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠',
-        '🤬', '😈', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻', '👽', '👾', '🤖',
-        '👋', '🤚', '🖐', '✋', '🖖', '👌', '🤌', '🤏', '✌️', '🤞', '🤟', '🤘', '🤙',
-        '👈', '👉', '👆', '🖕', '👇', '☝️', '👍', '👎', '✊', '👊', '🤛', '🤜', '👏',
-        '🙌', '👐', '🤲', '🤝', '🙏', '✍️', '💅', '🤳', '💪', '🦾', '🦵', '🦶', '👂',
-        '🦻', '👃', '🧠', '🫀', '🫁', '🦷', '🦴', '👀', '👁', '👅', '👄', '🫦', '👶',
-        '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '🤍', '🤎', '💔', '🔥', '✨', '⭐',
-        '⏳', '⌛', '⏰', '🚀', '🎯', '🎉', '🎊', '🎁', '🔔', '📢', '💬', '👀', '💯'
-    ];
-
-    const DEFAULT_MSG = {
-        twitch: "⚠️ ATENÇÃO!⚠️\n\n🌟 *{canal}* está online jogando {jogo}!\nAssista: {link}",
-        kick: "⚠️ ATENÇÃO!⚠️\n\n🌟 *{canal}* iniciou stream na Kick!\nAssista: {link}",
-        youtube: "🎬 Novo vídeo no canal *{author}*!\nAssista agora: {link}",
-        youtube_video: "🎬 Novo vídeo no canal *{author}*!\n*{title}*\nAssista agora: {link}",
-        youtube_live: "🔴 *{canal}* está AO VIVO no YouTube!\n*{titulo}*\nAssista: {link}",
-        tiktok_video: "🎵 Vídeo novo no TikTok de *{author}*!\n{title}\nAssista agora: {link}",
-        tiktok_live: "🔴 *{canal}* está AO VIVO no TikTok!\n*{titulo}*\nAssista: {link}"
-    };
-
-    // YouTube e TikTok têm seções separadas de Vídeos e Lives no painel, mas um único array no grupo
-    const SPLIT_STREAM_PLATFORMS = ['youtube', 'tiktok'];
-    const STREAM_PLATFORM_LABELS = { twitch: 'Twitch', kick: 'Kick', youtube: 'YouTube', tiktok: 'TikTok' };
-
-    function parseStreamPlatform(platform) {
-        const match = /^(youtube|tiktok)_(video|live)$/.exec(platform || '');
-        if (match) return { storeKey: match[1], kind: match[2] };
-        return { storeKey: platform, kind: null };
-    }
-
-    // UI Elements
-    const els = {
-        loading: document.getElementById('loading-container'),
-        error: document.getElementById('error-container'),
-        errorMsg: document.getElementById('error-message'),
-        dashboard: document.getElementById('dashboard-content'),
-        userName: document.getElementById('user-name'),
-        groupName: document.getElementById('group-name'),
-        expirationTime: document.getElementById('expiration-time'),
-        retryBtn: document.getElementById('retry-button'),
-        accordions: document.querySelectorAll('.accordion-item'),
-        subAccordions: document.querySelectorAll('.sub-accordion'),
-        
-        // Hero Status
-        heroPauseCard: document.getElementById('hero-pause-card'),
-        groupPausedToggle: document.getElementById('group-paused-toggle'),
-        heroStatusPill: document.getElementById('hero-status-pill'),
-        heroStatusDesc: document.getElementById('hero-status-desc'),
-
-        // Modals
-        cmdModal: document.getElementById('command-modal'),
-        streamModal: document.getElementById('stream-modal'),
-        uploadModal: document.getElementById('upload-modal'),
-        variableModal: document.getElementById('variable-modal'),
-        emojiModal: document.getElementById('emoji-modal'),
-        customDialogModal: document.getElementById('custom-dialog-modal'),
-        memberModal: document.getElementById('member-modal'),
-        webhookModal: document.getElementById('webhook-modal'),
-        scheduleModal: document.getElementById('schedule-modal'),
-        commandLimitModal: document.getElementById('command-limit-modal'),
-        
-        closeModalBtns: document.querySelectorAll('.close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal, .close-saida-modal, .close-command-limit-modal'),
-        closeUploadBtns: document.querySelectorAll('.close-upload'),
-
-        // Schedules
-        btnAddSchedule: document.getElementById('btn-add-schedule'),
-        btnSaveScheduleConfirm: document.getElementById('btn-save-schedule-confirm'),
-        schedulesOnetimeContainer: document.getElementById('schedules-onetime-container'),
-        noSchedulesOnetimeMsg: document.getElementById('no-schedules-onetime-msg'),
-        schedulesWeeklyContainer: document.getElementById('schedules-weekly-container'),
-        noSchedulesWeeklyMsg: document.getElementById('no-schedules-weekly-msg'),
-        scheduleModalTitle: document.getElementById('schedule-modal-title'),
-        scheduleEditId: document.getElementById('schedule-edit-id'),
-        scheduleTipo: document.getElementById('schedule-tipo'),
-        scheduleHora: document.getElementById('schedule-hora'),
-        scheduleDia: document.getElementById('schedule-dia'),
-        scheduleFrase: document.getElementById('schedule-frase'),
-        
-        // Sticky Footer
-        stickySaveBar: document.getElementById('sticky-save-bar'),
-        btnGlobalSave: document.getElementById('btn-global-save'),
-
-        // General
-        btnViewMembers: document.getElementById('btn-view-members'),
-
-        // Command Form
-        cmdTrigger: document.getElementById('cmd-trigger'),
-        cmdActive: document.getElementById('cmd-active'),
-        cmdInteract: document.getElementById('cmd-interact'),
-        cmdReplyQuote: document.getElementById('cmd-reply-quote'),
-        cmdSendAll: document.getElementById('cmd-send-all'),
-        cmdAdminOnly: document.getElementById('cmd-admin-only'),
-        cmdReplyPrivate: document.getElementById('cmd-reply-private'),
-        cmdEmoji: document.getElementById('cmd-emoji'),
-        btnEmojiPicker: document.getElementById('btn-emoji-picker'),
-        cmdStartEmoji: document.getElementById('cmd-start-emoji'),
-        btnStartEmojiPicker: document.getElementById('btn-start-emoji-picker'),
-        cmdCooldown: document.getElementById('cmd-cooldown'),
-        cmdTimeStart: document.getElementById('cmd-time-start'),
-        cmdTimeEnd: document.getElementById('cmd-time-end'),
-        cmdResponsesList: document.getElementById('cmd-responses-list'),
-        btnSaveCmd: document.getElementById('btn-save-cmd'),
-        btnDeleteCmd: document.getElementById('btn-delete-cmd'),
-        cmdMetadata: document.getElementById('cmd-metadata'),
-        modalTitle: document.getElementById('modal-title'),
-        btnAddTag: document.getElementById('btn-add-tag'),
-        cmdTagsList: document.getElementById('cmd-tags-list'),
-
-        // Command Simulator
-        cmdWaBubble: document.getElementById('cmd-wa-bubble'),
-        cmdWaMedia: document.getElementById('cmd-wa-media'),
-        cmdWaText: document.getElementById('cmd-wa-text'),
-        cmdWaTime: document.getElementById('cmd-wa-time'),
-
-        // Member Modal
-        memberModalTitle: document.getElementById('member-modal-title'),
-        memberSearch: document.getElementById('member-search'),
-        memberTableBody: document.getElementById('member-table-body'),
-
-        // Stream Form
-        streamModalTitle: document.getElementById('stream-modal-title'),
-        streamChannel: document.getElementById('stream-channel'),
-        streamMention: document.getElementById('stream-mention'),
-        streamChangeTitle: document.getElementById('stream-change-title'),
-        streamChangePhoto: document.getElementById('stream-change-photo'),
-        streamCloseGroup: document.getElementById('stream-close-group'),
-        streamCloseGroupDuration: document.getElementById('stream-close-group-duration'),
-        streamCloseGroupDurationBox: document.getElementById('stream-close-group-duration-box'),
-        streamAI: document.getElementById('stream-ai'),
-        streamUseThumbnail: document.getElementById('stream-use-thumbnail'),
-        streamTitlesGroup: document.getElementById('stream-titles-group'),
-        streamTitleOn: document.getElementById('stream-title-on'),
-        streamTitleOff: document.getElementById('stream-title-off'),
-        streamOnMediaList: document.getElementById('stream-on-media-list'),
-        streamOffMediaList: document.getElementById('stream-off-media-list'),
-        btnSaveStream: document.getElementById('btn-save-stream'),
-        btnDeleteStream: document.getElementById('btn-delete-stream'),
-        streamHint: document.getElementById('stream-hint'),
-        streamWaThumbnail: document.getElementById('stream-wa-thumbnail'),
-        streamWaText: document.getElementById('stream-wa-text'),
-
-        // Upload Form
-        mediaFileInput: document.getElementById('media-file-input'),
-        mediaCaption: document.getElementById('media-caption'),
-        convertSticker: document.getElementById('convert-sticker'),
-        btnConfirmUpload: document.getElementById('btn-confirm-upload'),
-        uploadType: document.getElementById('upload-type'), 
-        uploadContext: document.getElementById('upload-context'),
-        captionGroup: document.getElementById('caption-group'),
-        asStickerGroup: document.getElementById('as-sticker-group'),
-        uploadStatus: document.getElementById('upload-status'),
-
-        // Dialog
-        dialogTitle: document.getElementById('dialog-title'),
-        dialogMessage: document.getElementById('dialog-message'),
-        dialogInput: document.getElementById('dialog-input'),
-        dialogBtnCancel: document.getElementById('dialog-btn-cancel'),
-        dialogBtnOk: document.getElementById('dialog-btn-ok'),
-        dossiesHistoryList: document.getElementById('dossies-history-list'),
-
-        // Warnings & Webhooks
-        warningsTableBody: document.getElementById('warnings-table-body'),
-        noWarningsMsg: document.getElementById('no-warnings-msg'),
-        btnClearAllWarnings: document.getElementById('btn-clear-all-warnings'),
-        webhooksEndpointUrl: document.getElementById('webhooks-endpoint-url'),
-        btnCopyWebhookUrl: document.getElementById('btn-copy-webhook-url'),
-        webhooksTableBody: document.getElementById('webhooks-table-body'),
-        noWebhooksMsg: document.getElementById('no-webhooks-msg'),
-        btnAddWebhook: document.getElementById('btn-add-webhook'),
-        btnSaveWebhookConfirm: document.getElementById('btn-save-webhook-confirm'),
-
-        // Backups
-        btnExportCmdsZip: document.getElementById('btn-export-cmds-zip'),
-        fileImportCmdsZip: document.getElementById('file-import-cmds-zip'),
-        btnExportConfigJson: document.getElementById('btn-export-config-json'),
-        fileImportConfigJson: document.getElementById('file-import-config-json')
-    };
-
-    // --- Custom Dialogs ---
-
-    function showCustomAlert(message, title = 'Aviso') {
-        return new Promise((resolve) => {
-            els.dialogTitle.textContent = title;
-            els.dialogMessage.innerHTML = message;
-            els.dialogInput.classList.add('hidden');
-            els.dialogBtnCancel.classList.add('hidden');
-            els.dialogBtnOk.textContent = 'OK';
-            
-            els.customDialogModal.classList.remove('hidden');
-            
-            const handleOk = () => {
-                els.customDialogModal.classList.add('hidden');
-                els.dialogBtnOk.removeEventListener('click', handleOk);
-                resolve();
-            };
-            
-            els.dialogBtnOk.onclick = handleOk;
-        });
-    }
-
-    function showCustomConfirm(message, title = 'Confirmação') {
-        return new Promise((resolve) => {
-            els.dialogTitle.textContent = title;
-            els.dialogMessage.innerHTML = message;
-            els.dialogInput.classList.add('hidden');
-            els.dialogBtnCancel.classList.remove('hidden');
-            els.dialogBtnOk.textContent = 'Sim';
-            
-            els.customDialogModal.classList.remove('hidden');
-            
-            const handleOk = () => {
-                els.customDialogModal.classList.add('hidden');
-                cleanup();
-                resolve(true);
-            };
-
-            const handleCancel = () => {
-                els.customDialogModal.classList.add('hidden');
-                cleanup();
-                resolve(false);
-            };
-
-            function cleanup() {
-                els.dialogBtnOk.removeEventListener('click', handleOk);
-                els.dialogBtnCancel.removeEventListener('click', handleCancel);
-            }
-
-            els.dialogBtnOk.onclick = handleOk;
-            els.dialogBtnCancel.onclick = handleCancel;
-        });
-    }
-
-    function showCustomPrompt(message, defaultValue = '', title = 'Entrada de Texto') {
-        return new Promise((resolve) => {
-            els.dialogTitle.textContent = title;
-            els.dialogMessage.innerHTML = message;
-            els.dialogInput.value = defaultValue;
-            els.dialogInput.classList.remove('hidden');
-            els.dialogBtnCancel.classList.remove('hidden');
-            els.dialogBtnOk.textContent = 'Salvar';
-            
-            els.customDialogModal.classList.remove('hidden');
-            els.dialogInput.focus();
-
-            const handleOk = () => {
-                const val = els.dialogInput.value;
-                els.customDialogModal.classList.add('hidden');
-                cleanup();
-                resolve(val);
-            };
-
-            const handleCancel = () => {
-                els.customDialogModal.classList.add('hidden');
-                cleanup();
-                resolve(null);
-            };
-
-            function cleanup() {
-                els.dialogBtnOk.removeEventListener('click', handleOk);
-                els.dialogBtnCancel.removeEventListener('click', handleCancel);
-            }
-
-            els.dialogBtnOk.onclick = handleOk;
-            els.dialogBtnCancel.onclick = handleCancel;
-        });
-    }
-
-    // --- Init & Data Loading ---
-
-    async function init() {
-        if (!token) {
-            showError('Token de acesso não fornecido na URL.');
-            return;
-        }
-
-        try {
-            const validation = await fetch(`${API_BASE}/validate-token?token=${token}`).then(r => r.json());
-            if (!validation.valid) {
-                showError('Token inválido ou expirado. Por favor, gere um novo link usando !g-painel.');
-                return;
-            }
-
-            tokenData = validation;
-            groupId = validation.groupId;
-            expiresAt = new Date(validation.expiresAt);
-            
-            els.userName.textContent = validation.requestNumber || 'Admin';
-            startTimer();
-            await loadData();
-            setupEventListeners();
-            loadDossierHistory();
-
-            els.loading.classList.add('hidden');
-            els.dashboard.classList.remove('hidden');
-
-        } catch (err) {
-            showError('Erro de conexão ao validar sessão: ' + err.message);
-        }
-    }
-
-    async function loadData() {
-        try {
-            const resGroup = await fetch(`${API_BASE}/group?id=${groupId}&token=${token}`);
-            if (!resGroup.ok) throw new Error('Não foi possível carregar dados do grupo.');
-            groupData = await resGroup.json();
-            if (!groupData.greetingAccumulation) {
-                groupData.greetingAccumulation = { enabled: false, intervalMinutes: 30 };
-            }
-            originalGroupData = JSON.parse(JSON.stringify(groupData));
-
-            const resCmds = await fetch(`${API_BASE}/custom-commands/${groupId}?token=${token}`);
-            if (resCmds.ok) {
-                customCommands = await resCmds.json();
-            }
-
-            els.groupName.textContent = groupData.name || 'Sem nome';
-            populateFields();
-            renderCommandsTable();
-            renderWarnings();
-            renderWebhooks();
-            renderCommandLimits();
-            await loadSchedules();
-            setupDirtyTracking();
-
-        } catch (e) {
-            showError('Erro ao carregar dados: ' + e.message);
-        }
-    }
-
-    function showError(msg) {
-        els.loading.classList.add('hidden');
-        els.dashboard.classList.add('hidden');
-        els.error.classList.remove('hidden');
-        els.errorMsg.textContent = msg;
-    }
-
-    function startTimer() {
-        const update = () => {
-            const now = new Date();
-            const diff = expiresAt - now;
-            if (diff <= 0) {
-                els.expirationTime.textContent = 'Expirado';
-                clearInterval(interval);
-                showCustomAlert('Sua sessão expirou. O painel será recarregado.', 'Sessão Expirada').then(() => {
-                    window.location.reload();
-                });
-                return;
-            }
-            const mins = Math.floor(diff / 60000);
-            const secs = Math.floor((diff % 60000) / 1000);
-            els.expirationTime.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-        };
-        update();
-        const interval = setInterval(update, 1000);
-    }
-
-    // --- Dirty State & Global Save ---
-
-    function setDirty(state) {
-        isDirty = state;
-        if (state) {
-            els.stickySaveBar.classList.remove('hidden');
-        } else {
-            els.stickySaveBar.classList.add('hidden');
-        }
-    }
-
-    function calculateChanges(original, current) {
-        const changes = {};
-        const allKeys = new Set([...Object.keys(original || {}), ...Object.keys(current || {})]);
-        for (const key of allKeys) {
-            if (key === 'participants') continue;
-            const origVal = original ? original[key] : undefined;
-            const currVal = current ? current[key] : undefined;
-            if ((typeof currVal === 'object' && currVal !== null) || (typeof origVal === 'object' && origVal !== null)) {
-                if (JSON.stringify(origVal) !== JSON.stringify(currVal)) {
-                    changes[key] = currVal;
-                }
-            } else {
-                if (origVal !== currVal) {
-                    changes[key] = currVal;
-                }
-            }
-        }
-        return changes;
-    }
-
-    function formatChanges(changes) {
-        const list = [];
-        const labels = {
-            name: 'Nome do Grupo',
-            prefix: 'Prefixo',
-            paused: 'Status do Bot (Pausado/Ativo)',
-            customAIPrompt: 'Personalidade da IA',
-            dinamicPersonality: 'Personalidade Dinâmica (IA)',
-            customIgnoresPrefix: 'Comandos sem Prefixo',
-            filters: 'Filtros (Links / NSFW / Palavras / Regex)',
-            ignoredNumbers: 'Números Ignorados',
-            mutedCategories: 'Categorias Silenciadas',
-            mutedCommands: 'Comandos Silenciados',
-            commandLimits: 'Frequência de Comandos',
-            additionalAdmins: 'Admins Adicionais',
-            autoStt: 'Transcrever Áudios',
-            notificaGrupoFechado: 'Notificar Grupo Fechado',
-            notificaGrupoAberto: 'Notificar Grupo Aberto',
-            interact: 'Interações Automáticas',
-            greetings: 'Mensagens de Boas-Vindas',
-            farewells: 'Mensagens de Despedida',
-            autoTranslateTo: 'Traduzir Respostas',
-            twitch: 'Twitch',
-            kick: 'Kick',
-            youtube: 'YouTube',
-            tiktok: 'TikTok',
-            nicks: 'Apelidos dos Membros',
-            warnings: 'Advertências do Grupo',
-            webhooks: 'Webhooks Externos',
-            banirSpammers: 'Banir Spammers Automaticamente',
-            greetingAccumulation: 'Acúmulo de Saudações',
-            regras: 'Regras do Grupo',
-            minecraftServer: 'Servidor Minecraft',
-            roleta: 'Configurações da Roleta Russa'
-        };
-
-        for (let key in changes) {
-            list.push(`<li><b>${labels[key] || key}</b></li>`);
-        }
-        return `<ul>${list.join('')}</ul>`;
-    }
-
-    function setupDirtyTracking() {
-        const inputs = els.dashboard.querySelectorAll('input:not([id^="new-"]):not(#variable-search):not(#member-search):not([id^="file-"]):not(.regex-test-input), textarea, select');
-        inputs.forEach(input => {
-            input.addEventListener('change', () => setDirty(true));
-            if (input.tagName === 'TEXTAREA' || input.type === 'text' || input.type === 'number' || input.type === 'range') {
-                input.addEventListener('input', () => setDirty(true));
-            }
-        });
-
-        window.onbeforeunload = (e) => {
-            if (isDirty) {
-                e.preventDefault();
-                e.returnValue = '';
-            }
-        };
-
-        els.btnGlobalSave.onclick = saveAllChanges;
-        document.querySelectorAll('.btn-save-section').forEach(btn => {
-            btn.onclick = saveAllChanges;
-        });
-    }
-
-    async function saveAllChanges() {
-        try {
-            updateGroupDataFromForm();
-            const changes = calculateChanges(originalGroupData, groupData);
-            
-            if (Object.keys(changes).length === 0) {
-                setDirty(false);
-                return await showCustomAlert('Nenhuma alteração detectada para salvar.');
-            }
-
-            const confirmed = await showCustomConfirm(
-                `Deseja salvar as seguintes alterações?<br>${formatChanges(changes)}`,
-                'Confirmar Alterações'
-            );
-
-            if (!confirmed) return;
-
-            els.btnGlobalSave.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
-            els.btnGlobalSave.disabled = true;
-
-            const res = await fetch(`${API_BASE}/update-group`, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({
-                    token,
-                    groupId,
-                    changes: groupData
-                })
-            });
-
-            if(!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || 'Falha ao salvar');
-            }
-
-            originalGroupData = JSON.parse(JSON.stringify(groupData));
-            setDirty(false);
-            await showCustomAlert('Todas as alterações foram salvas com sucesso!', 'Sucesso');
-            
-        } catch(e) {
-            await showCustomAlert('Erro ao salvar: ' + e.message, 'Erro');
-        } finally {
-            els.btnGlobalSave.innerHTML = '<i class="fas fa-check"></i> Salvar Tudo';
-            els.btnGlobalSave.disabled = false;
-        }
-    }
-
-    function updateGroupDataFromForm() {
-        const nameInput = document.getElementById('group-name-input');
-        const nameValue = nameInput.value.trim().toLowerCase();
-        nameInput.value = nameValue;
-        
-        if (!/^[a-zA-Z0-9_\-.]{1,30}$/.test(nameValue)) {
-            throw new Error('O nome do grupo deve ser alfanumérico, sem espaços, com no máximo 30 caracteres e podendo conter apenas _, - e .');
-        }
-
-        const prefixInput = document.getElementById('group-prefix');
-        const prefixValue = prefixInput.value;
-        if (prefixValue && prefixValue.length > 1) {
-            throw new Error('O prefixo deve ter no máximo 1 caractere.');
-        }
-
-        groupData.name = nameValue;
-        groupData.prefix = prefixValue;
-        
-        // Paused logic
-        const isPaused = !els.groupPausedToggle.checked;
-        groupData.paused = isPaused;
-        document.getElementById('bot-enabled').checked = !isPaused;
-
-        groupData.customAIPrompt = document.getElementById('bot-personality').value;
-        const dynPersEl = document.getElementById('dinamic-personality');
-        if (dynPersEl) {
-            groupData.dinamicPersonality = dynPersEl.checked;
-        }
-        groupData.customIgnoresPrefix = document.getElementById('custom-ignores-prefix').checked;
-
-        const groupRulesEl = document.getElementById('group-rules');
-        if (groupRulesEl) {
-            groupData.regras = groupRulesEl.value.trim() ? groupRulesEl.value : null;
-        }
-
-        if(!groupData.filters) groupData.filters = {};
-        groupData.filters.links = document.getElementById('delete-links').checked;
-        const allowAdminsEl = document.getElementById('filters-allow-admins');
-        if (allowAdminsEl) {
-            groupData.filters.allowAdmins = allowAdminsEl.checked;
-        }
-        groupData.filters.nsfw = document.getElementById('delete-nsfw').checked;
-        const nsfwSlider = document.getElementById('nsfw-intensity');
-        if (nsfwSlider) {
-            const intensity = parseInt(nsfwSlider.value, 10);
-            groupData.filters.nsfwIntensity = intensity;
-            groupData.filters.nsfwThreshold = parseFloat((0.95 - (intensity / 100) * 0.75).toFixed(4));
-        }
-
-        groupData.autoStt = document.getElementById('auto-stt').checked;
-        groupData.notificaGrupoFechado = document.getElementById('notifica-grupo-fechado').checked;
-        groupData.notificaGrupoAberto = document.getElementById('notifica-grupo-aberto').checked;
-        groupData.banirSpammers = document.getElementById('banir-spammers').checked;
-        groupData.greetingAccumulation = {
-            ...(groupData.greetingAccumulation || {}),
-            enabled: document.getElementById('greeting-accumulation').checked,
-            intervalMinutes: Math.max(1, parseInt(document.getElementById('greeting-interval').value, 10) || 30)
-        };
-
-        if(!groupData.interact) groupData.interact = {};
-        groupData.interact.enabled = document.getElementById('auto-interaction').checked;
-        groupData.interact.useCmds = document.getElementById('interact-use-cmds').checked;
-        const votePollsEl = document.getElementById('interact-vote-polls');
-        if (votePollsEl) {
-            groupData.interact.voteInPolls = votePollsEl.checked;
-        }
-        const percentVal = parseInt(document.getElementById('interaction-chance').value, 10) || 1;
-        groupData.interact.chance = Math.min(100, Math.max(1, percentVal)) * 100;
-        const cdVal = parseInt(document.getElementById('interaction-cooldown').value, 10) || 30;
-        groupData.interact.cooldown = Math.min(720, Math.max(1, cdVal));
-        const proporcaoSlider = document.getElementById('interaction-proporcao');
-        if (proporcaoSlider) {
-            groupData.interact.proporcao = parseInt(proporcaoSlider.value);
-        }
-        
-        const autoTranslate = document.getElementById('auto-translate').checked;
-        const translateLang = document.getElementById('translate-lang').value.trim();
-        
-        if (autoTranslate && translateLang.length < 5) {
-            throw new Error('O idioma de tradução deve ter pelo menos 5 caracteres (Ex: "English (EN)").');
-        }
-        
-        groupData.autoTranslateTo = autoTranslate ? translateLang : false;
-
-        const mcServerEl = document.getElementById('minecraft-server');
-        if (mcServerEl) {
-            groupData.minecraftServer = parseMinecraftServerInput(mcServerEl.value);
-        }
-
-        const roletaTempoEl = document.getElementById('roleta-tempo');
-        const roletaSilenciarEl = document.getElementById('roleta-silenciar');
-        if (roletaTempoEl && roletaSilenciarEl) {
-            const roletaTempoInput = (roletaTempoEl.value || '').trim();
-            const roletaTempo = roletaTempoInput !== '' ? Number(roletaTempoInput) : 300;
-            if (isNaN(roletaTempo) || roletaTempo < 10 || roletaTempo > 259200) {
-                throw new Error('Tempo de timeout da roleta deve ser entre 10 e 259200 segundos (72 horas).');
-            }
-            groupData.roleta = {
-                timeoutTime: roletaTempo,
-                silenciar: roletaSilenciarEl.checked
-            };
-        }
-    }
-
-    // Mesmas regras do MinecraftServerService.parseServerAddress (porta padrão 25565)
-    function parseMinecraftServerInput(rawValue) {
-        const address = (rawValue || '').trim().toLowerCase();
-        if (!address) return null;
-
-        const invalid = () => new Error('Endereço do servidor de Minecraft inválido. Use ip ou ip:porta (ex: play.exemplo.com:25300).');
-        const ipv6Match = address.match(/^\[([0-9a-f:]+)\](?::(.*))?$/);
-        let host;
-        let rawPort;
-        if (ipv6Match) {
-            [, host, rawPort] = ipv6Match;
-        } else {
-            const parts = address.split(':');
-            if (parts.length > 2) throw invalid();
-            [host, rawPort] = parts;
-            if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) || host.length > 253) throw invalid();
-        }
-
-        if (rawPort === undefined) return { host, port: 25565 };
-        const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : 0;
-        if (port < 1 || port > 65535) throw invalid();
-        return { host, port };
-    }
-
-    function formatMinecraftServer(server) {
-        if (!server || !server.host) return '';
-        const host = server.host.includes(':') ? `[${server.host}]` : server.host;
-        if (server.port && Number(server.port) !== 25565) {
-            return `${host}:${server.port}`;
-        }
-        return host;
-    }
-
-    function updateHeroStatusVisuals(isPaused) {
-        if (isPaused) {
-            els.heroPauseCard.classList.add('paused');
-            els.heroStatusPill.className = 'status-pill status-pill-paused';
-            els.heroStatusPill.textContent = 'Pausado';
-            els.heroStatusDesc.textContent = 'O bot está pausado neste grupo e responderá apenas a comandos de reativação por administradores.';
-            els.groupPausedToggle.checked = false;
-        } else {
-            els.heroPauseCard.classList.remove('paused');
-            els.heroStatusPill.className = 'status-pill status-pill-active';
-            els.heroStatusPill.textContent = 'Ativo';
-            els.heroStatusDesc.textContent = 'O bot está funcionando normalmente e respondendo comandos neste grupo.';
-            els.groupPausedToggle.checked = true;
-        }
-    }
-
-    function formatCooldownText(val) {
-        const minutes = parseInt(val, 10) || 1;
-        if (minutes < 60) {
-            return `${minutes} min`;
-        }
-        const h = Math.floor(minutes / 60);
-        const m = minutes % 60;
-        if (m === 0) {
-            return `${h}h (${minutes} min)`;
-        }
-        return `${h}h ${m}min (${minutes} min)`;
-    }
-
-    function populateFields() {
-        document.getElementById('group-id').value = groupData.id;
-        document.getElementById('group-created-at').value = new Date(groupData.createdAt || Date.now()).toLocaleDateString('pt-BR');
-        document.getElementById('group-name-input').value = (groupData.name || '').trim();
-        document.getElementById('group-prefix').value = groupData.prefix || '';
-        document.getElementById('greeting-accumulation').checked = !!groupData.greetingAccumulation?.enabled;
-        document.getElementById('greeting-interval').value = groupData.greetingAccumulation?.intervalMinutes || 30;
-        
-        const isPaused = !!groupData.paused;
-        updateHeroStatusVisuals(isPaused);
-        document.getElementById('bot-enabled').checked = !isPaused;
-
-        document.getElementById('bot-personality').value = groupData.customAIPrompt || '';
-        document.getElementById('personality-count').textContent = (groupData.customAIPrompt || '').length;
-        const dynPersCheckEl = document.getElementById('dinamic-personality');
-        if (dynPersCheckEl) {
-            dynPersCheckEl.checked = groupData.dinamicPersonality !== false;
-        }
-        document.getElementById('custom-ignores-prefix').checked = !!groupData.customIgnoresPrefix;
-
-        const rulesVal = groupData.regras || '';
-        const groupRulesEl = document.getElementById('group-rules');
-        if (groupRulesEl) {
-            groupRulesEl.value = rulesVal;
-            const rulesCountEl = document.getElementById('rules-count');
-            if (rulesCountEl) rulesCountEl.textContent = rulesVal.length;
-        }
-
-        const mcServerInput = document.getElementById('minecraft-server');
-        if (mcServerInput) {
-            mcServerInput.value = formatMinecraftServer(groupData.minecraftServer);
-        }
-        const roletaTempoInput = document.getElementById('roleta-tempo');
-        if (roletaTempoInput) {
-            roletaTempoInput.value = groupData.roleta?.timeoutTime ?? 300;
-        }
-        const roletaSilenciarInput = document.getElementById('roleta-silenciar');
-        if (roletaSilenciarInput) {
-            roletaSilenciarInput.checked = !!groupData.roleta?.silenciar;
-        }
-        renderTags('ignored-numbers-list', groupData.ignoredNumbers || [], (list) => { groupData.ignoredNumbers = list; setDirty(true); });
-        
-        document.getElementById('delete-links').checked = groupData.filters?.links || false;
-        const allowAdminsEl = document.getElementById('filters-allow-admins');
-        if (allowAdminsEl) {
-            allowAdminsEl.checked = !!groupData.filters?.allowAdmins;
-        }
-        renderTags('allowed-links-list', groupData.filters?.allowedLinks || [], (list) => {
-            if(!groupData.filters) groupData.filters = {};
-            groupData.filters.allowedLinks = list; setDirty(true);
-        });
-        const nsfwActive = !!groupData.filters?.nsfw;
-        document.getElementById('delete-nsfw').checked = nsfwActive;
-
-        let nsfwIntensity = 20;
-        if (groupData.filters?.nsfwIntensity !== undefined && !isNaN(groupData.filters.nsfwIntensity)) {
-            nsfwIntensity = parseInt(groupData.filters.nsfwIntensity, 10);
-        } else if (groupData.filters?.nsfwThreshold !== undefined && !isNaN(groupData.filters.nsfwThreshold)) {
-            nsfwIntensity = Math.round(((0.95 - groupData.filters.nsfwThreshold) / 0.75) * 100);
-            nsfwIntensity = Math.max(0, Math.min(100, nsfwIntensity));
-        }
-
-        const nsfwSliderEl = document.getElementById('nsfw-intensity');
-        if (nsfwSliderEl) {
-            nsfwSliderEl.value = nsfwIntensity;
-            document.getElementById('nsfw-intensity-val').textContent = nsfwIntensity;
-        }
-        toggleNsfwSettings(nsfwActive);
-
-        renderTags('forbidden-words-list', groupData.filters?.words || [], (list) => { 
-            if(!groupData.filters) groupData.filters = {};
-            groupData.filters.words = list; setDirty(true);
-        });
-
-        renderRegexList('forbidden-regexes-list', groupData.filters?.regexes || [], (list) => {
-            if(!groupData.filters) groupData.filters = {};
-            groupData.filters.regexes = list; setDirty(true);
-        });
-
-        renderTags('forbidden-users-list', groupData.filters?.people || [], (list) => { 
-            if(!groupData.filters) groupData.filters = {};
-            groupData.filters.people = list; setDirty(true);
-        });
-
-        renderTags('muted-commands-list', groupData.mutedCommands || [], (list) => { groupData.mutedCommands = list; setDirty(true); });
-        renderTags('additional-admins-list', groupData.additionalAdmins || [], (list) => { groupData.additionalAdmins = list; setDirty(true); });
-
-        const categories = [
-            "geral", "grupo", "stickers", "ia", "interacao", "midia", "voz",
-            "utilidades", "downloaders", "jogos", "streams", "zoeira", "mudae",
-            "busca", "cultura", "audio", "listas", "arquivos", "canais", "outros"
-        ];
-        const mutedList = document.getElementById('muted-categories-list');
-        if (mutedList) {
-            mutedList.innerHTML = '';
-            const muted = groupData.mutedCategories || [];
-            categories.forEach(cat => {
-                const isMuted = muted.some(c => String(c).toLowerCase() === cat.toLowerCase());
-                const card = document.createElement('div');
-                card.className = `cmd-category-card ${isMuted ? 'is-muted' : ''}`;
-                card.setAttribute('role', 'checkbox');
-                card.setAttribute('aria-checked', isMuted ? 'true' : 'false');
-                card.title = isMuted ? 'Categoria silenciada (clique para liberar)' : 'Categoria liberada (clique para silenciar)';
-
-                card.innerHTML = `
+document.addEventListener("DOMContentLoaded", () => {
+	const pathParts = window.location.pathname.split("/");
+	const token = pathParts[pathParts.length - 1];
+
+	// State
+	let groupData = null;
+	let originalGroupData = null;
+	let customCommands = [];
+	let schedules = [];
+	let groupId = null;
+	let tokenData = null;
+	let expiresAt = null;
+	let isDirty = false;
+	let currentStream = null; // { platform, index, data }
+	let pickerMode = "variable"; // 'variable', 'language', 'start-emoji', 'emoji'
+	let lastFocusedInput = null;
+	let currentCmdMentions = [];
+	let currentEditingCmd = null;
+	let activeEmojiTarget = "cmd-emoji"; // 'cmd-emoji' or 'cmd-start-emoji'
+
+	// Constants
+	const API_BASE = "/api";
+
+	const TRUSTED_DOMAINS = [
+		"youtube.com",
+		"youtu.be",
+		"google.com",
+		"google.com.br",
+		"goo.gl",
+		"olx.com.br",
+		"mercadolivre.com.br",
+		"mercadolivre.com",
+		"mercadopago.com.br",
+		"mercadopago.com",
+		"facebook.com",
+		"fb.watch",
+		"fb.me",
+		"instagram.com",
+		"x.com",
+		"twitter.com",
+		"t.co",
+		"tiktok.com",
+		"vm.tiktok.com",
+		"amazon.com.br",
+		"amazon.com",
+		"amzn.to",
+		"shopee.com.br",
+		"shopee.com",
+		"pinterest.com",
+		"pin.it",
+		"reddit.com",
+		"redd.it",
+		"linkedin.com",
+		"lnkd.in",
+		"github.com",
+		"twitch.tv",
+		"spotify.com",
+		"spoti.fi"
+	];
+
+	const AVAILABLE_LANGUAGES = [
+		{ code: "English (EN)", desc: "Inglês" },
+		{ code: "Spanish (ES)", desc: "Espanhol" },
+		{ code: "Russian (RU)", desc: "Russo" },
+		{ code: "French (FR)", desc: "Francês" },
+		{ code: "German (DE)", desc: "Alemão" },
+		{ code: "Italian (IT)", desc: "Italiano" },
+		{ code: "Japanese (JA)", desc: "Japonês" },
+		{ code: "Chinese (ZH)", desc: "Chinês" },
+		{ code: "Korean (KO)", desc: "Coreano" },
+		{ code: "Arabic (AR)", desc: "Árabe" },
+		{ code: "Hindi (HI)", desc: "Hindi" },
+		{ code: "Turkish (TR)", desc: "Turco" },
+		{ code: "Dutch (NL)", desc: "Holandês" },
+		{ code: "Polish (PL)", desc: "Polonês" },
+		{ code: "Indonesian (ID)", desc: "Indonésio" },
+		{ code: "Vietnamese (VI)", desc: "Vietnamita" },
+		{ code: "Thai (TH)", desc: "Tailandês" }
+	];
+
+	const AVAILABLE_VARIABLES = [
+		{ code: "{day}", desc: "Dia da semana (ex: Segunda-feira)" },
+		{ code: "{date}", desc: "Data atual (ex: 12/01/2026)" },
+		{ code: "{time}", desc: "Hora atual (ex: 14:30:00)" },
+		{ code: "{data-hora}", desc: "Hora (HH)" },
+		{ code: "{data-minuto}", desc: "Minuto (MM)" },
+		{ code: "{data-segundo}", desc: "Segundo (SS)" },
+		{ code: "{data-dia}", desc: "Dia (DD)" },
+		{ code: "{data-mes}", desc: "Mês (MM)" },
+		{ code: "{data-ano}", desc: "Ano (YYYY)" },
+		{ code: "{randomPequeno}", desc: "Número aleatório 1-10" },
+		{ code: "{randomMedio}", desc: "Número aleatório 1-100" },
+		{ code: "{randomGrande}", desc: "Número aleatório 1-1000" },
+		{ code: "{randomMuitoGrande}", desc: "Número aleatório 1-10000" },
+		{ code: "{rndDado-6}", desc: "Dado de 6 lados (exemplo)" },
+		{ code: "{rndDadoRange-1-100}", desc: "Número entre 1 e 100 (exemplo)" },
+		{ code: "{somaRandoms}", desc: "Soma dos números gerados anteriormente" },
+		{ code: "{pessoa}", desc: "Nome de quem enviou a mensagem" },
+		{ code: "{group}", desc: "Nome do grupo" },
+		{ code: "{contador}", desc: "Vezes que o comando foi usado" },
+		{ code: "{membroRandom}", desc: "Nome de um membro aleatório" },
+		{ code: "{mention}", desc: "Menciona usuário (autor/mencionado/aleatório)" },
+		{ code: "{singleMention}", desc: "Mesma menção repetida" },
+		{ code: "{mentionOuEu}", desc: "Menciona usuário ou autor" },
+		{ code: "{mentionAll}", desc: "Marca todos silenciosamente (exceto ignorados)" },
+		{ code: "{reddit-memes}", desc: "Post aleatório do r/memes (exemplo)" },
+		{ code: "{nomeCanal}", desc: "Stream: Nome do canal" },
+		{ code: "{titulo}", desc: "Stream: Título da live" },
+		{ code: "{jogo}", desc: "Stream: Jogo/Categoria" },
+		{ code: "{author}", desc: "YouTube/TikTok: Autor do vídeo" },
+		{ code: "{title}", desc: "YouTube/TikTok: Título do vídeo" },
+		{ code: "{link}", desc: "Link do vídeo ou da live" }
+	];
+
+	const COMMON_EMOJIS = [
+		"😀",
+		"😃",
+		"😄",
+		"😁",
+		"😆",
+		"😅",
+		"🤣",
+		"😂",
+		"🙂",
+		"🙃",
+		"😉",
+		"😊",
+		"😇",
+		"🥰",
+		"😍",
+		"🤩",
+		"😘",
+		"😗",
+		"☺️",
+		"😚",
+		"😙",
+		"😋",
+		"😛",
+		"😜",
+		"🤪",
+		"😝",
+		"🤑",
+		"🤗",
+		"🤭",
+		"🤫",
+		"🤔",
+		"🤐",
+		"🤨",
+		"😐",
+		"😑",
+		"😶",
+		"😶‍🌫️",
+		"😏",
+		"😒",
+		"🙄",
+		"😬",
+		"🤥",
+		"😌",
+		"😔",
+		"😪",
+		"🤤",
+		"😴",
+		"😷",
+		"🤒",
+		"🤕",
+		"🤢",
+		"🤮",
+		"🤧",
+		"🥵",
+		"🥶",
+		"🥴",
+		"😵",
+		"😵‍💫",
+		"🤯",
+		"🤠",
+		"🥳",
+		"😎",
+		"🤓",
+		"🧐",
+		"😕",
+		"😟",
+		"🙁",
+		"☹️",
+		"😮",
+		"😯",
+		"😲",
+		"😳",
+		"🥺",
+		"😦",
+		"😧",
+		"😨",
+		"😰",
+		"😥",
+		"😢",
+		"😭",
+		"😱",
+		"😖",
+		"😣",
+		"😞",
+		"😓",
+		"😩",
+		"😫",
+		"🥱",
+		"😤",
+		"😡",
+		"😠",
+		"🤬",
+		"😈",
+		"👿",
+		"💀",
+		"☠️",
+		"💩",
+		"🤡",
+		"👹",
+		"👺",
+		"👻",
+		"👽",
+		"👾",
+		"🤖",
+		"👋",
+		"🤚",
+		"🖐",
+		"✋",
+		"🖖",
+		"👌",
+		"🤌",
+		"🤏",
+		"✌️",
+		"🤞",
+		"🤟",
+		"🤘",
+		"🤙",
+		"👈",
+		"👉",
+		"👆",
+		"🖕",
+		"👇",
+		"☝️",
+		"👍",
+		"👎",
+		"✊",
+		"👊",
+		"🤛",
+		"🤜",
+		"👏",
+		"🙌",
+		"👐",
+		"🤲",
+		"🤝",
+		"🙏",
+		"✍️",
+		"💅",
+		"🤳",
+		"💪",
+		"🦾",
+		"🦵",
+		"🦶",
+		"👂",
+		"🦻",
+		"👃",
+		"🧠",
+		"🫀",
+		"🫁",
+		"🦷",
+		"🦴",
+		"👀",
+		"👁",
+		"👅",
+		"👄",
+		"🫦",
+		"👶",
+		"❤️",
+		"🧡",
+		"💛",
+		"💚",
+		"💙",
+		"💜",
+		"🖤",
+		"🤍",
+		"🤎",
+		"💔",
+		"🔥",
+		"✨",
+		"⭐",
+		"⏳",
+		"⌛",
+		"⏰",
+		"🚀",
+		"🎯",
+		"🎉",
+		"🎊",
+		"🎁",
+		"🔔",
+		"📢",
+		"💬",
+		"👀",
+		"💯"
+	];
+
+	const DEFAULT_MSG = {
+		twitch: "⚠️ ATENÇÃO!⚠️\n\n🌟 *{canal}* está online jogando {jogo}!\nAssista: {link}",
+		kick: "⚠️ ATENÇÃO!⚠️\n\n🌟 *{canal}* iniciou stream na Kick!\nAssista: {link}",
+		youtube: "🎬 Novo vídeo no canal *{author}*!\nAssista agora: {link}",
+		youtube_video: "🎬 Novo vídeo no canal *{author}*!\n*{title}*\nAssista agora: {link}",
+		youtube_live: "🔴 *{canal}* está AO VIVO no YouTube!\n*{titulo}*\nAssista: {link}",
+		tiktok_video: "🎵 Vídeo novo no TikTok de *{author}*!\n{title}\nAssista agora: {link}",
+		tiktok_live: "🔴 *{canal}* está AO VIVO no TikTok!\n*{titulo}*\nAssista: {link}"
+	};
+
+	// YouTube e TikTok têm seções separadas de Vídeos e Lives no painel, mas um único array no grupo
+	const SPLIT_STREAM_PLATFORMS = ["youtube", "tiktok"];
+	const STREAM_PLATFORM_LABELS = {
+		twitch: "Twitch",
+		kick: "Kick",
+		youtube: "YouTube",
+		tiktok: "TikTok"
+	};
+
+	function parseStreamPlatform(platform) {
+		const match = /^(youtube|tiktok)_(video|live)$/.exec(platform || "");
+		if (match) return { storeKey: match[1], kind: match[2] };
+		return { storeKey: platform, kind: null };
+	}
+
+	// UI Elements
+	const els = {
+		loading: document.getElementById("loading-container"),
+		error: document.getElementById("error-container"),
+		errorMsg: document.getElementById("error-message"),
+		dashboard: document.getElementById("dashboard-content"),
+		userName: document.getElementById("user-name"),
+		groupName: document.getElementById("group-name"),
+		expirationTime: document.getElementById("expiration-time"),
+		retryBtn: document.getElementById("retry-button"),
+		accordions: document.querySelectorAll(".accordion-item"),
+		subAccordions: document.querySelectorAll(".sub-accordion"),
+
+		// Hero Status
+		heroPauseCard: document.getElementById("hero-pause-card"),
+		groupPausedToggle: document.getElementById("group-paused-toggle"),
+		heroStatusPill: document.getElementById("hero-status-pill"),
+		heroStatusDesc: document.getElementById("hero-status-desc"),
+
+		// Modals
+		cmdModal: document.getElementById("command-modal"),
+		streamModal: document.getElementById("stream-modal"),
+		uploadModal: document.getElementById("upload-modal"),
+		variableModal: document.getElementById("variable-modal"),
+		emojiModal: document.getElementById("emoji-modal"),
+		customDialogModal: document.getElementById("custom-dialog-modal"),
+		memberModal: document.getElementById("member-modal"),
+		webhookModal: document.getElementById("webhook-modal"),
+		scheduleModal: document.getElementById("schedule-modal"),
+		commandLimitModal: document.getElementById("command-limit-modal"),
+
+		closeModalBtns: document.querySelectorAll(
+			".close-modal, .close-modal-btn, .close-stream-modal, .close-variable-modal, .close-emoji-modal, .close-dialog, .close-member-modal, .close-webhook-modal, .close-schedule-modal, .close-saida-modal, .close-command-limit-modal"
+		),
+		closeUploadBtns: document.querySelectorAll(".close-upload"),
+
+		// Schedules
+		btnAddSchedule: document.getElementById("btn-add-schedule"),
+		btnSaveScheduleConfirm: document.getElementById("btn-save-schedule-confirm"),
+		schedulesOnetimeContainer: document.getElementById("schedules-onetime-container"),
+		noSchedulesOnetimeMsg: document.getElementById("no-schedules-onetime-msg"),
+		schedulesWeeklyContainer: document.getElementById("schedules-weekly-container"),
+		noSchedulesWeeklyMsg: document.getElementById("no-schedules-weekly-msg"),
+		scheduleModalTitle: document.getElementById("schedule-modal-title"),
+		scheduleEditId: document.getElementById("schedule-edit-id"),
+		scheduleTipo: document.getElementById("schedule-tipo"),
+		scheduleHora: document.getElementById("schedule-hora"),
+		scheduleDia: document.getElementById("schedule-dia"),
+		scheduleFrase: document.getElementById("schedule-frase"),
+
+		// Sticky Footer
+		stickySaveBar: document.getElementById("sticky-save-bar"),
+		btnGlobalSave: document.getElementById("btn-global-save"),
+
+		// General
+		btnViewMembers: document.getElementById("btn-view-members"),
+
+		// Command Form
+		cmdTrigger: document.getElementById("cmd-trigger"),
+		cmdActive: document.getElementById("cmd-active"),
+		cmdInteract: document.getElementById("cmd-interact"),
+		cmdReplyQuote: document.getElementById("cmd-reply-quote"),
+		cmdSendAll: document.getElementById("cmd-send-all"),
+		cmdAdminOnly: document.getElementById("cmd-admin-only"),
+		cmdReplyPrivate: document.getElementById("cmd-reply-private"),
+		cmdEmoji: document.getElementById("cmd-emoji"),
+		btnEmojiPicker: document.getElementById("btn-emoji-picker"),
+		cmdStartEmoji: document.getElementById("cmd-start-emoji"),
+		btnStartEmojiPicker: document.getElementById("btn-start-emoji-picker"),
+		cmdCooldown: document.getElementById("cmd-cooldown"),
+		cmdTimeStart: document.getElementById("cmd-time-start"),
+		cmdTimeEnd: document.getElementById("cmd-time-end"),
+		cmdResponsesList: document.getElementById("cmd-responses-list"),
+		btnSaveCmd: document.getElementById("btn-save-cmd"),
+		btnDeleteCmd: document.getElementById("btn-delete-cmd"),
+		cmdMetadata: document.getElementById("cmd-metadata"),
+		modalTitle: document.getElementById("modal-title"),
+		btnAddTag: document.getElementById("btn-add-tag"),
+		cmdTagsList: document.getElementById("cmd-tags-list"),
+
+		// Command Simulator
+		cmdWaBubble: document.getElementById("cmd-wa-bubble"),
+		cmdWaMedia: document.getElementById("cmd-wa-media"),
+		cmdWaText: document.getElementById("cmd-wa-text"),
+		cmdWaTime: document.getElementById("cmd-wa-time"),
+
+		// Member Modal
+		memberModalTitle: document.getElementById("member-modal-title"),
+		memberSearch: document.getElementById("member-search"),
+		memberTableBody: document.getElementById("member-table-body"),
+
+		// Stream Form
+		streamModalTitle: document.getElementById("stream-modal-title"),
+		streamChannel: document.getElementById("stream-channel"),
+		streamMention: document.getElementById("stream-mention"),
+		streamChangeTitle: document.getElementById("stream-change-title"),
+		streamChangePhoto: document.getElementById("stream-change-photo"),
+		streamCloseGroup: document.getElementById("stream-close-group"),
+		streamCloseGroupDuration: document.getElementById("stream-close-group-duration"),
+		streamCloseGroupDurationBox: document.getElementById("stream-close-group-duration-box"),
+		streamAI: document.getElementById("stream-ai"),
+		streamUseThumbnail: document.getElementById("stream-use-thumbnail"),
+		streamTitlesGroup: document.getElementById("stream-titles-group"),
+		streamTitleOn: document.getElementById("stream-title-on"),
+		streamTitleOff: document.getElementById("stream-title-off"),
+		streamOnMediaList: document.getElementById("stream-on-media-list"),
+		streamOffMediaList: document.getElementById("stream-off-media-list"),
+		btnSaveStream: document.getElementById("btn-save-stream"),
+		btnDeleteStream: document.getElementById("btn-delete-stream"),
+		streamHint: document.getElementById("stream-hint"),
+		streamWaThumbnail: document.getElementById("stream-wa-thumbnail"),
+		streamWaText: document.getElementById("stream-wa-text"),
+
+		// Upload Form
+		mediaFileInput: document.getElementById("media-file-input"),
+		mediaCaption: document.getElementById("media-caption"),
+		convertSticker: document.getElementById("convert-sticker"),
+		btnConfirmUpload: document.getElementById("btn-confirm-upload"),
+		uploadType: document.getElementById("upload-type"),
+		uploadContext: document.getElementById("upload-context"),
+		captionGroup: document.getElementById("caption-group"),
+		asStickerGroup: document.getElementById("as-sticker-group"),
+		uploadStatus: document.getElementById("upload-status"),
+
+		// Dialog
+		dialogTitle: document.getElementById("dialog-title"),
+		dialogMessage: document.getElementById("dialog-message"),
+		dialogInput: document.getElementById("dialog-input"),
+		dialogBtnCancel: document.getElementById("dialog-btn-cancel"),
+		dialogBtnOk: document.getElementById("dialog-btn-ok"),
+		dossiesHistoryList: document.getElementById("dossies-history-list"),
+
+		// Warnings & Webhooks
+		warningsTableBody: document.getElementById("warnings-table-body"),
+		noWarningsMsg: document.getElementById("no-warnings-msg"),
+		btnClearAllWarnings: document.getElementById("btn-clear-all-warnings"),
+		webhooksEndpointUrl: document.getElementById("webhooks-endpoint-url"),
+		btnCopyWebhookUrl: document.getElementById("btn-copy-webhook-url"),
+		webhooksTableBody: document.getElementById("webhooks-table-body"),
+		noWebhooksMsg: document.getElementById("no-webhooks-msg"),
+		btnAddWebhook: document.getElementById("btn-add-webhook"),
+		btnSaveWebhookConfirm: document.getElementById("btn-save-webhook-confirm"),
+
+		// Backups
+		btnExportCmdsZip: document.getElementById("btn-export-cmds-zip"),
+		fileImportCmdsZip: document.getElementById("file-import-cmds-zip"),
+		btnExportConfigJson: document.getElementById("btn-export-config-json"),
+		fileImportConfigJson: document.getElementById("file-import-config-json")
+	};
+
+	// --- Custom Dialogs ---
+
+	function showCustomAlert(message, title = "Aviso") {
+		return new Promise((resolve) => {
+			els.dialogTitle.textContent = title;
+			els.dialogMessage.innerHTML = message;
+			els.dialogInput.classList.add("hidden");
+			els.dialogBtnCancel.classList.add("hidden");
+			els.dialogBtnOk.textContent = "OK";
+
+			els.customDialogModal.classList.remove("hidden");
+
+			const handleOk = () => {
+				els.customDialogModal.classList.add("hidden");
+				els.dialogBtnOk.removeEventListener("click", handleOk);
+				resolve();
+			};
+
+			els.dialogBtnOk.onclick = handleOk;
+		});
+	}
+
+	function showCustomConfirm(message, title = "Confirmação") {
+		return new Promise((resolve) => {
+			els.dialogTitle.textContent = title;
+			els.dialogMessage.innerHTML = message;
+			els.dialogInput.classList.add("hidden");
+			els.dialogBtnCancel.classList.remove("hidden");
+			els.dialogBtnOk.textContent = "Sim";
+
+			els.customDialogModal.classList.remove("hidden");
+
+			const handleOk = () => {
+				els.customDialogModal.classList.add("hidden");
+				cleanup();
+				resolve(true);
+			};
+
+			const handleCancel = () => {
+				els.customDialogModal.classList.add("hidden");
+				cleanup();
+				resolve(false);
+			};
+
+			function cleanup() {
+				els.dialogBtnOk.removeEventListener("click", handleOk);
+				els.dialogBtnCancel.removeEventListener("click", handleCancel);
+			}
+
+			els.dialogBtnOk.onclick = handleOk;
+			els.dialogBtnCancel.onclick = handleCancel;
+		});
+	}
+
+	function showCustomPrompt(message, defaultValue = "", title = "Entrada de Texto") {
+		return new Promise((resolve) => {
+			els.dialogTitle.textContent = title;
+			els.dialogMessage.innerHTML = message;
+			els.dialogInput.value = defaultValue;
+			els.dialogInput.classList.remove("hidden");
+			els.dialogBtnCancel.classList.remove("hidden");
+			els.dialogBtnOk.textContent = "Salvar";
+
+			els.customDialogModal.classList.remove("hidden");
+			els.dialogInput.focus();
+
+			const handleOk = () => {
+				const val = els.dialogInput.value;
+				els.customDialogModal.classList.add("hidden");
+				cleanup();
+				resolve(val);
+			};
+
+			const handleCancel = () => {
+				els.customDialogModal.classList.add("hidden");
+				cleanup();
+				resolve(null);
+			};
+
+			function cleanup() {
+				els.dialogBtnOk.removeEventListener("click", handleOk);
+				els.dialogBtnCancel.removeEventListener("click", handleCancel);
+			}
+
+			els.dialogBtnOk.onclick = handleOk;
+			els.dialogBtnCancel.onclick = handleCancel;
+		});
+	}
+
+	// --- Init & Data Loading ---
+
+	async function init() {
+		if (!token) {
+			showError("Token de acesso não fornecido na URL.");
+			return;
+		}
+
+		try {
+			const validation = await fetch(`${API_BASE}/validate-token?token=${token}`).then((r) =>
+				r.json()
+			);
+			if (!validation.valid) {
+				showError("Token inválido ou expirado. Por favor, gere um novo link usando !g-painel.");
+				return;
+			}
+
+			tokenData = validation;
+			groupId = validation.groupId;
+			expiresAt = new Date(validation.expiresAt);
+
+			els.userName.textContent = validation.requestNumber || "Admin";
+			startTimer();
+			await loadData();
+			setupEventListeners();
+			loadDossierHistory();
+
+			els.loading.classList.add("hidden");
+			els.dashboard.classList.remove("hidden");
+		} catch (err) {
+			showError("Erro de conexão ao validar sessão: " + err.message);
+		}
+	}
+
+	async function loadData() {
+		try {
+			const resGroup = await fetch(`${API_BASE}/group?id=${groupId}&token=${token}`);
+			if (!resGroup.ok) throw new Error("Não foi possível carregar dados do grupo.");
+			groupData = await resGroup.json();
+			if (!groupData.greetingAccumulation) {
+				groupData.greetingAccumulation = { enabled: false, intervalMinutes: 30 };
+			}
+			originalGroupData = JSON.parse(JSON.stringify(groupData));
+
+			const resCmds = await fetch(`${API_BASE}/custom-commands/${groupId}?token=${token}`);
+			if (resCmds.ok) {
+				customCommands = await resCmds.json();
+			}
+
+			els.groupName.textContent = groupData.name || "Sem nome";
+			populateFields();
+			renderCommandsTable();
+			renderWarnings();
+			renderWebhooks();
+			renderCommandLimits();
+			await loadSchedules();
+			setupDirtyTracking();
+		} catch (e) {
+			showError("Erro ao carregar dados: " + e.message);
+		}
+	}
+
+	function showError(msg) {
+		els.loading.classList.add("hidden");
+		els.dashboard.classList.add("hidden");
+		els.error.classList.remove("hidden");
+		els.errorMsg.textContent = msg;
+	}
+
+	function startTimer() {
+		const update = () => {
+			const now = new Date();
+			const diff = expiresAt - now;
+			if (diff <= 0) {
+				els.expirationTime.textContent = "Expirado";
+				clearInterval(interval);
+				showCustomAlert("Sua sessão expirou. O painel será recarregado.", "Sessão Expirada").then(
+					() => {
+						window.location.reload();
+					}
+				);
+				return;
+			}
+			const mins = Math.floor(diff / 60000);
+			const secs = Math.floor((diff % 60000) / 1000);
+			els.expirationTime.textContent = `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+		};
+		update();
+		const interval = setInterval(update, 1000);
+	}
+
+	// --- Dirty State & Global Save ---
+
+	function setDirty(state) {
+		isDirty = state;
+		if (state) {
+			els.stickySaveBar.classList.remove("hidden");
+		} else {
+			els.stickySaveBar.classList.add("hidden");
+		}
+	}
+
+	function calculateChanges(original, current) {
+		const changes = {};
+		const allKeys = new Set([...Object.keys(original || {}), ...Object.keys(current || {})]);
+		for (const key of allKeys) {
+			if (key === "participants") continue;
+			const origVal = original ? original[key] : undefined;
+			const currVal = current ? current[key] : undefined;
+			if (
+				(typeof currVal === "object" && currVal !== null) ||
+				(typeof origVal === "object" && origVal !== null)
+			) {
+				if (JSON.stringify(origVal) !== JSON.stringify(currVal)) {
+					changes[key] = currVal;
+				}
+			} else {
+				if (origVal !== currVal) {
+					changes[key] = currVal;
+				}
+			}
+		}
+		return changes;
+	}
+
+	function formatChanges(changes) {
+		const list = [];
+		const labels = {
+			name: "Nome do Grupo",
+			prefix: "Prefixo",
+			paused: "Status do Bot (Pausado/Ativo)",
+			customAIPrompt: "Personalidade da IA",
+			dinamicPersonality: "Personalidade Dinâmica (IA)",
+			customIgnoresPrefix: "Comandos sem Prefixo",
+			filters: "Filtros (Links / NSFW / Palavras / Regex)",
+			ignoredNumbers: "Números Ignorados",
+			mutedCategories: "Categorias Silenciadas",
+			mutedCommands: "Comandos Silenciados",
+			commandLimits: "Frequência de Comandos",
+			additionalAdmins: "Admins Adicionais",
+			autoStt: "Transcrever Áudios",
+			notificaGrupoFechado: "Notificar Grupo Fechado",
+			notificaGrupoAberto: "Notificar Grupo Aberto",
+			interact: "Interações Automáticas",
+			greetings: "Mensagens de Boas-Vindas",
+			farewells: "Mensagens de Despedida",
+			autoTranslateTo: "Traduzir Respostas",
+			twitch: "Twitch",
+			kick: "Kick",
+			youtube: "YouTube",
+			tiktok: "TikTok",
+			nicks: "Apelidos dos Membros",
+			warnings: "Advertências do Grupo",
+			webhooks: "Webhooks Externos",
+			banirSpammers: "Banir Spammers Automaticamente",
+			greetingAccumulation: "Acúmulo de Saudações",
+			regras: "Regras do Grupo",
+			minecraftServer: "Servidor Minecraft",
+			roleta: "Configurações da Roleta Russa"
+		};
+
+		for (const key in changes) {
+			list.push(`<li><b>${labels[key] || key}</b></li>`);
+		}
+		return `<ul>${list.join("")}</ul>`;
+	}
+
+	function setupDirtyTracking() {
+		const inputs = els.dashboard.querySelectorAll(
+			'input:not([id^="new-"]):not(#variable-search):not(#member-search):not([id^="file-"]):not(.regex-test-input), textarea, select'
+		);
+		inputs.forEach((input) => {
+			input.addEventListener("change", () => setDirty(true));
+			if (
+				input.tagName === "TEXTAREA" ||
+				input.type === "text" ||
+				input.type === "number" ||
+				input.type === "range"
+			) {
+				input.addEventListener("input", () => setDirty(true));
+			}
+		});
+
+		window.onbeforeunload = (e) => {
+			if (isDirty) {
+				e.preventDefault();
+				e.returnValue = "";
+			}
+		};
+
+		els.btnGlobalSave.onclick = saveAllChanges;
+		document.querySelectorAll(".btn-save-section").forEach((btn) => {
+			btn.onclick = saveAllChanges;
+		});
+	}
+
+	async function saveAllChanges() {
+		try {
+			updateGroupDataFromForm();
+			const changes = calculateChanges(originalGroupData, groupData);
+
+			if (Object.keys(changes).length === 0) {
+				setDirty(false);
+				return await showCustomAlert("Nenhuma alteração detectada para salvar.");
+			}
+
+			const confirmed = await showCustomConfirm(
+				`Deseja salvar as seguintes alterações?<br>${formatChanges(changes)}`,
+				"Confirmar Alterações"
+			);
+
+			if (!confirmed) return;
+
+			els.btnGlobalSave.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Salvando...';
+			els.btnGlobalSave.disabled = true;
+
+			const res = await fetch(`${API_BASE}/update-group`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					token,
+					groupId,
+					changes: groupData
+				})
+			});
+
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.message || "Falha ao salvar");
+			}
+
+			originalGroupData = JSON.parse(JSON.stringify(groupData));
+			setDirty(false);
+			await showCustomAlert("Todas as alterações foram salvas com sucesso!", "Sucesso");
+		} catch (e) {
+			await showCustomAlert("Erro ao salvar: " + e.message, "Erro");
+		} finally {
+			els.btnGlobalSave.innerHTML = '<i class="fas fa-check"></i> Salvar Tudo';
+			els.btnGlobalSave.disabled = false;
+		}
+	}
+
+	function updateGroupDataFromForm() {
+		const nameInput = document.getElementById("group-name-input");
+		const nameValue = nameInput.value.trim().toLowerCase();
+		nameInput.value = nameValue;
+
+		if (!/^[a-zA-Z0-9_\-.]{1,30}$/.test(nameValue)) {
+			throw new Error(
+				"O nome do grupo deve ser alfanumérico, sem espaços, com no máximo 30 caracteres e podendo conter apenas _, - e ."
+			);
+		}
+
+		const prefixInput = document.getElementById("group-prefix");
+		const prefixValue = prefixInput.value;
+		if (prefixValue && prefixValue.length > 1) {
+			throw new Error("O prefixo deve ter no máximo 1 caractere.");
+		}
+
+		groupData.name = nameValue;
+		groupData.prefix = prefixValue;
+
+		// Paused logic
+		const isPaused = !els.groupPausedToggle.checked;
+		groupData.paused = isPaused;
+		document.getElementById("bot-enabled").checked = !isPaused;
+
+		groupData.customAIPrompt = document.getElementById("bot-personality").value;
+		const dynPersEl = document.getElementById("dinamic-personality");
+		if (dynPersEl) {
+			groupData.dinamicPersonality = dynPersEl.checked;
+		}
+		groupData.customIgnoresPrefix = document.getElementById("custom-ignores-prefix").checked;
+
+		const groupRulesEl = document.getElementById("group-rules");
+		if (groupRulesEl) {
+			groupData.regras = groupRulesEl.value.trim() ? groupRulesEl.value : null;
+		}
+
+		if (!groupData.filters) groupData.filters = {};
+		groupData.filters.links = document.getElementById("delete-links").checked;
+		const allowAdminsEl = document.getElementById("filters-allow-admins");
+		if (allowAdminsEl) {
+			groupData.filters.allowAdmins = allowAdminsEl.checked;
+		}
+		groupData.filters.nsfw = document.getElementById("delete-nsfw").checked;
+		const nsfwSlider = document.getElementById("nsfw-intensity");
+		if (nsfwSlider) {
+			const intensity = parseInt(nsfwSlider.value, 10);
+			groupData.filters.nsfwIntensity = intensity;
+			groupData.filters.nsfwThreshold = parseFloat((0.95 - (intensity / 100) * 0.75).toFixed(4));
+		}
+
+		groupData.autoStt = document.getElementById("auto-stt").checked;
+		groupData.notificaGrupoFechado = document.getElementById("notifica-grupo-fechado").checked;
+		groupData.notificaGrupoAberto = document.getElementById("notifica-grupo-aberto").checked;
+		groupData.banirSpammers = document.getElementById("banir-spammers").checked;
+		groupData.greetingAccumulation = {
+			...(groupData.greetingAccumulation || {}),
+			enabled: document.getElementById("greeting-accumulation").checked,
+			intervalMinutes: Math.max(
+				1,
+				parseInt(document.getElementById("greeting-interval").value, 10) || 30
+			)
+		};
+
+		if (!groupData.interact) groupData.interact = {};
+		groupData.interact.enabled = document.getElementById("auto-interaction").checked;
+		groupData.interact.useCmds = document.getElementById("interact-use-cmds").checked;
+		const votePollsEl = document.getElementById("interact-vote-polls");
+		if (votePollsEl) {
+			groupData.interact.voteInPolls = votePollsEl.checked;
+		}
+		const percentVal = parseInt(document.getElementById("interaction-chance").value, 10) || 1;
+		groupData.interact.chance = Math.min(100, Math.max(1, percentVal)) * 100;
+		const cdVal = parseInt(document.getElementById("interaction-cooldown").value, 10) || 30;
+		groupData.interact.cooldown = Math.min(720, Math.max(1, cdVal));
+		const proporcaoSlider = document.getElementById("interaction-proporcao");
+		if (proporcaoSlider) {
+			groupData.interact.proporcao = parseInt(proporcaoSlider.value);
+		}
+
+		const autoTranslate = document.getElementById("auto-translate").checked;
+		const translateLang = document.getElementById("translate-lang").value.trim();
+
+		if (autoTranslate && translateLang.length < 5) {
+			throw new Error(
+				'O idioma de tradução deve ter pelo menos 5 caracteres (Ex: "English (EN)").'
+			);
+		}
+
+		groupData.autoTranslateTo = autoTranslate ? translateLang : false;
+
+		const mcServerEl = document.getElementById("minecraft-server");
+		if (mcServerEl) {
+			groupData.minecraftServer = parseMinecraftServerInput(mcServerEl.value);
+		}
+
+		const roletaTempoEl = document.getElementById("roleta-tempo");
+		const roletaSilenciarEl = document.getElementById("roleta-silenciar");
+		if (roletaTempoEl && roletaSilenciarEl) {
+			const roletaTempoInput = (roletaTempoEl.value || "").trim();
+			const roletaTempo = roletaTempoInput !== "" ? Number(roletaTempoInput) : 300;
+			if (isNaN(roletaTempo) || roletaTempo < 10 || roletaTempo > 259200) {
+				throw new Error(
+					"Tempo de timeout da roleta deve ser entre 10 e 259200 segundos (72 horas)."
+				);
+			}
+			groupData.roleta = {
+				timeoutTime: roletaTempo,
+				silenciar: roletaSilenciarEl.checked
+			};
+		}
+	}
+
+	// Mesmas regras do MinecraftServerService.parseServerAddress (porta padrão 25565)
+	function parseMinecraftServerInput(rawValue) {
+		const address = (rawValue || "").trim().toLowerCase();
+		if (!address) return null;
+
+		const invalid = () =>
+			new Error(
+				"Endereço do servidor de Minecraft inválido. Use ip ou ip:porta (ex: play.exemplo.com:25300)."
+			);
+		const ipv6Match = address.match(/^\[([0-9a-f:]+)\](?::(.*))?$/);
+		let host;
+		let rawPort;
+		if (ipv6Match) {
+			[, host, rawPort] = ipv6Match;
+		} else {
+			const parts = address.split(":");
+			if (parts.length > 2) throw invalid();
+			[host, rawPort] = parts;
+			if (
+				!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$/.test(host) ||
+				host.length > 253
+			)
+				throw invalid();
+		}
+
+		if (rawPort === undefined) return { host, port: 25565 };
+		const port = /^\d{1,5}$/.test(rawPort) ? Number(rawPort) : 0;
+		if (port < 1 || port > 65535) throw invalid();
+		return { host, port };
+	}
+
+	function formatMinecraftServer(server) {
+		if (!server || !server.host) return "";
+		const host = server.host.includes(":") ? `[${server.host}]` : server.host;
+		if (server.port && Number(server.port) !== 25565) {
+			return `${host}:${server.port}`;
+		}
+		return host;
+	}
+
+	function updateHeroStatusVisuals(isPaused) {
+		if (isPaused) {
+			els.heroPauseCard.classList.add("paused");
+			els.heroStatusPill.className = "status-pill status-pill-paused";
+			els.heroStatusPill.textContent = "Pausado";
+			els.heroStatusDesc.textContent =
+				"O bot está pausado neste grupo e responderá apenas a comandos de reativação por administradores.";
+			els.groupPausedToggle.checked = false;
+		} else {
+			els.heroPauseCard.classList.remove("paused");
+			els.heroStatusPill.className = "status-pill status-pill-active";
+			els.heroStatusPill.textContent = "Ativo";
+			els.heroStatusDesc.textContent =
+				"O bot está funcionando normalmente e respondendo comandos neste grupo.";
+			els.groupPausedToggle.checked = true;
+		}
+	}
+
+	function formatCooldownText(val) {
+		const minutes = parseInt(val, 10) || 1;
+		if (minutes < 60) {
+			return `${minutes} min`;
+		}
+		const h = Math.floor(minutes / 60);
+		const m = minutes % 60;
+		if (m === 0) {
+			return `${h}h (${minutes} min)`;
+		}
+		return `${h}h ${m}min (${minutes} min)`;
+	}
+
+	function populateFields() {
+		document.getElementById("group-id").value = groupData.id;
+		document.getElementById("group-created-at").value = new Date(
+			groupData.createdAt || Date.now()
+		).toLocaleDateString("pt-BR");
+		document.getElementById("group-name-input").value = (groupData.name || "").trim();
+		document.getElementById("group-prefix").value = groupData.prefix || "";
+		document.getElementById("greeting-accumulation").checked =
+			!!groupData.greetingAccumulation?.enabled;
+		document.getElementById("greeting-interval").value =
+			groupData.greetingAccumulation?.intervalMinutes || 30;
+
+		const isPaused = !!groupData.paused;
+		updateHeroStatusVisuals(isPaused);
+		document.getElementById("bot-enabled").checked = !isPaused;
+
+		document.getElementById("bot-personality").value = groupData.customAIPrompt || "";
+		document.getElementById("personality-count").textContent = (
+			groupData.customAIPrompt || ""
+		).length;
+		const dynPersCheckEl = document.getElementById("dinamic-personality");
+		if (dynPersCheckEl) {
+			dynPersCheckEl.checked = groupData.dinamicPersonality !== false;
+		}
+		document.getElementById("custom-ignores-prefix").checked = !!groupData.customIgnoresPrefix;
+
+		const rulesVal = groupData.regras || "";
+		const groupRulesEl = document.getElementById("group-rules");
+		if (groupRulesEl) {
+			groupRulesEl.value = rulesVal;
+			const rulesCountEl = document.getElementById("rules-count");
+			if (rulesCountEl) rulesCountEl.textContent = rulesVal.length;
+		}
+
+		const mcServerInput = document.getElementById("minecraft-server");
+		if (mcServerInput) {
+			mcServerInput.value = formatMinecraftServer(groupData.minecraftServer);
+		}
+		const roletaTempoInput = document.getElementById("roleta-tempo");
+		if (roletaTempoInput) {
+			roletaTempoInput.value = groupData.roleta?.timeoutTime ?? 300;
+		}
+		const roletaSilenciarInput = document.getElementById("roleta-silenciar");
+		if (roletaSilenciarInput) {
+			roletaSilenciarInput.checked = !!groupData.roleta?.silenciar;
+		}
+		renderTags("ignored-numbers-list", groupData.ignoredNumbers || [], (list) => {
+			groupData.ignoredNumbers = list;
+			setDirty(true);
+		});
+
+		document.getElementById("delete-links").checked = groupData.filters?.links || false;
+		const allowAdminsEl = document.getElementById("filters-allow-admins");
+		if (allowAdminsEl) {
+			allowAdminsEl.checked = !!groupData.filters?.allowAdmins;
+		}
+		renderTags("allowed-links-list", groupData.filters?.allowedLinks || [], (list) => {
+			if (!groupData.filters) groupData.filters = {};
+			groupData.filters.allowedLinks = list;
+			setDirty(true);
+		});
+		const nsfwActive = !!groupData.filters?.nsfw;
+		document.getElementById("delete-nsfw").checked = nsfwActive;
+
+		let nsfwIntensity = 20;
+		if (groupData.filters?.nsfwIntensity !== undefined && !isNaN(groupData.filters.nsfwIntensity)) {
+			nsfwIntensity = parseInt(groupData.filters.nsfwIntensity, 10);
+		} else if (
+			groupData.filters?.nsfwThreshold !== undefined &&
+			!isNaN(groupData.filters.nsfwThreshold)
+		) {
+			nsfwIntensity = Math.round(((0.95 - groupData.filters.nsfwThreshold) / 0.75) * 100);
+			nsfwIntensity = Math.max(0, Math.min(100, nsfwIntensity));
+		}
+
+		const nsfwSliderEl = document.getElementById("nsfw-intensity");
+		if (nsfwSliderEl) {
+			nsfwSliderEl.value = nsfwIntensity;
+			document.getElementById("nsfw-intensity-val").textContent = nsfwIntensity;
+		}
+		toggleNsfwSettings(nsfwActive);
+
+		renderTags("forbidden-words-list", groupData.filters?.words || [], (list) => {
+			if (!groupData.filters) groupData.filters = {};
+			groupData.filters.words = list;
+			setDirty(true);
+		});
+
+		renderRegexList("forbidden-regexes-list", groupData.filters?.regexes || [], (list) => {
+			if (!groupData.filters) groupData.filters = {};
+			groupData.filters.regexes = list;
+			setDirty(true);
+		});
+
+		renderTags("forbidden-users-list", groupData.filters?.people || [], (list) => {
+			if (!groupData.filters) groupData.filters = {};
+			groupData.filters.people = list;
+			setDirty(true);
+		});
+
+		renderTags("muted-commands-list", groupData.mutedCommands || [], (list) => {
+			groupData.mutedCommands = list;
+			setDirty(true);
+		});
+		renderTags("additional-admins-list", groupData.additionalAdmins || [], (list) => {
+			groupData.additionalAdmins = list;
+			setDirty(true);
+		});
+
+		const categories = [
+			"geral",
+			"grupo",
+			"stickers",
+			"ia",
+			"interacao",
+			"midia",
+			"voz",
+			"utilidades",
+			"downloaders",
+			"jogos",
+			"streams",
+			"zoeira",
+			"mudae",
+			"busca",
+			"cultura",
+			"audio",
+			"listas",
+			"arquivos",
+			"canais",
+			"outros"
+		];
+		const mutedList = document.getElementById("muted-categories-list");
+		if (mutedList) {
+			mutedList.innerHTML = "";
+			const muted = groupData.mutedCategories || [];
+			categories.forEach((cat) => {
+				const isMuted = muted.some((c) => String(c).toLowerCase() === cat.toLowerCase());
+				const card = document.createElement("div");
+				card.className = `cmd-category-card ${isMuted ? "is-muted" : ""}`;
+				card.setAttribute("role", "checkbox");
+				card.setAttribute("aria-checked", isMuted ? "true" : "false");
+				card.title = isMuted
+					? "Categoria silenciada (clique para liberar)"
+					: "Categoria liberada (clique para silenciar)";
+
+				card.innerHTML = `
                     <div class="cmd-category-info">
                         <span class="cmd-category-icon">
-                            <i class="fas ${isMuted ? 'fa-volume-xmark' : 'fa-check'}"></i>
+                            <i class="fas ${isMuted ? "fa-volume-xmark" : "fa-check"}"></i>
                         </span>
                         <span class="cmd-category-name">${cat}</span>
                     </div>
                     <label class="switch-toggle switch-category-mute" onclick="event.stopPropagation()">
-                        <input type="checkbox" id="mute-cat-${cat}" ${isMuted ? 'checked' : ''} aria-label="Silenciar categoria ${cat}">
+                        <input type="checkbox" id="mute-cat-${cat}" ${isMuted ? "checked" : ""} aria-label="Silenciar categoria ${cat}">
                         <span class="slider-round"></span>
                     </label>
                 `;
 
-                const checkbox = card.querySelector('input');
-                checkbox.addEventListener('change', (e) => {
-                    const shouldMute = e.target.checked;
-                    if (!groupData.mutedCategories) groupData.mutedCategories = [];
-                    groupData.mutedCategories = groupData.mutedCategories.filter(c => String(c).toLowerCase() !== cat.toLowerCase());
-                    if (shouldMute) {
-                        groupData.mutedCategories.push(cat);
-                    }
-                    if (shouldMute) {
-                        card.classList.add('is-muted');
-                        card.setAttribute('aria-checked', 'true');
-                        card.title = 'Categoria silenciada (clique para liberar)';
-                        const icon = card.querySelector('.cmd-category-icon i');
-                        if (icon) icon.className = 'fas fa-volume-xmark';
-                    } else {
-                        card.classList.remove('is-muted');
-                        card.setAttribute('aria-checked', 'false');
-                        card.title = 'Categoria liberada (clique para silenciar)';
-                        const icon = card.querySelector('.cmd-category-icon i');
-                        if (icon) icon.className = 'fas fa-check';
-                    }
-                    setDirty(true);
-                });
-
-                card.addEventListener('click', (e) => {
-                    if (e.target.closest('.switch-toggle')) return;
-                    checkbox.checked = !checkbox.checked;
-                    checkbox.dispatchEvent(new Event('change'));
-                });
-
-                mutedList.appendChild(card);
-            });
-        }
-
-        document.getElementById('auto-stt').checked = !!groupData.autoStt;
-        document.getElementById('notifica-grupo-fechado').checked = !!groupData.notificaGrupoFechado;
-        document.getElementById('notifica-grupo-aberto').checked = !!groupData.notificaGrupoAberto;
-        document.getElementById('banir-spammers').checked = !!groupData.banirSpammers;
-        
-        const interact = groupData.interact || {};
-        document.getElementById('auto-interaction').checked = !!interact.enabled;
-        document.getElementById('interact-use-cmds').checked = interact.useCmds !== false;
-        const votePollsEl = document.getElementById('interact-vote-polls');
-        if (votePollsEl) {
-            votePollsEl.checked = interact.voteInPolls !== false;
-        }
-        
-        const chanceRaw = interact.chance !== undefined ? interact.chance : 100;
-        let percentVal = 1;
-        if (chanceRaw >= 100) {
-            percentVal = Math.round(chanceRaw / 100);
-        } else if (chanceRaw > 0) {
-            percentVal = chanceRaw;
-        }
-        percentVal = Math.min(100, Math.max(1, percentVal));
-
-        const chanceInputEl = document.getElementById('interaction-chance');
-        if (chanceInputEl) {
-            chanceInputEl.min = 1;
-            chanceInputEl.max = 100;
-            chanceInputEl.value = percentVal;
-        }
-        const chanceValEl = document.getElementById('chance-val');
-        if (chanceValEl) chanceValEl.textContent = percentVal;
-        const chanceDescEl = document.getElementById('chance-desc-val');
-        if (chanceDescEl) chanceDescEl.textContent = percentVal + '%';
-
-        const cooldownVal = Math.min(720, Math.max(1, parseInt(interact.cooldown, 10) || 30));
-        const cooldownInputEl = document.getElementById('interaction-cooldown');
-        if (cooldownInputEl) {
-            cooldownInputEl.min = 1;
-            cooldownInputEl.max = 720;
-            cooldownInputEl.value = cooldownVal;
-        }
-        const cooldownValEl = document.getElementById('cooldown-val');
-        if (cooldownValEl) cooldownValEl.textContent = formatCooldownText(cooldownVal);
-
-        const proporcaoVal = interact.proporcao !== undefined ? interact.proporcao : 50;
-        const proporcaoSlider = document.getElementById('interaction-proporcao');
-        if (proporcaoSlider) {
-            proporcaoSlider.value = proporcaoVal;
-            document.getElementById('proporcao-val').textContent = proporcaoVal;
-            const iaChance = proporcaoVal;
-            const cmdChance = 100 - iaChance;
-            const descEl = document.getElementById('proporcao-desc');
-            if (descEl) {
-                if (iaChance === 100) {
-                    descEl.innerHTML = "Usando apenas <b>IA</b> para interagir";
-                } else if (iaChance === 0) {
-                    descEl.innerHTML = "Usando apenas <b>comandos</b> para interagir";
-                } else {
-                    descEl.textContent = `${cmdChance}% de chance de usar comandos, ${iaChance}% de chance de usar IA`;
-                }
-            }
-        }
-
-        toggleInteractionSettings(!!interact.enabled);
-
-        renderMediaList('greetings-list', groupData.greetings || {}, 'greetings');
-        renderMediaList('farewells-list', groupData.farewells || {}, 'farewells');
-
-        document.getElementById('auto-translate').checked = !!groupData.autoTranslateTo;
-        document.getElementById('translate-lang').value = typeof groupData.autoTranslateTo === 'string' ? groupData.autoTranslateTo : '';
-        toggleTranslateSettings(!!groupData.autoTranslateTo);
-
-        renderStreamSection('twitch');
-        renderStreamSection('kick');
-        renderStreamSection('youtube_video');
-        renderStreamSection('youtube_live');
-        renderStreamSection('tiktok_video');
-        renderStreamSection('tiktok_live');
-        renderMonitoringSection();
-    }
-
-    // --- MONITORAMENTO / MODERAÇÃO ---
-    function renderMonitoringSection() {
-        if (!groupData.monitoring) {
-            groupData.monitoring = { rules: [], occurrences: [] };
-        }
-        renderMonitoredRules();
-        renderMonitoredOccurrences();
-    }
-
-    function renderMonitoredRules() {
-        const rules = groupData.monitoring?.rules || [];
-        const words = rules.filter((r) => r.type === "word");
-        const regexes = rules.filter((r) => r.type === "regex");
-
-        // Render Words Tags
-        const wordsContainer = document.getElementById("monitored-words-list");
-        if (wordsContainer) {
-            wordsContainer.innerHTML = "";
-            if (words.length === 0) {
-                const empty = document.createElement("div");
-                empty.className = "regex-empty-msg";
-                empty.textContent = "Nenhuma palavra ou frase monitorada.";
-                wordsContainer.appendChild(empty);
-            } else {
-                words.forEach((r) => {
-                    const tag = document.createElement("span");
-                    tag.className = "tag";
-                    tag.innerHTML = `${escapeHtml(r.pattern)} <span class="remove">&times;</span>`;
-                    tag.querySelector(".remove").onclick = () => deleteMonitoringRule(r.id);
-                    wordsContainer.appendChild(tag);
-                });
-            }
-        }
-
-        // Render Regexes List
-        const regexContainer = document.getElementById("monitored-regexes-list");
-        if (regexContainer) {
-            regexContainer.innerHTML = "";
-            if (regexes.length === 0) {
-                const empty = document.createElement("div");
-                empty.className = "regex-empty-msg";
-                empty.textContent = "Nenhum regex monitorado.";
-                regexContainer.appendChild(empty);
-            } else {
-                regexes.forEach((r) => {
-                    const row = document.createElement("div");
-                    row.className = "regex-row-item";
-
-                    const patternEl = document.createElement("div");
-                    patternEl.className = "regex-pattern-display";
-                    const code = document.createElement("code");
-                    code.textContent = r.pattern;
-                    patternEl.appendChild(code);
-
-                    const testContainer = document.createElement("div");
-                    testContainer.className = "regex-test-container";
-
-                    const testInput = document.createElement("input");
-                    testInput.type = "text";
-                    testInput.placeholder = "Testar texto...";
-                    testInput.className = "form-control regex-test-input";
-
-                    const testResult = document.createElement("span");
-                    testResult.className = "regex-test-result";
-
-                    const testRegex = () => {
-                        const sample = testInput.value;
-                        if (!sample) {
-                            testResult.textContent = "";
-                            testResult.className = "regex-test-result";
-                            return;
-                        }
-                        try {
-                            const re = buildRegexClient(r.pattern);
-                            if (re && re.test(sample)) {
-                                testResult.textContent = "✓ Detectado";
-                                testResult.className = "regex-test-result match";
-                            } else {
-                                testResult.textContent = "✗ Não detectado";
-                                testResult.className = "regex-test-result no-match";
-                            }
-                        } catch {
-                            testResult.textContent = "! Erro";
-                            testResult.className = "regex-test-result no-match";
-                        }
-                    };
-
-                    testInput.addEventListener("input", testRegex);
-                    testContainer.appendChild(testInput);
-                    testContainer.appendChild(testResult);
-
-                    const delBtn = document.createElement("button");
-                    delBtn.type = "button";
-                    delBtn.className = "btn-regex-delete";
-                    delBtn.title = "Remover Regex";
-                    delBtn.innerHTML = "&times;";
-                    delBtn.onclick = () => deleteMonitoringRule(r.id);
-
-                    row.appendChild(patternEl);
-                    row.appendChild(testContainer);
-                    row.appendChild(delBtn);
-
-                    regexContainer.appendChild(row);
-                });
-            }
-        }
-    }
-
-    async function addMonitoringRule(type, pattern) {
-        try {
-            const res = await fetch(`${API_BASE}/group-monitoring/rule`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token, groupId, type, pattern })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                throw new Error(data.message || "Erro ao adicionar regra.");
-            }
-            if (!groupData.monitoring) groupData.monitoring = {};
-            groupData.monitoring.rules = data.rules;
-            renderMonitoredRules();
-        } catch (err) {
-            showCustomAlert(err.message, "Erro ao Adicionar Regra");
-        }
-    }
-
-    async function deleteMonitoringRule(ruleId) {
-        try {
-            const res = await fetch(`${API_BASE}/group-monitoring/rule`, {
-                method: "DELETE",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token, groupId, ruleId })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                throw new Error(data.message || "Erro ao remover regra.");
-            }
-            if (!groupData.monitoring) groupData.monitoring = {};
-            groupData.monitoring.rules = data.rules;
-            renderMonitoredRules();
-        } catch (err) {
-            showCustomAlert(err.message, "Erro ao Remover Regra");
-        }
-    }
-
-    function renderMonitoredOccurrences() {
-        const occurrences = groupData.monitoring?.occurrences || [];
-        const container = document.getElementById("monitoring-occurrences-list");
-        const countEl = document.getElementById("occurrences-count");
-        const btnMarkAll = document.getElementById("btn-mark-all-seen");
-
-        const unreadCount = occurrences.filter((o) => !o.is_read).length;
-        if (countEl) countEl.textContent = unreadCount;
-        if (btnMarkAll) btnMarkAll.style.display = unreadCount > 0 ? "inline-flex" : "none";
-
-        if (!container) return;
-        container.innerHTML = "";
-
-        if (occurrences.length === 0) {
-            const empty = document.createElement("div");
-            empty.className = "monitoring-empty-msg";
-            empty.textContent = "Nenhuma ocorrência registrada no grupo.";
-            container.appendChild(empty);
-            return;
-        }
-
-        occurrences.forEach((occ) => {
-            const card = document.createElement("div");
-            card.className = "monitoring-occurrence-card";
-
-            const top = document.createElement("div");
-            top.className = "monitoring-occ-top";
-
-            const leftInfo = document.createElement("div");
-            leftInfo.style.display = "flex";
-            leftInfo.style.alignItems = "center";
-            leftInfo.style.gap = "8px";
-
-            const badge = document.createElement("span");
-            badge.className = `monitoring-occ-badge ${occ.rule_type}`;
-            badge.textContent = occ.rule_type === "regex" ? "Regex" : "Palavra";
-
-            const patternCode = document.createElement("code");
-            patternCode.textContent = occ.pattern;
-
-            leftInfo.appendChild(badge);
-            leftInfo.appendChild(patternCode);
-
-            const rightInfo = document.createElement("div");
-            rightInfo.style.display = "flex";
-            rightInfo.style.alignItems = "center";
-            rightInfo.style.gap = "12px";
-
-            const authorSpan = document.createElement("span");
-            authorSpan.className = "monitoring-occ-author";
-            authorSpan.textContent = `${occ.author_name || "Desconhecido"} (${occ.author_number || ""})`;
-
-            const dateSpan = document.createElement("span");
-            dateSpan.className = "monitoring-occ-date";
-            dateSpan.textContent = occ.created_at || "";
-
-            rightInfo.appendChild(authorSpan);
-            rightInfo.appendChild(dateSpan);
-
-            top.appendChild(leftInfo);
-            top.appendChild(rightInfo);
-
-            const msgBox = document.createElement("div");
-            msgBox.className = "monitoring-messages-box";
-
-            if (Array.isArray(occ.before_messages)) {
-                occ.before_messages.forEach((msg) => {
-                    const line = document.createElement("div");
-                    line.className = "monitoring-line-before";
-                    line.textContent = msg;
-                    msgBox.appendChild(line);
-                });
-            }
-
-            const triggerLine = document.createElement("div");
-            triggerLine.className = "monitoring-line-trigger";
-            triggerLine.textContent = occ.trigger_message;
-            msgBox.appendChild(triggerLine);
-
-            if (Array.isArray(occ.after_messages)) {
-                occ.after_messages.forEach((msg) => {
-                    const line = document.createElement("div");
-                    line.className = "monitoring-line-after";
-                    line.textContent = msg;
-                    msgBox.appendChild(line);
-                });
-            }
-
-            const footer = document.createElement("div");
-            footer.className = "monitoring-occ-footer";
-
-            const markBtn = document.createElement("button");
-            markBtn.type = "button";
-            markBtn.className = `btn-mark-seen ${occ.is_read ? "seen" : ""}`;
-            markBtn.textContent = occ.is_read ? "✓ Visto" : "Marca Visto";
-            if (!occ.is_read) {
-                markBtn.onclick = async () => {
-                    await markOccurrenceSeen(occ.id);
-                };
-            }
-
-            footer.appendChild(markBtn);
-
-            card.appendChild(top);
-            card.appendChild(msgBox);
-            card.appendChild(footer);
-
-            container.appendChild(card);
-        });
-    }
-
-    async function markOccurrenceSeen(occurrenceId) {
-        try {
-            const res = await fetch(`${API_BASE}/group-monitoring/mark-read`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token, groupId, occurrenceId })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                throw new Error(data.message || "Erro ao marcar visto.");
-            }
-            if (groupData.monitoring?.occurrences) {
-                const target = groupData.monitoring.occurrences.find((o) => o.id === occurrenceId);
-                if (target) target.is_read = 1;
-            }
-            renderMonitoredOccurrences();
-        } catch (err) {
-            showCustomAlert(err.message, "Erro ao Atualizar");
-        }
-    }
-
-    async function markAllOccurrencesSeen() {
-        try {
-            const res = await fetch(`${API_BASE}/group-monitoring/mark-read`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ token, groupId, all: true })
-            });
-            const data = await res.json();
-            if (!data.success) {
-                throw new Error(data.message || "Erro ao marcar todas como vistas.");
-            }
-            if (groupData.monitoring?.occurrences) {
-                groupData.monitoring.occurrences.forEach((o) => {
-                    o.is_read = 1;
-                });
-            }
-            renderMonitoredOccurrences();
-        } catch (err) {
-            showCustomAlert(err.message, "Erro ao Atualizar");
-        }
-    }
-
-    function renderTags(containerId, dataList, updateCallback) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-        dataList.forEach(item => {
-            const tag = document.createElement('span');
-            tag.className = 'tag';
-            tag.innerHTML = `${item} <span class="remove">&times;</span>`;
-            tag.querySelector('.remove').onclick = () => {
-                const newList = dataList.filter(i => i !== item);
-                updateCallback(newList);
-                renderTags(containerId, newList, updateCallback);
-            };
-            container.appendChild(tag);
-        });
-    }
-
-    function buildRegexClient(input) {
-        if (!input || typeof input !== 'string') return null;
-        const match = input.match(/^\/(.+)\/([gimsuyvd]*)$/);
-        if (match) {
-            return new RegExp(match[1], match[2]);
-        }
-        return new RegExp(input, 'i');
-    }
-
-    function validateRegexClient(patternStr) {
-        if (!patternStr || typeof patternStr !== 'string') {
-            return { valid: false, error: 'O padrão regex não pode estar vazio.' };
-        }
-        const trimmed = patternStr.trim();
-        if (trimmed.length < 2) {
-            return { valid: false, error: 'O regex deve ter pelo menos 2 caracteres.' };
-        }
-        let regex;
-        try {
-            regex = buildRegexClient(trimmed);
-        } catch (err) {
-            return { valid: false, error: `Sintaxe inválida: ${err.message}` };
-        }
-        if (!regex) return { valid: false, error: 'Expressão regular inválida.' };
-
-        try {
-            if (regex.test('')) {
-                return { valid: false, error: 'Regex muito abrangente: casa com texto vazio e apagaria todas as mensagens.' };
-            }
-            if (regex.test(' ')) {
-                return { valid: false, error: 'Regex muito abrangente: casa com espaço e apagaria mensagens com espaços.' };
-            }
-            const neutralSamples = [
-                'olá',
-                'tudo bem?',
-                'bom dia',
-                'boa tarde',
-                'ok, obrigado',
-                'sim, entendi',
-                'não posso agora',
-                'reunião amanhã'
-            ];
-            let neutralMatchCount = 0;
-            for (const sample of neutralSamples) {
-                if (regex.test(sample)) neutralMatchCount++;
-            }
-            if (neutralMatchCount >= 4) {
-                return { valid: false, error: 'Regex muito abrangente: coincide com frases normais do dia a dia.' };
-            }
-        } catch (err) {
-            return { valid: false, error: `Erro ao testar regex: ${err.message}` };
-        }
-
-        return { valid: true, regex };
-    }
-
-    function renderRegexList(containerId, regexList, updateCallback) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-
-        if (!regexList || regexList.length === 0) {
-            const empty = document.createElement('div');
-            empty.className = 'regex-empty-msg';
-            empty.textContent = 'Nenhum regex configurado.';
-            container.appendChild(empty);
-            return;
-        }
-
-        regexList.forEach((pattern, index) => {
-            const row = document.createElement('div');
-            row.className = 'regex-row-item';
-
-            const patternEl = document.createElement('div');
-            patternEl.className = 'regex-pattern-display';
-            const code = document.createElement('code');
-            code.textContent = pattern;
-            patternEl.appendChild(code);
-
-            const testContainer = document.createElement('div');
-            testContainer.className = 'regex-test-container';
-
-            const testInput = document.createElement('input');
-            testInput.type = 'text';
-            testInput.className = 'form-control regex-test-input';
-            testInput.placeholder = 'Testar se regex detecta...';
-
-            const testBadge = document.createElement('span');
-            testBadge.className = 'regex-test-badge regex-test-idle';
-            testBadge.innerHTML = '<i class="fas fa-vial"></i> Testar';
-
-            let compiled = null;
-            try {
-                compiled = buildRegexClient(pattern);
-            } catch (e) {
-                // error compiling
-            }
-
-            const runTest = () => {
-                const text = testInput.value;
-                if (!text) {
-                    testBadge.className = 'regex-test-badge regex-test-idle';
-                    testBadge.innerHTML = '<i class="fas fa-vial"></i> Testar';
-                    testInput.classList.remove('input-match-success', 'input-match-none');
-                    return;
-                }
-                if (!compiled) {
-                    testBadge.className = 'regex-test-badge regex-test-error';
-                    testBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Regex inválido';
-                    return;
-                }
-                try {
-                    const matched = compiled.test(text);
-                    if (matched) {
-                        testBadge.className = 'regex-test-badge regex-test-match';
-                        testBadge.innerHTML = '<i class="fas fa-check-circle"></i> Detectou!';
-                        testInput.classList.add('input-match-success');
-                        testInput.classList.remove('input-match-none');
-                    } else {
-                        testBadge.className = 'regex-test-badge regex-test-nomatch';
-                        testBadge.innerHTML = '<i class="fas fa-times-circle"></i> Não detectou';
-                        testInput.classList.add('input-match-none');
-                        testInput.classList.remove('input-match-success');
-                    }
-                } catch (err) {
-                    testBadge.className = 'regex-test-badge regex-test-error';
-                    testBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Erro';
-                }
-            };
-
-            testInput.addEventListener('input', runTest);
-
-            testContainer.appendChild(testInput);
-            testContainer.appendChild(testBadge);
-
-            const deleteBtn = document.createElement('button');
-            deleteBtn.type = 'button';
-            deleteBtn.className = 'btn btn-danger btn-xs btn-remove-regex';
-            deleteBtn.title = 'Remover este regex';
-            deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
-            deleteBtn.onclick = () => {
-                const newList = regexList.filter((_, i) => i !== index);
-                updateCallback(newList);
-                renderRegexList(containerId, newList, updateCallback);
-            };
-
-            row.appendChild(patternEl);
-            row.appendChild(testContainer);
-            row.appendChild(deleteBtn);
-
-            container.appendChild(row);
-        });
-    }
-
-    // --- WhatsApp Markdown & Variable Formatter ---
-
-    function formatWhatsAppMarkdown(text) {
-        if (!text) return '';
-        let escaped = text
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;');
-
-        // Bold: *text*
-        escaped = escaped.replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>');
-        // Italic: _text_
-        escaped = escaped.replace(/_([^_\n]+)_/g, '<em>$1</em>');
-        // Strike: ~text~
-        escaped = escaped.replace(/~([^~\n]+)~/g, '<del>$1</del>');
-        // Code: `code`
-        escaped = escaped.replace(/`([^`\n]+)`/g, '<code class="wa-code">$1</code>');
-        // Variables: {var}
-        escaped = escaped.replace(/\{([a-zA-Z0-9_\-]+)\}/g, '<span class="wa-var-pill">{$1}</span>');
-        // Newlines
-        escaped = escaped.replace(/\n/g, '<br>');
-
-        return escaped;
-    }
-
-    // --- Inline Media List (Boas-Vindas & Despedidas) ---
-
-    function renderMediaList(containerId, mediaObj, type) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-
-        const entries = Object.entries(mediaObj).filter(([k, v]) => !!v);
-
-        if (entries.length === 0) {
-            container.innerHTML = '<div class="text-muted text-sm p-2 text-center">Nenhuma mídia ou mensagem cadastrada.</div>';
-            return;
-        }
-
-        entries.forEach(([key, value]) => {
-            const div = document.createElement('div');
-            div.className = 'inline-media-card';
-            
-            if (key === 'text') {
-                const textVal = typeof value === 'string' ? value : String(value || '');
-                div.innerHTML = `
+				const checkbox = card.querySelector("input");
+				checkbox.addEventListener("change", (e) => {
+					const shouldMute = e.target.checked;
+					if (!groupData.mutedCategories) groupData.mutedCategories = [];
+					groupData.mutedCategories = groupData.mutedCategories.filter(
+						(c) => String(c).toLowerCase() !== cat.toLowerCase()
+					);
+					if (shouldMute) {
+						groupData.mutedCategories.push(cat);
+					}
+					if (shouldMute) {
+						card.classList.add("is-muted");
+						card.setAttribute("aria-checked", "true");
+						card.title = "Categoria silenciada (clique para liberar)";
+						const icon = card.querySelector(".cmd-category-icon i");
+						if (icon) icon.className = "fas fa-volume-xmark";
+					} else {
+						card.classList.remove("is-muted");
+						card.setAttribute("aria-checked", "false");
+						card.title = "Categoria liberada (clique para silenciar)";
+						const icon = card.querySelector(".cmd-category-icon i");
+						if (icon) icon.className = "fas fa-check";
+					}
+					setDirty(true);
+				});
+
+				card.addEventListener("click", (e) => {
+					if (e.target.closest(".switch-toggle")) return;
+					checkbox.checked = !checkbox.checked;
+					checkbox.dispatchEvent(new Event("change"));
+				});
+
+				mutedList.appendChild(card);
+			});
+		}
+
+		document.getElementById("auto-stt").checked = !!groupData.autoStt;
+		document.getElementById("notifica-grupo-fechado").checked = !!groupData.notificaGrupoFechado;
+		document.getElementById("notifica-grupo-aberto").checked = !!groupData.notificaGrupoAberto;
+		document.getElementById("banir-spammers").checked = !!groupData.banirSpammers;
+
+		const interact = groupData.interact || {};
+		document.getElementById("auto-interaction").checked = !!interact.enabled;
+		document.getElementById("interact-use-cmds").checked = interact.useCmds !== false;
+		const votePollsEl = document.getElementById("interact-vote-polls");
+		if (votePollsEl) {
+			votePollsEl.checked = interact.voteInPolls !== false;
+		}
+
+		const chanceRaw = interact.chance !== undefined ? interact.chance : 100;
+		let percentVal = 1;
+		if (chanceRaw >= 100) {
+			percentVal = Math.round(chanceRaw / 100);
+		} else if (chanceRaw > 0) {
+			percentVal = chanceRaw;
+		}
+		percentVal = Math.min(100, Math.max(1, percentVal));
+
+		const chanceInputEl = document.getElementById("interaction-chance");
+		if (chanceInputEl) {
+			chanceInputEl.min = 1;
+			chanceInputEl.max = 100;
+			chanceInputEl.value = percentVal;
+		}
+		const chanceValEl = document.getElementById("chance-val");
+		if (chanceValEl) chanceValEl.textContent = percentVal;
+		const chanceDescEl = document.getElementById("chance-desc-val");
+		if (chanceDescEl) chanceDescEl.textContent = percentVal + "%";
+
+		const cooldownVal = Math.min(720, Math.max(1, parseInt(interact.cooldown, 10) || 30));
+		const cooldownInputEl = document.getElementById("interaction-cooldown");
+		if (cooldownInputEl) {
+			cooldownInputEl.min = 1;
+			cooldownInputEl.max = 720;
+			cooldownInputEl.value = cooldownVal;
+		}
+		const cooldownValEl = document.getElementById("cooldown-val");
+		if (cooldownValEl) cooldownValEl.textContent = formatCooldownText(cooldownVal);
+
+		const proporcaoVal = interact.proporcao !== undefined ? interact.proporcao : 50;
+		const proporcaoSlider = document.getElementById("interaction-proporcao");
+		if (proporcaoSlider) {
+			proporcaoSlider.value = proporcaoVal;
+			document.getElementById("proporcao-val").textContent = proporcaoVal;
+			const iaChance = proporcaoVal;
+			const cmdChance = 100 - iaChance;
+			const descEl = document.getElementById("proporcao-desc");
+			if (descEl) {
+				if (iaChance === 100) {
+					descEl.innerHTML = "Usando apenas <b>IA</b> para interagir";
+				} else if (iaChance === 0) {
+					descEl.innerHTML = "Usando apenas <b>comandos</b> para interagir";
+				} else {
+					descEl.textContent = `${cmdChance}% de chance de usar comandos, ${iaChance}% de chance de usar IA`;
+				}
+			}
+		}
+
+		toggleInteractionSettings(!!interact.enabled);
+
+		renderMediaList("greetings-list", groupData.greetings || {}, "greetings");
+		renderMediaList("farewells-list", groupData.farewells || {}, "farewells");
+
+		document.getElementById("auto-translate").checked = !!groupData.autoTranslateTo;
+		document.getElementById("translate-lang").value =
+			typeof groupData.autoTranslateTo === "string" ? groupData.autoTranslateTo : "";
+		toggleTranslateSettings(!!groupData.autoTranslateTo);
+
+		renderStreamSection("twitch");
+		renderStreamSection("kick");
+		renderStreamSection("youtube_video");
+		renderStreamSection("youtube_live");
+		renderStreamSection("tiktok_video");
+		renderStreamSection("tiktok_live");
+		renderMonitoringSection();
+	}
+
+	// --- MONITORAMENTO / MODERAÇÃO ---
+	function renderMonitoringSection() {
+		if (!groupData.monitoring) {
+			groupData.monitoring = { rules: [], occurrences: [] };
+		}
+		renderMonitoredRules();
+		renderMonitoredOccurrences();
+	}
+
+	function renderMonitoredRules() {
+		const rules = groupData.monitoring?.rules || [];
+		const words = rules.filter((r) => r.type === "word");
+		const regexes = rules.filter((r) => r.type === "regex");
+
+		// Render Words Tags
+		const wordsContainer = document.getElementById("monitored-words-list");
+		if (wordsContainer) {
+			wordsContainer.innerHTML = "";
+			if (words.length === 0) {
+				const empty = document.createElement("div");
+				empty.className = "regex-empty-msg";
+				empty.textContent = "Nenhuma palavra ou frase monitorada.";
+				wordsContainer.appendChild(empty);
+			} else {
+				words.forEach((r) => {
+					const tag = document.createElement("span");
+					tag.className = "tag";
+					tag.innerHTML = `${escapeHtml(r.pattern)} <span class="remove">&times;</span>`;
+					tag.querySelector(".remove").onclick = () => deleteMonitoringRule(r.id);
+					wordsContainer.appendChild(tag);
+				});
+			}
+		}
+
+		// Render Regexes List
+		const regexContainer = document.getElementById("monitored-regexes-list");
+		if (regexContainer) {
+			regexContainer.innerHTML = "";
+			if (regexes.length === 0) {
+				const empty = document.createElement("div");
+				empty.className = "regex-empty-msg";
+				empty.textContent = "Nenhum regex monitorado.";
+				regexContainer.appendChild(empty);
+			} else {
+				regexes.forEach((r) => {
+					const row = document.createElement("div");
+					row.className = "regex-row-item";
+
+					const patternEl = document.createElement("div");
+					patternEl.className = "regex-pattern-display";
+					const code = document.createElement("code");
+					code.textContent = r.pattern;
+					patternEl.appendChild(code);
+
+					const testContainer = document.createElement("div");
+					testContainer.className = "regex-test-container";
+
+					const testInput = document.createElement("input");
+					testInput.type = "text";
+					testInput.placeholder = "Testar texto...";
+					testInput.className = "form-control regex-test-input";
+
+					const testResult = document.createElement("span");
+					testResult.className = "regex-test-result";
+
+					const testRegex = () => {
+						const sample = testInput.value;
+						if (!sample) {
+							testResult.textContent = "";
+							testResult.className = "regex-test-result";
+							return;
+						}
+						try {
+							const re = buildRegexClient(r.pattern);
+							if (re && re.test(sample)) {
+								testResult.textContent = "✓ Detectado";
+								testResult.className = "regex-test-result match";
+							} else {
+								testResult.textContent = "✗ Não detectado";
+								testResult.className = "regex-test-result no-match";
+							}
+						} catch {
+							testResult.textContent = "! Erro";
+							testResult.className = "regex-test-result no-match";
+						}
+					};
+
+					testInput.addEventListener("input", testRegex);
+					testContainer.appendChild(testInput);
+					testContainer.appendChild(testResult);
+
+					const delBtn = document.createElement("button");
+					delBtn.type = "button";
+					delBtn.className = "btn-regex-delete";
+					delBtn.title = "Remover Regex";
+					delBtn.innerHTML = "&times;";
+					delBtn.onclick = () => deleteMonitoringRule(r.id);
+
+					row.appendChild(patternEl);
+					row.appendChild(testContainer);
+					row.appendChild(delBtn);
+
+					regexContainer.appendChild(row);
+				});
+			}
+		}
+	}
+
+	async function addMonitoringRule(type, pattern) {
+		try {
+			const res = await fetch(`${API_BASE}/group-monitoring/rule`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token, groupId, type, pattern })
+			});
+			const data = await res.json();
+			if (!data.success) {
+				throw new Error(data.message || "Erro ao adicionar regra.");
+			}
+			if (!groupData.monitoring) groupData.monitoring = {};
+			groupData.monitoring.rules = data.rules;
+			renderMonitoredRules();
+		} catch (err) {
+			showCustomAlert(err.message, "Erro ao Adicionar Regra");
+		}
+	}
+
+	async function deleteMonitoringRule(ruleId) {
+		try {
+			const res = await fetch(`${API_BASE}/group-monitoring/rule`, {
+				method: "DELETE",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token, groupId, ruleId })
+			});
+			const data = await res.json();
+			if (!data.success) {
+				throw new Error(data.message || "Erro ao remover regra.");
+			}
+			if (!groupData.monitoring) groupData.monitoring = {};
+			groupData.monitoring.rules = data.rules;
+			renderMonitoredRules();
+		} catch (err) {
+			showCustomAlert(err.message, "Erro ao Remover Regra");
+		}
+	}
+
+	function renderMonitoredOccurrences() {
+		const occurrences = groupData.monitoring?.occurrences || [];
+		const container = document.getElementById("monitoring-occurrences-list");
+		const countEl = document.getElementById("occurrences-count");
+		const btnMarkAll = document.getElementById("btn-mark-all-seen");
+
+		const unreadCount = occurrences.filter((o) => !o.is_read).length;
+		if (countEl) countEl.textContent = unreadCount;
+		if (btnMarkAll) btnMarkAll.style.display = unreadCount > 0 ? "inline-flex" : "none";
+
+		if (!container) return;
+		container.innerHTML = "";
+
+		if (occurrences.length === 0) {
+			const empty = document.createElement("div");
+			empty.className = "monitoring-empty-msg";
+			empty.textContent = "Nenhuma ocorrência registrada no grupo.";
+			container.appendChild(empty);
+			return;
+		}
+
+		occurrences.forEach((occ) => {
+			const card = document.createElement("div");
+			card.className = "monitoring-occurrence-card";
+
+			const top = document.createElement("div");
+			top.className = "monitoring-occ-top";
+
+			const leftInfo = document.createElement("div");
+			leftInfo.style.display = "flex";
+			leftInfo.style.alignItems = "center";
+			leftInfo.style.gap = "8px";
+
+			const badge = document.createElement("span");
+			badge.className = `monitoring-occ-badge ${occ.rule_type}`;
+			badge.textContent = occ.rule_type === "regex" ? "Regex" : "Palavra";
+
+			const patternCode = document.createElement("code");
+			patternCode.textContent = occ.pattern;
+
+			leftInfo.appendChild(badge);
+			leftInfo.appendChild(patternCode);
+
+			const rightInfo = document.createElement("div");
+			rightInfo.style.display = "flex";
+			rightInfo.style.alignItems = "center";
+			rightInfo.style.gap = "12px";
+
+			const authorSpan = document.createElement("span");
+			authorSpan.className = "monitoring-occ-author";
+			authorSpan.textContent = `${occ.author_name || "Desconhecido"} (${occ.author_number || ""})`;
+
+			const dateSpan = document.createElement("span");
+			dateSpan.className = "monitoring-occ-date";
+			dateSpan.textContent = occ.created_at || "";
+
+			rightInfo.appendChild(authorSpan);
+			rightInfo.appendChild(dateSpan);
+
+			top.appendChild(leftInfo);
+			top.appendChild(rightInfo);
+
+			const msgBox = document.createElement("div");
+			msgBox.className = "monitoring-messages-box";
+
+			if (Array.isArray(occ.before_messages)) {
+				occ.before_messages.forEach((msg) => {
+					const line = document.createElement("div");
+					line.className = "monitoring-line-before";
+					line.textContent = msg;
+					msgBox.appendChild(line);
+				});
+			}
+
+			const triggerLine = document.createElement("div");
+			triggerLine.className = "monitoring-line-trigger";
+			triggerLine.textContent = occ.trigger_message;
+			msgBox.appendChild(triggerLine);
+
+			if (Array.isArray(occ.after_messages)) {
+				occ.after_messages.forEach((msg) => {
+					const line = document.createElement("div");
+					line.className = "monitoring-line-after";
+					line.textContent = msg;
+					msgBox.appendChild(line);
+				});
+			}
+
+			const footer = document.createElement("div");
+			footer.className = "monitoring-occ-footer";
+
+			const markBtn = document.createElement("button");
+			markBtn.type = "button";
+			markBtn.className = `btn-mark-seen ${occ.is_read ? "seen" : ""}`;
+			markBtn.textContent = occ.is_read ? "✓ Visto" : "Marca Visto";
+			if (!occ.is_read) {
+				markBtn.onclick = async () => {
+					await markOccurrenceSeen(occ.id);
+				};
+			}
+
+			footer.appendChild(markBtn);
+
+			card.appendChild(top);
+			card.appendChild(msgBox);
+			card.appendChild(footer);
+
+			container.appendChild(card);
+		});
+	}
+
+	async function markOccurrenceSeen(occurrenceId) {
+		try {
+			const res = await fetch(`${API_BASE}/group-monitoring/mark-read`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token, groupId, occurrenceId })
+			});
+			const data = await res.json();
+			if (!data.success) {
+				throw new Error(data.message || "Erro ao marcar visto.");
+			}
+			if (groupData.monitoring?.occurrences) {
+				const target = groupData.monitoring.occurrences.find((o) => o.id === occurrenceId);
+				if (target) target.is_read = 1;
+			}
+			renderMonitoredOccurrences();
+		} catch (err) {
+			showCustomAlert(err.message, "Erro ao Atualizar");
+		}
+	}
+
+	async function markAllOccurrencesSeen() {
+		try {
+			const res = await fetch(`${API_BASE}/group-monitoring/mark-read`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token, groupId, all: true })
+			});
+			const data = await res.json();
+			if (!data.success) {
+				throw new Error(data.message || "Erro ao marcar todas como vistas.");
+			}
+			if (groupData.monitoring?.occurrences) {
+				groupData.monitoring.occurrences.forEach((o) => {
+					o.is_read = 1;
+				});
+			}
+			renderMonitoredOccurrences();
+		} catch (err) {
+			showCustomAlert(err.message, "Erro ao Atualizar");
+		}
+	}
+
+	function renderTags(containerId, dataList, updateCallback) {
+		const container = document.getElementById(containerId);
+		if (!container) return;
+		container.innerHTML = "";
+		dataList.forEach((item) => {
+			const tag = document.createElement("span");
+			tag.className = "tag";
+			tag.innerHTML = `${item} <span class="remove">&times;</span>`;
+			tag.querySelector(".remove").onclick = () => {
+				const newList = dataList.filter((i) => i !== item);
+				updateCallback(newList);
+				renderTags(containerId, newList, updateCallback);
+			};
+			container.appendChild(tag);
+		});
+	}
+
+	function buildRegexClient(input) {
+		if (!input || typeof input !== "string") return null;
+		const match = input.match(/^\/(.+)\/([gimsuyvd]*)$/);
+		if (match) {
+			return new RegExp(match[1], match[2]);
+		}
+		return new RegExp(input, "i");
+	}
+
+	function validateRegexClient(patternStr) {
+		if (!patternStr || typeof patternStr !== "string") {
+			return { valid: false, error: "O padrão regex não pode estar vazio." };
+		}
+		const trimmed = patternStr.trim();
+		if (trimmed.length < 2) {
+			return { valid: false, error: "O regex deve ter pelo menos 2 caracteres." };
+		}
+		let regex;
+		try {
+			regex = buildRegexClient(trimmed);
+		} catch (err) {
+			return { valid: false, error: `Sintaxe inválida: ${err.message}` };
+		}
+		if (!regex) return { valid: false, error: "Expressão regular inválida." };
+
+		try {
+			if (regex.test("")) {
+				return {
+					valid: false,
+					error: "Regex muito abrangente: casa com texto vazio e apagaria todas as mensagens."
+				};
+			}
+			if (regex.test(" ")) {
+				return {
+					valid: false,
+					error: "Regex muito abrangente: casa com espaço e apagaria mensagens com espaços."
+				};
+			}
+			const neutralSamples = [
+				"olá",
+				"tudo bem?",
+				"bom dia",
+				"boa tarde",
+				"ok, obrigado",
+				"sim, entendi",
+				"não posso agora",
+				"reunião amanhã"
+			];
+			let neutralMatchCount = 0;
+			for (const sample of neutralSamples) {
+				if (regex.test(sample)) neutralMatchCount++;
+			}
+			if (neutralMatchCount >= 4) {
+				return {
+					valid: false,
+					error: "Regex muito abrangente: coincide com frases normais do dia a dia."
+				};
+			}
+		} catch (err) {
+			return { valid: false, error: `Erro ao testar regex: ${err.message}` };
+		}
+
+		return { valid: true, regex };
+	}
+
+	function renderRegexList(containerId, regexList, updateCallback) {
+		const container = document.getElementById(containerId);
+		if (!container) return;
+		container.innerHTML = "";
+
+		if (!regexList || regexList.length === 0) {
+			const empty = document.createElement("div");
+			empty.className = "regex-empty-msg";
+			empty.textContent = "Nenhum regex configurado.";
+			container.appendChild(empty);
+			return;
+		}
+
+		regexList.forEach((pattern, index) => {
+			const row = document.createElement("div");
+			row.className = "regex-row-item";
+
+			const patternEl = document.createElement("div");
+			patternEl.className = "regex-pattern-display";
+			const code = document.createElement("code");
+			code.textContent = pattern;
+			patternEl.appendChild(code);
+
+			const testContainer = document.createElement("div");
+			testContainer.className = "regex-test-container";
+
+			const testInput = document.createElement("input");
+			testInput.type = "text";
+			testInput.className = "form-control regex-test-input";
+			testInput.placeholder = "Testar se regex detecta...";
+
+			const testBadge = document.createElement("span");
+			testBadge.className = "regex-test-badge regex-test-idle";
+			testBadge.innerHTML = '<i class="fas fa-vial"></i> Testar';
+
+			let compiled = null;
+			try {
+				compiled = buildRegexClient(pattern);
+			} catch (e) {
+				// error compiling
+			}
+
+			const runTest = () => {
+				const text = testInput.value;
+				if (!text) {
+					testBadge.className = "regex-test-badge regex-test-idle";
+					testBadge.innerHTML = '<i class="fas fa-vial"></i> Testar';
+					testInput.classList.remove("input-match-success", "input-match-none");
+					return;
+				}
+				if (!compiled) {
+					testBadge.className = "regex-test-badge regex-test-error";
+					testBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Regex inválido';
+					return;
+				}
+				try {
+					const matched = compiled.test(text);
+					if (matched) {
+						testBadge.className = "regex-test-badge regex-test-match";
+						testBadge.innerHTML = '<i class="fas fa-check-circle"></i> Detectou!';
+						testInput.classList.add("input-match-success");
+						testInput.classList.remove("input-match-none");
+					} else {
+						testBadge.className = "regex-test-badge regex-test-nomatch";
+						testBadge.innerHTML = '<i class="fas fa-times-circle"></i> Não detectou';
+						testInput.classList.add("input-match-none");
+						testInput.classList.remove("input-match-success");
+					}
+				} catch (err) {
+					testBadge.className = "regex-test-badge regex-test-error";
+					testBadge.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Erro';
+				}
+			};
+
+			testInput.addEventListener("input", runTest);
+
+			testContainer.appendChild(testInput);
+			testContainer.appendChild(testBadge);
+
+			const deleteBtn = document.createElement("button");
+			deleteBtn.type = "button";
+			deleteBtn.className = "btn btn-danger btn-xs btn-remove-regex";
+			deleteBtn.title = "Remover este regex";
+			deleteBtn.innerHTML = '<i class="fas fa-trash-alt"></i>';
+			deleteBtn.onclick = () => {
+				const newList = regexList.filter((_, i) => i !== index);
+				updateCallback(newList);
+				renderRegexList(containerId, newList, updateCallback);
+			};
+
+			row.appendChild(patternEl);
+			row.appendChild(testContainer);
+			row.appendChild(deleteBtn);
+
+			container.appendChild(row);
+		});
+	}
+
+	// --- WhatsApp Markdown & Variable Formatter ---
+
+	function formatWhatsAppMarkdown(text) {
+		if (!text) return "";
+		let escaped = text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+		// Bold: *text*
+		escaped = escaped.replace(/\*([^*\n]+)\*/g, "<strong>$1</strong>");
+		// Italic: _text_
+		escaped = escaped.replace(/_([^_\n]+)_/g, "<em>$1</em>");
+		// Strike: ~text~
+		escaped = escaped.replace(/~([^~\n]+)~/g, "<del>$1</del>");
+		// Code: `code`
+		escaped = escaped.replace(/`([^`\n]+)`/g, '<code class="wa-code">$1</code>');
+		// Variables: {var}
+		escaped = escaped.replace(/\{([a-zA-Z0-9_\-]+)\}/g, '<span class="wa-var-pill">{$1}</span>');
+		// Newlines
+		escaped = escaped.replace(/\n/g, "<br>");
+
+		return escaped;
+	}
+
+	// --- Inline Media List (Boas-Vindas & Despedidas) ---
+
+	function renderMediaList(containerId, mediaObj, type) {
+		const container = document.getElementById(containerId);
+		if (!container) return;
+		container.innerHTML = "";
+
+		const entries = Object.entries(mediaObj).filter(([k, v]) => !!v);
+
+		if (entries.length === 0) {
+			container.innerHTML =
+				'<div class="text-muted text-sm p-2 text-center">Nenhuma mídia ou mensagem cadastrada.</div>';
+			return;
+		}
+
+		entries.forEach(([key, value]) => {
+			const div = document.createElement("div");
+			div.className = "inline-media-card";
+
+			if (key === "text") {
+				const textVal = typeof value === "string" ? value : String(value || "");
+				div.innerHTML = `
                     <div class="inline-media-info">
                         <span class="inline-media-badge"><i class="fas fa-font"></i> Mensagem de Texto</span>
                         <div class="inline-media-caption">${formatWhatsAppMarkdown(textVal)}</div>
@@ -1541,481 +1796,539 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 `;
 
-                div.querySelector('.btn-edit-text').onclick = async () => {
-                    const newText = await showCustomPrompt('Editar mensagem de texto:', textVal);
-                    if (newText !== null && newText.trim()) {
-                        mediaObj.text = newText.trim();
-                        setDirty(true);
-                        renderMediaList(containerId, mediaObj, type);
-                    }
-                };
+				div.querySelector(".btn-edit-text").onclick = async () => {
+					const newText = await showCustomPrompt("Editar mensagem de texto:", textVal);
+					if (newText !== null && newText.trim()) {
+						mediaObj.text = newText.trim();
+						setDirty(true);
+						renderMediaList(containerId, mediaObj, type);
+					}
+				};
+			} else {
+				const mediaLink = `/media-direct/${value.file}?token=${token}`;
+				const captionVal = typeof value.caption === "string" ? value.caption : "";
 
-            } else {
-                const mediaLink = `/media-direct/${value.file}?token=${token}`;
-                const captionVal = typeof value.caption === 'string' ? value.caption : '';
-                
-                let thumbHtml = '';
-                if (key === 'image' || key === 'sticker') {
-                    thumbHtml = `<img src="${mediaLink}" class="inline-media-thumb" alt="${key}" onerror="this.src='/android-chrome-192x192.png'">`;
-                } else if (key === 'video' || key === 'gif') {
-                    thumbHtml = `<div class="inline-media-thumb-video"><i class="fas fa-play-circle"></i></div>`;
-                } else if (key === 'audio') {
-                    thumbHtml = `<div class="inline-media-thumb-video" style="color: #25d366;"><i class="fas fa-microphone"></i></div>`;
-                }
+				let thumbHtml = "";
+				if (key === "image" || key === "sticker") {
+					thumbHtml = `<img src="${mediaLink}" class="inline-media-thumb" alt="${key}" onerror="this.src='/android-chrome-192x192.png'">`;
+				} else if (key === "video" || key === "gif") {
+					thumbHtml = `<div class="inline-media-thumb-video"><i class="fas fa-play-circle"></i></div>`;
+				} else if (key === "audio") {
+					thumbHtml = `<div class="inline-media-thumb-video" style="color: #25d366;"><i class="fas fa-microphone"></i></div>`;
+				}
 
-                div.innerHTML = `
+				div.innerHTML = `
                     ${thumbHtml}
                     <div class="inline-media-info">
                         <span class="inline-media-badge">${getIcon(key)} ${key}</span>
                         <div class="inline-media-caption">${captionVal ? formatWhatsAppMarkdown(captionVal) : '<span class="text-muted">(Sem legenda)</span>'}</div>
                     </div>
                     <div class="inline-media-actions">
-                        ${key === 'image' || key === 'video' || key === 'gif' ? `<button type="button" class="btn btn-xs btn-outline btn-edit-caption" title="Editar Legenda"><i class="fas fa-comment"></i></button>` : ''}
+                        ${key === "image" || key === "video" || key === "gif" ? `<button type="button" class="btn btn-xs btn-outline btn-edit-caption" title="Editar Legenda"><i class="fas fa-comment"></i></button>` : ""}
                         <button type="button" class="btn btn-xs btn-danger btn-del-item" title="Remover"><i class="fas fa-trash"></i></button>
                     </div>
                 `;
 
-                const editCaptionBtn = div.querySelector('.btn-edit-caption');
-                if (editCaptionBtn) {
-                    editCaptionBtn.onclick = async () => {
-                        const newCap = await showCustomPrompt('Editar legenda da mídia:', captionVal);
-                        if (newCap !== null) {
-                            value.caption = newCap.trim();
-                            setDirty(true);
-                            renderMediaList(containerId, mediaObj, type);
-                        }
-                    };
-                }
-            }
+				const editCaptionBtn = div.querySelector(".btn-edit-caption");
+				if (editCaptionBtn) {
+					editCaptionBtn.onclick = async () => {
+						const newCap = await showCustomPrompt("Editar legenda da mídia:", captionVal);
+						if (newCap !== null) {
+							value.caption = newCap.trim();
+							setDirty(true);
+							renderMediaList(containerId, mediaObj, type);
+						}
+					};
+				}
+			}
 
-            div.querySelector('.btn-del-item').onclick = async () => {
-                if (await showCustomConfirm(`Remover este item de ${type === 'greetings' ? 'boas-vindas' : 'despedida'}?`)) {
-                    delete mediaObj[key];
-                    setDirty(true);
-                    renderMediaList(containerId, mediaObj, type);
-                }
-            };
+			div.querySelector(".btn-del-item").onclick = async () => {
+				if (
+					await showCustomConfirm(
+						`Remover este item de ${type === "greetings" ? "boas-vindas" : "despedida"}?`
+					)
+				) {
+					delete mediaObj[key];
+					setDirty(true);
+					renderMediaList(containerId, mediaObj, type);
+				}
+			};
 
-            container.appendChild(div);
-        });
-    }
+			container.appendChild(div);
+		});
+	}
 
-    function getIcon(type) {
-        const icons = {
-            text: '📝',
-            image: '🖼️',
-            video: '🎥',
-            audio: '🎵',
-            sticker: '🏷️',
-            gif: '🎞️'
-        };
-        return icons[type] || '📎';
-    }
+	function getIcon(type) {
+		const icons = {
+			text: "📝",
+			image: "🖼️",
+			video: "🎥",
+			audio: "🎵",
+			sticker: "🏷️",
+			gif: "🎞️"
+		};
+		return icons[type] || "📎";
+	}
 
-    // --- Accordions & Settings Toggles ---
+	// --- Accordions & Settings Toggles ---
 
-    els.accordions.forEach(item => {
-        const header = item.querySelector('.accordion-header');
-        header.addEventListener('click', () => {
-            const isActive = item.classList.contains('active');
-            item.classList.toggle('active', !isActive);
-        });
-    });
+	els.accordions.forEach((item) => {
+		const header = item.querySelector(".accordion-header");
+		header.addEventListener("click", () => {
+			const isActive = item.classList.contains("active");
+			item.classList.toggle("active", !isActive);
+		});
+	});
 
-    els.subAccordions.forEach(sub => {
-        const subHeader = sub.querySelector('.sub-accordion-header');
-        subHeader.addEventListener('click', () => {
-            sub.classList.toggle('active');
-        });
-    });
+	els.subAccordions.forEach((sub) => {
+		const subHeader = sub.querySelector(".sub-accordion-header");
+		subHeader.addEventListener("click", () => {
+			sub.classList.toggle("active");
+		});
+	});
 
-    function toggleInteractionSettings(show) {
-        document.getElementById('interaction-settings').classList.toggle('hidden', !show);
-    }
+	function toggleInteractionSettings(show) {
+		document.getElementById("interaction-settings").classList.toggle("hidden", !show);
+	}
 
-    function toggleTranslateSettings(show) {
-        document.getElementById('translate-settings').classList.toggle('hidden', !show);
-    }
+	function toggleTranslateSettings(show) {
+		document.getElementById("translate-settings").classList.toggle("hidden", !show);
+	}
 
-    function toggleNsfwSettings(show) {
-        const panel = document.getElementById('nsfw-settings');
-        if (panel) panel.classList.toggle('hidden', !show);
-    }
+	function toggleNsfwSettings(show) {
+		const panel = document.getElementById("nsfw-settings");
+		if (panel) panel.classList.toggle("hidden", !show);
+	}
 
-    function setupListAdder(btnId, inputId, dataPath) {
-        const btn = document.getElementById(btnId);
-        const input = document.getElementById(inputId);
-        if (!btn || !input) return;
+	function setupListAdder(btnId, inputId, dataPath) {
+		const btn = document.getElementById(btnId);
+		const input = document.getElementById(inputId);
+		if (!btn || !input) return;
 
-        btn.addEventListener('click', () => {
-            let val = input.value.trim();
-            if (!val) return;
-            input.value = '';
+		btn.addEventListener("click", () => {
+			let val = input.value.trim();
+			if (!val) return;
+			input.value = "";
 
-            const parts = dataPath.split('.');
-            let target = groupData;
-            for (let i = 0; i < parts.length - 1; i++) {
-                if (!target[parts[i]]) target[parts[i]] = {};
-                target = target[parts[i]];
-            }
-            const lastKey = parts[parts.length - 1];
+			const parts = dataPath.split(".");
+			let target = groupData;
+			for (let i = 0; i < parts.length - 1; i++) {
+				if (!target[parts[i]]) target[parts[i]] = {};
+				target = target[parts[i]];
+			}
+			const lastKey = parts[parts.length - 1];
 
-            if (btnId === 'add-ignored-number' || btnId === 'add-forbidden-user' || btnId === 'add-additional-admin') {
-                val = val.replace(/\D/g, '');
-                if (!val) return;
-            }
+			if (
+				btnId === "add-ignored-number" ||
+				btnId === "add-forbidden-user" ||
+				btnId === "add-additional-admin"
+			) {
+				val = val.replace(/\D/g, "");
+				if (!val) return;
+			}
 
-            if (btnId === 'add-allowed-link') {
-                if (!val.includes('*')) {
-                    val = val.replace(/^https?:\/\//i, '').split(/[/?#]/)[0];
-                    if (val.toLowerCase().startsWith('www.')) {
-                        val = val.substring(4);
-                    }
-                    val = val.toLowerCase().trim();
-                } else {
-                    val = val.toLowerCase().trim();
-                }
-                if (!val) return;
-            }
+			if (btnId === "add-allowed-link") {
+				if (!val.includes("*")) {
+					val = val.replace(/^https?:\/\//i, "").split(/[/?#]/)[0];
+					if (val.toLowerCase().startsWith("www.")) {
+						val = val.substring(4);
+					}
+					val = val.toLowerCase().trim();
+				} else {
+					val = val.toLowerCase().trim();
+				}
+				if (!val) return;
+			}
 
-            if (!target[lastKey]) target[lastKey] = [];
+			if (!target[lastKey]) target[lastKey] = [];
 
-            if (!target[lastKey].includes(val)) {
-                target[lastKey].push(val);
-                setDirty(true);
-                const listId = inputId.replace('new-', '') + 's-list';
-                renderTags(listId, target[lastKey], (newList) => {
-                    target[lastKey] = newList;
-                    setDirty(true);
-                });
-            }
-        });
+			if (!target[lastKey].includes(val)) {
+				target[lastKey].push(val);
+				setDirty(true);
+				const listId = inputId.replace("new-", "") + "s-list";
+				renderTags(listId, target[lastKey], (newList) => {
+					target[lastKey] = newList;
+					setDirty(true);
+				});
+			}
+		});
 
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                btn.click();
-            }
-        });
-    }
+		input.addEventListener("keypress", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				btn.click();
+			}
+		});
+	}
 
-    function setupRegexAdder(btnId, inputId, errorId, containerId) {
-        const btn = document.getElementById(btnId);
-        const input = document.getElementById(inputId);
-        const errorEl = document.getElementById(errorId);
-        if (!btn || !input) return;
+	function setupRegexAdder(btnId, inputId, errorId, containerId) {
+		const btn = document.getElementById(btnId);
+		const input = document.getElementById(inputId);
+		const errorEl = document.getElementById(errorId);
+		if (!btn || !input) return;
 
-        const handleAdd = () => {
-            const val = input.value.trim();
-            if (!val) return;
+		const handleAdd = () => {
+			const val = input.value.trim();
+			if (!val) return;
 
-            if (errorEl) {
-                errorEl.style.display = 'none';
-                errorEl.textContent = '';
-            }
+			if (errorEl) {
+				errorEl.style.display = "none";
+				errorEl.textContent = "";
+			}
 
-            const validation = validateRegexClient(val);
-            if (!validation.valid) {
-                if (errorEl) {
-                    errorEl.textContent = validation.error;
-                    errorEl.style.display = 'block';
-                } else {
-                    showCustomAlert(validation.error, 'Regex Inválido');
-                }
-                return;
-            }
+			const validation = validateRegexClient(val);
+			if (!validation.valid) {
+				if (errorEl) {
+					errorEl.textContent = validation.error;
+					errorEl.style.display = "block";
+				} else {
+					showCustomAlert(validation.error, "Regex Inválido");
+				}
+				return;
+			}
 
-            if (!groupData.filters) groupData.filters = {};
-            if (!Array.isArray(groupData.filters.regexes)) groupData.filters.regexes = [];
+			if (!groupData.filters) groupData.filters = {};
+			if (!Array.isArray(groupData.filters.regexes)) groupData.filters.regexes = [];
 
-            if (groupData.filters.regexes.includes(val)) {
-                if (errorEl) {
-                    errorEl.textContent = 'Este regex já está na lista.';
-                    errorEl.style.display = 'block';
-                }
-                return;
-            }
+			if (groupData.filters.regexes.includes(val)) {
+				if (errorEl) {
+					errorEl.textContent = "Este regex já está na lista.";
+					errorEl.style.display = "block";
+				}
+				return;
+			}
 
-            groupData.filters.regexes.push(val);
-            input.value = '';
-            if (errorEl) errorEl.style.display = 'none';
-            setDirty(true);
+			groupData.filters.regexes.push(val);
+			input.value = "";
+			if (errorEl) errorEl.style.display = "none";
+			setDirty(true);
 
-            renderRegexList(containerId, groupData.filters.regexes, (newList) => {
-                groupData.filters.regexes = newList;
-                setDirty(true);
-            });
-        };
+			renderRegexList(containerId, groupData.filters.regexes, (newList) => {
+				groupData.filters.regexes = newList;
+				setDirty(true);
+			});
+		};
 
-        btn.addEventListener('click', handleAdd);
-        input.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                handleAdd();
-            }
-        });
-        input.addEventListener('input', () => {
-            if (errorEl && errorEl.style.display !== 'none') {
-                errorEl.style.display = 'none';
-            }
-        });
-    }
+		btn.addEventListener("click", handleAdd);
+		input.addEventListener("keypress", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				handleAdd();
+			}
+		});
+		input.addEventListener("input", () => {
+			if (errorEl && errorEl.style.display !== "none") {
+				errorEl.style.display = "none";
+			}
+		});
+	}
 
-    // --- Streams (Twitch, Kick, YouTube, TikTok) ---
+	// --- Streams (Twitch, Kick, YouTube, TikTok) ---
 
-    function renderStreamSection(platform) {
-        if (SPLIT_STREAM_PLATFORMS.includes(platform)) {
-            renderStreamSection(`${platform}_video`);
-            renderStreamSection(`${platform}_live`);
-            if (platform === 'youtube') {
-                const legacyTbody = document.querySelector('#youtube-table tbody');
-                const legacyNoMsg = document.querySelector('#no-youtube-msg');
-                if (legacyTbody) legacyTbody.innerHTML = '';
-                if (legacyNoMsg) legacyNoMsg.classList.add('hidden');
-            }
-            return;
-        }
+	function renderStreamSection(platform) {
+		if (SPLIT_STREAM_PLATFORMS.includes(platform)) {
+			renderStreamSection(`${platform}_video`);
+			renderStreamSection(`${platform}_live`);
+			if (platform === "youtube") {
+				const legacyTbody = document.querySelector("#youtube-table tbody");
+				const legacyNoMsg = document.querySelector("#no-youtube-msg");
+				if (legacyTbody) legacyTbody.innerHTML = "";
+				if (legacyNoMsg) legacyNoMsg.classList.add("hidden");
+			}
+			return;
+		}
 
-        const tbody = document.querySelector(`#${platform}-table tbody`);
-        const noMsg = document.querySelector(`#no-${platform}-msg`);
-        if (!tbody) return;
-        tbody.innerHTML = '';
+		const tbody = document.querySelector(`#${platform}-table tbody`);
+		const noMsg = document.querySelector(`#no-${platform}-msg`);
+		if (!tbody) return;
+		tbody.innerHTML = "";
 
-        const { storeKey, kind } = parseStreamPlatform(platform);
-        const isVideoKind = kind === 'video';
-        let streams = (groupData[storeKey] || []).map((s, idx) => ({ ...s, _originalIndex: idx }));
-        if (kind === 'video') {
-            streams = streams.filter(s => s.notifyVideos !== false);
-        } else if (kind === 'live') {
-            streams = streams.filter(s => s.notifyLives !== false);
-        }
+		const { storeKey, kind } = parseStreamPlatform(platform);
+		const isVideoKind = kind === "video";
+		let streams = (groupData[storeKey] || []).map((s, idx) => ({ ...s, _originalIndex: idx }));
+		if (kind === "video") {
+			streams = streams.filter((s) => s.notifyVideos !== false);
+		} else if (kind === "live") {
+			streams = streams.filter((s) => s.notifyLives !== false);
+		}
 
-        if (streams.length === 0) {
-            if (noMsg) noMsg.classList.remove('hidden');
-        } else {
-            if (noMsg) noMsg.classList.add('hidden');
-            streams.forEach((stream) => {
-                const index = stream._originalIndex;
-                const tr = document.createElement('tr');
-                tr.innerHTML = `
+		if (streams.length === 0) {
+			if (noMsg) noMsg.classList.remove("hidden");
+		} else {
+			if (noMsg) noMsg.classList.add("hidden");
+			streams.forEach((stream) => {
+				const index = stream._originalIndex;
+				const tr = document.createElement("tr");
+				tr.innerHTML = `
                     <td>
                         <strong>${stream.channel}</strong>
-                        ${stream.useThumbnail ? ' <span class="badge-soon" style="color: #25d366; border-color: rgba(37,211,102,0.4); background: rgba(37,211,102,0.1);">Thumb</span>' : ''}
-                        ${!isVideoKind && stream.closeGroupOnLive ? ` <span class="badge-soon" style="color: #f39c12; border-color: rgba(243,156,18,0.4); background: rgba(243,156,18,0.1);" title="Fecha o grupo durante lives"><i class="fas fa-lock"></i> Fechar Grupo${stream.closeGroupDuration ? ` (${stream.closeGroupDuration}m)` : ''}</span>` : ''}
+                        ${stream.useThumbnail ? ' <span class="badge-soon" style="color: #25d366; border-color: rgba(37,211,102,0.4); background: rgba(37,211,102,0.1);">Thumb</span>' : ""}
+                        ${!isVideoKind && stream.closeGroupOnLive ? ` <span class="badge-soon" style="color: #f39c12; border-color: rgba(243,156,18,0.4); background: rgba(243,156,18,0.1);" title="Fecha o grupo durante lives"><i class="fas fa-lock"></i> Fechar Grupo${stream.closeGroupDuration ? ` (${stream.closeGroupDuration}m)` : ""}</span>` : ""}
                     </td>
                     <td>
                         <button class="btn btn-xs btn-primary btn-edit-stream" data-platform="${platform}" data-index="${index}"><i class="fas fa-edit"></i> Editar</button>
                     </td>
                 `;
-                tbody.appendChild(tr);
-            });
-            
-            document.querySelectorAll(`.btn-edit-stream[data-platform="${platform}"]`).forEach(btn => {
-                btn.addEventListener('click', () => openStreamModal(platform, parseInt(btn.dataset.index, 10)));
-            });
-        }
-    }
+				tbody.appendChild(tr);
+			});
 
-    document.querySelectorAll('.btn-add-stream').forEach(btn => {
-        btn.addEventListener('click', () => openStreamModal(btn.dataset.platform, null));
-    });
+			document.querySelectorAll(`.btn-edit-stream[data-platform="${platform}"]`).forEach((btn) => {
+				btn.addEventListener("click", () =>
+					openStreamModal(platform, parseInt(btn.dataset.index, 10))
+				);
+			});
+		}
+	}
 
-    function openStreamModal(platform, index) {
-        currentStream = { platform, index, data: null };
-        const isEdit = index !== null && !isNaN(index);
-        const { storeKey, kind } = parseStreamPlatform(platform);
-        const isVideoKind = kind === 'video';
-        const isLiveKind = kind === 'live';
+	document.querySelectorAll(".btn-add-stream").forEach((btn) => {
+		btn.addEventListener("click", () => openStreamModal(btn.dataset.platform, null));
+	});
 
-        let platformLabel = platform.toUpperCase();
-        if (kind) platformLabel = `${STREAM_PLATFORM_LABELS[storeKey].toUpperCase()} (${isVideoKind ? 'VÍDEOS' : 'LIVES'})`;
+	function openStreamModal(platform, index) {
+		currentStream = { platform, index, data: null };
+		const isEdit = index !== null && !isNaN(index);
+		const { storeKey, kind } = parseStreamPlatform(platform);
+		const isVideoKind = kind === "video";
+		const isLiveKind = kind === "live";
 
-        els.streamModalTitle.textContent = isEdit ? `Editar ${platformLabel}` : `Adicionar Canal ${platformLabel}`;
-        els.btnDeleteStream.classList.toggle('hidden', !isEdit);
-        if (storeKey === 'youtube') {
-            els.streamHint.textContent = 'ID do canal ou Handle (@nome).';
-        } else if (storeKey === 'tiktok') {
-            els.streamHint.textContent = 'Usuário do TikTok (com ou sem @), sem URL.';
-        } else {
-            els.streamHint.textContent = 'Apenas o nome de usuário, sem URL.';
-        }
-        
-        const simLabel = document.getElementById('wa-sim-title-label');
-        const onTitle = document.getElementById('stream-on-title');
-        const offAcc = document.getElementById('stream-off-accordion');
-        const offDiv = document.getElementById('stream-off-divider');
-        const titleRow = document.getElementById('stream-change-title-row');
-        const closeGroupRow = document.getElementById('stream-close-group-row');
+		let platformLabel = platform.toUpperCase();
+		if (kind)
+			platformLabel = `${STREAM_PLATFORM_LABELS[storeKey].toUpperCase()} (${isVideoKind ? "VÍDEOS" : "LIVES"})`;
 
-        if (isVideoKind) {
-            const videoIcon = storeKey === 'tiktok' ? 'fab fa-tiktok text-tiktok' : 'fab fa-youtube text-danger';
-            if (simLabel) simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação de Vídeo Novo';
-            if (onTitle) onTitle.innerHTML = `<i class="${videoIcon}"></i> <h4>Mídia & Mensagem de Novo Vídeo</h4>`;
-            if (offAcc) offAcc.classList.add('hidden');
-            if (offDiv) offDiv.classList.add('hidden');
-            if (titleRow) titleRow.classList.add('hidden');
-            if (closeGroupRow) closeGroupRow.classList.add('hidden');
-            if (els.streamCloseGroupDurationBox) els.streamCloseGroupDurationBox.classList.add('hidden');
-        } else {
-            if (simLabel) simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação da Live';
-            if (onTitle) onTitle.innerHTML = '<i class="fas fa-satellite-dish text-success"></i> <h4>Mídia & Mensagem quando Online</h4>';
-            if (offAcc) offAcc.classList.remove('hidden');
-            if (offDiv) offDiv.classList.remove('hidden');
-            if (titleRow) titleRow.classList.remove('hidden');
-            if (closeGroupRow) closeGroupRow.classList.remove('hidden');
-        }
+		els.streamModalTitle.textContent = isEdit
+			? `Editar ${platformLabel}`
+			: `Adicionar Canal ${platformLabel}`;
+		els.btnDeleteStream.classList.toggle("hidden", !isEdit);
+		if (storeKey === "youtube") {
+			els.streamHint.textContent = "ID do canal ou Handle (@nome).";
+		} else if (storeKey === "tiktok") {
+			els.streamHint.textContent = "Usuário do TikTok (com ou sem @), sem URL.";
+		} else {
+			els.streamHint.textContent = "Apenas o nome de usuário, sem URL.";
+		}
 
-        if (isEdit) {
-            const rawData = groupData[storeKey][index];
-            currentStream.data = JSON.parse(JSON.stringify(rawData));
-        } else {
-            currentStream.data = {
-                channel: '',
-                mentionAllMembers: false,
-                changeTitleOnEvent: isLiveKind || platform === 'twitch' || platform === 'kick',
-                onlineTitle: '',
-                offlineTitle: '',
-                closeGroupOnLive: false,
-                closeGroupDuration: null,
-                useThumbnail: true,
-                useAI: false,
-                notifyVideos: true,
-                notifyLives: true,
-                videoConfig: { media: [{ type: 'text', content: DEFAULT_MSG[`${storeKey}_video`] || DEFAULT_MSG.youtube_video }] },
-                onConfig: { media: [{ type: 'text', content: DEFAULT_MSG[platform] || DEFAULT_MSG[`${storeKey}_live`] || DEFAULT_MSG.youtube_live }] },
-                offConfig: { media: [] }
-            };
-        }
+		const simLabel = document.getElementById("wa-sim-title-label");
+		const onTitle = document.getElementById("stream-on-title");
+		const offAcc = document.getElementById("stream-off-accordion");
+		const offDiv = document.getElementById("stream-off-divider");
+		const titleRow = document.getElementById("stream-change-title-row");
+		const closeGroupRow = document.getElementById("stream-close-group-row");
 
-        const d = currentStream.data;
-        if (!d.videoConfig) {
-            d.videoConfig = d.onConfig ? JSON.parse(JSON.stringify(d.onConfig)) : { media: [{ type: 'text', content: DEFAULT_MSG.youtube_video }] };
-        }
-        if (!d.onConfig) {
-            d.onConfig = { media: [{ type: 'text', content: DEFAULT_MSG.youtube_live }] };
-        }
-        if (!d.offConfig) {
-            d.offConfig = { media: [] };
-        }
+		if (isVideoKind) {
+			const videoIcon =
+				storeKey === "tiktok" ? "fab fa-tiktok text-tiktok" : "fab fa-youtube text-danger";
+			if (simLabel)
+				simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação de Vídeo Novo';
+			if (onTitle)
+				onTitle.innerHTML = `<i class="${videoIcon}"></i> <h4>Mídia & Mensagem de Novo Vídeo</h4>`;
+			if (offAcc) offAcc.classList.add("hidden");
+			if (offDiv) offDiv.classList.add("hidden");
+			if (titleRow) titleRow.classList.add("hidden");
+			if (closeGroupRow) closeGroupRow.classList.add("hidden");
+			if (els.streamCloseGroupDurationBox) els.streamCloseGroupDurationBox.classList.add("hidden");
+		} else {
+			if (simLabel)
+				simLabel.innerHTML = '<i class="fab fa-whatsapp"></i> Prévia da Notificação da Live';
+			if (onTitle)
+				onTitle.innerHTML =
+					'<i class="fas fa-satellite-dish text-success"></i> <h4>Mídia & Mensagem quando Online</h4>';
+			if (offAcc) offAcc.classList.remove("hidden");
+			if (offDiv) offDiv.classList.remove("hidden");
+			if (titleRow) titleRow.classList.remove("hidden");
+			if (closeGroupRow) closeGroupRow.classList.remove("hidden");
+		}
 
-        els.streamChannel.value = d.channel;
-        els.streamMention.checked = !!d.mentionAllMembers;
-        els.streamChangeTitle.checked = !!d.changeTitleOnEvent;
-        if (els.streamChangePhoto) els.streamChangePhoto.checked = d.changePhotoOnEvent === true;
-        els.streamAI.checked = !!d.useAI;
-        els.streamUseThumbnail.checked = d.useThumbnail !== false;
-        els.streamTitleOn.value = d.onlineTitle || '';
-        els.streamTitleOff.value = d.offlineTitle || '';
-        
-        toggleStreamTitles(!isVideoKind && d.changeTitleOnEvent);
+		if (isEdit) {
+			const rawData = groupData[storeKey][index];
+			currentStream.data = JSON.parse(JSON.stringify(rawData));
+		} else {
+			currentStream.data = {
+				channel: "",
+				mentionAllMembers: false,
+				changeTitleOnEvent: isLiveKind || platform === "twitch" || platform === "kick",
+				onlineTitle: "",
+				offlineTitle: "",
+				closeGroupOnLive: false,
+				closeGroupDuration: null,
+				useThumbnail: true,
+				useAI: false,
+				notifyVideos: true,
+				notifyLives: true,
+				videoConfig: {
+					media: [
+						{ type: "text", content: DEFAULT_MSG[`${storeKey}_video`] || DEFAULT_MSG.youtube_video }
+					]
+				},
+				onConfig: {
+					media: [
+						{
+							type: "text",
+							content:
+								DEFAULT_MSG[platform] || DEFAULT_MSG[`${storeKey}_live`] || DEFAULT_MSG.youtube_live
+						}
+					]
+				},
+				offConfig: { media: [] }
+			};
+		}
 
-        if (els.streamCloseGroup) els.streamCloseGroup.checked = !!d.closeGroupOnLive;
-        if (els.streamCloseGroupDuration) els.streamCloseGroupDuration.value = d.closeGroupDuration || '';
-        if (els.streamCloseGroupDurationBox) {
-            els.streamCloseGroupDurationBox.classList.toggle('hidden', !(!isVideoKind && d.closeGroupOnLive));
-        }
+		const d = currentStream.data;
+		if (!d.videoConfig) {
+			d.videoConfig = d.onConfig
+				? JSON.parse(JSON.stringify(d.onConfig))
+				: { media: [{ type: "text", content: DEFAULT_MSG.youtube_video }] };
+		}
+		if (!d.onConfig) {
+			d.onConfig = { media: [{ type: "text", content: DEFAULT_MSG.youtube_live }] };
+		}
+		if (!d.offConfig) {
+			d.offConfig = { media: [] };
+		}
 
-        if (isVideoKind) {
-            renderStreamMediaList('stream-on-media-list', d.videoConfig?.media || []);
-        } else {
-            renderStreamMediaList('stream-on-media-list', d.onConfig?.media || []);
-            renderStreamMediaList('stream-off-media-list', d.offConfig?.media || []);
-        }
+		els.streamChannel.value = d.channel;
+		els.streamMention.checked = !!d.mentionAllMembers;
+		els.streamChangeTitle.checked = !!d.changeTitleOnEvent;
+		if (els.streamChangePhoto) els.streamChangePhoto.checked = d.changePhotoOnEvent === true;
+		els.streamAI.checked = !!d.useAI;
+		els.streamUseThumbnail.checked = d.useThumbnail !== false;
+		els.streamTitleOn.value = d.onlineTitle || "";
+		els.streamTitleOff.value = d.offlineTitle || "";
 
-        // Renderiza canais do WhatsApp seguidos para encaminhamento
-        const forwardContainer = document.getElementById('stream-forward-channels-container');
-        if (forwardContainer) {
-            forwardContainer.innerHTML = '';
-            const followed = groupData.followedChannels || [];
-            if (!followed || followed.length === 0) {
-                forwardContainer.innerHTML = '<div class="text-muted small">Este grupo não segue nenhum canal ainda para poder encaminhar mensagens</div>';
-            } else {
-                const currentForwards = Array.isArray(d.forwardToChannels) ? d.forwardToChannels : [];
-                followed.forEach((ch) => {
-                    const isChecked = currentForwards.includes(ch.canal_jid);
-                    const itemDiv = document.createElement('div');
-                    itemDiv.className = 'form-group toggle-row-compact mb-2';
-                    itemDiv.innerHTML = `
+		toggleStreamTitles(!isVideoKind && d.changeTitleOnEvent);
+
+		if (els.streamCloseGroup) els.streamCloseGroup.checked = !!d.closeGroupOnLive;
+		if (els.streamCloseGroupDuration)
+			els.streamCloseGroupDuration.value = d.closeGroupDuration || "";
+		if (els.streamCloseGroupDurationBox) {
+			els.streamCloseGroupDurationBox.classList.toggle(
+				"hidden",
+				!(!isVideoKind && d.closeGroupOnLive)
+			);
+		}
+
+		if (isVideoKind) {
+			renderStreamMediaList("stream-on-media-list", d.videoConfig?.media || []);
+		} else {
+			renderStreamMediaList("stream-on-media-list", d.onConfig?.media || []);
+			renderStreamMediaList("stream-off-media-list", d.offConfig?.media || []);
+		}
+
+		// Renderiza canais do WhatsApp seguidos para encaminhamento
+		const forwardContainer = document.getElementById("stream-forward-channels-container");
+		if (forwardContainer) {
+			forwardContainer.innerHTML = "";
+			const followed = groupData.followedChannels || [];
+			if (!followed || followed.length === 0) {
+				forwardContainer.innerHTML =
+					'<div class="text-muted small">Este grupo não segue nenhum canal ainda para poder encaminhar mensagens</div>';
+			} else {
+				const currentForwards = Array.isArray(d.forwardToChannels) ? d.forwardToChannels : [];
+				followed.forEach((ch) => {
+					const isChecked = currentForwards.includes(ch.canal_jid);
+					const itemDiv = document.createElement("div");
+					itemDiv.className = "form-group toggle-row-compact mb-2";
+					itemDiv.innerHTML = `
                         <span class="toggle-label"><i class="fas fa-bullhorn text-secondary"></i> ${ch.apelido}</span>
                         <label class="switch-toggle">
-                            <input type="checkbox" class="stream-forward-ch-checkbox" data-jid="${ch.canal_jid}" ${isChecked ? 'checked' : ''}>
+                            <input type="checkbox" class="stream-forward-ch-checkbox" data-jid="${ch.canal_jid}" ${isChecked ? "checked" : ""}>
                             <span class="slider-round"></span>
                         </label>
                     `;
-                    forwardContainer.appendChild(itemDiv);
-                });
-            }
-        }
+					forwardContainer.appendChild(itemDiv);
+				});
+			}
+		}
 
-        updateStreamPreview();
+		updateStreamPreview();
 
-        els.streamModal.classList.remove('hidden');
-    }
+		els.streamModal.classList.remove("hidden");
+	}
 
-    function toggleStreamTitles(show) {
-        els.streamTitlesGroup.classList.toggle('hidden', !show);
-    }
+	function toggleStreamTitles(show) {
+		els.streamTitlesGroup.classList.toggle("hidden", !show);
+	}
 
-    if(els.streamChangeTitle) {
-        els.streamChangeTitle.addEventListener('change', (e) => toggleStreamTitles(e.target.checked));
-    }
+	if (els.streamChangeTitle) {
+		els.streamChangeTitle.addEventListener("change", (e) => toggleStreamTitles(e.target.checked));
+	}
 
-    if(els.streamCloseGroup) {
-        els.streamCloseGroup.addEventListener('change', (e) => {
-            if (els.streamCloseGroupDurationBox) {
-                els.streamCloseGroupDurationBox.classList.toggle('hidden', !e.target.checked);
-            }
-        });
-    }
+	if (els.streamCloseGroup) {
+		els.streamCloseGroup.addEventListener("change", (e) => {
+			if (els.streamCloseGroupDurationBox) {
+				els.streamCloseGroupDurationBox.classList.toggle("hidden", !e.target.checked);
+			}
+		});
+	}
 
-    if(els.streamUseThumbnail) {
-        els.streamUseThumbnail.addEventListener('change', () => updateStreamPreview());
-    }
+	if (els.streamUseThumbnail) {
+		els.streamUseThumbnail.addEventListener("change", () => updateStreamPreview());
+	}
 
-    if(els.streamChannel) {
-        els.streamChannel.addEventListener('input', () => updateStreamPreview());
-    }
+	if (els.streamChannel) {
+		els.streamChannel.addEventListener("input", () => updateStreamPreview());
+	}
 
-    function updateStreamPreview() {
-        const channelName = els.streamChannel.value.trim() || 'streamer';
-        const showThumb = els.streamUseThumbnail.checked;
-        
-        els.streamWaThumbnail.classList.toggle('hidden', !showThumb);
-        
-        const { storeKey, kind } = parseStreamPlatform(currentStream?.platform);
-        const isVideoKind = kind === 'video';
-        const mediaSource = isVideoKind ? currentStream?.data?.videoConfig?.media : currentStream?.data?.onConfig?.media;
-        const firstMedia = mediaSource?.[0];
+	function updateStreamPreview() {
+		const channelName = els.streamChannel.value.trim() || "streamer";
+		const showThumb = els.streamUseThumbnail.checked;
 
-        let textContent = firstMedia?.type === 'text' ? firstMedia.content : DEFAULT_MSG[currentStream?.platform || 'twitch'];
-        const tiktokUser = channelName.replace(/^@/, '');
-        if (isVideoKind) {
-            const videoLink = storeKey === 'tiktok' ? `https://www.tiktok.com/@${tiktokUser}/video/exemplo` : `https://youtube.com/watch?v=exemplo`;
-            textContent = textContent.replace(/\{author\}/gi, channelName).replace(/\{canal\}/gi, channelName).replace(/\{title\}/gi, 'Título do Vídeo').replace(/\{link\}/gi, videoLink);
-        } else if (kind === 'live') {
-            const liveLink = storeKey === 'tiktok' ? `https://www.tiktok.com/@${tiktokUser}/live` : `https://youtube.com/watch?v=live`;
-            textContent = textContent.replace(/\{canal\}/gi, channelName).replace(/\{titulo\}/gi, 'Título da Live').replace(/\{link\}/gi, liveLink);
-        } else {
-            textContent = textContent.replace(/\{canal\}/gi, channelName).replace(/\{link\}/gi, `https://${currentStream?.platform || 'twitch'}.tv/${channelName}`);
-        }
-        
-        if (els.streamWaText) {
-            els.streamWaText.innerHTML = formatWhatsAppMarkdown(textContent);
-        }
-    }
+		els.streamWaThumbnail.classList.toggle("hidden", !showThumb);
 
-    function renderStreamMediaList(containerId, mediaArray) {
-        const container = document.getElementById(containerId);
-        if (!container) return;
-        container.innerHTML = '';
-        
-        mediaArray.forEach((media, index) => {
-            const div = document.createElement('div');
-            div.className = 'inline-media-card';
-            
-            if (media.type === 'text') {
-                const textVal = typeof media.content === 'string' ? media.content : String(media.content || '');
-                div.innerHTML = `
+		const { storeKey, kind } = parseStreamPlatform(currentStream?.platform);
+		const isVideoKind = kind === "video";
+		const mediaSource = isVideoKind
+			? currentStream?.data?.videoConfig?.media
+			: currentStream?.data?.onConfig?.media;
+		const firstMedia = mediaSource?.[0];
+
+		let textContent =
+			firstMedia?.type === "text"
+				? firstMedia.content
+				: DEFAULT_MSG[currentStream?.platform || "twitch"];
+		const tiktokUser = channelName.replace(/^@/, "");
+		if (isVideoKind) {
+			const videoLink =
+				storeKey === "tiktok"
+					? `https://www.tiktok.com/@${tiktokUser}/video/exemplo`
+					: `https://youtube.com/watch?v=exemplo`;
+			textContent = textContent
+				.replace(/\{author\}/gi, channelName)
+				.replace(/\{canal\}/gi, channelName)
+				.replace(/\{title\}/gi, "Título do Vídeo")
+				.replace(/\{link\}/gi, videoLink);
+		} else if (kind === "live") {
+			const liveLink =
+				storeKey === "tiktok"
+					? `https://www.tiktok.com/@${tiktokUser}/live`
+					: `https://youtube.com/watch?v=live`;
+			textContent = textContent
+				.replace(/\{canal\}/gi, channelName)
+				.replace(/\{titulo\}/gi, "Título da Live")
+				.replace(/\{link\}/gi, liveLink);
+		} else {
+			textContent = textContent
+				.replace(/\{canal\}/gi, channelName)
+				.replace(/\{link\}/gi, `https://${currentStream?.platform || "twitch"}.tv/${channelName}`);
+		}
+
+		if (els.streamWaText) {
+			els.streamWaText.innerHTML = formatWhatsAppMarkdown(textContent);
+		}
+	}
+
+	function renderStreamMediaList(containerId, mediaArray) {
+		const container = document.getElementById(containerId);
+		if (!container) return;
+		container.innerHTML = "";
+
+		mediaArray.forEach((media, index) => {
+			const div = document.createElement("div");
+			div.className = "inline-media-card";
+
+			if (media.type === "text") {
+				const textVal =
+					typeof media.content === "string" ? media.content : String(media.content || "");
+				div.innerHTML = `
                     <div class="inline-media-info">
                         <span class="inline-media-badge"><i class="fas fa-font"></i> Mensagem</span>
                         <div class="inline-media-caption">${formatWhatsAppMarkdown(textVal)}</div>
@@ -2025,20 +2338,23 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button type="button" class="btn btn-xs btn-danger btn-remove-media-item" title="Remover"><i class="fas fa-trash"></i></button>
                     </div>
                 `;
-                div.querySelector('.btn-edit-stream-txt').onclick = async () => {
-                    const promptTitle = parseStreamPlatform(currentStream?.platform).kind === 'video' ? "Digite a mensagem do vídeo:" : "Digite a mensagem da stream:";
-                    const newText = await showCustomPrompt(promptTitle, textVal);
-                    if (newText !== null && newText.trim()) {
-                        media.content = newText.trim();
-                        renderStreamMediaList(containerId, mediaArray);
-                        updateStreamPreview();
-                    }
-                };
-            } else {
-                const mediaLink = `/media-direct/${media.content}?token=${token}`;
-                const captionVal = typeof media.caption === 'string' ? media.caption : '';
-                
-                div.innerHTML = `
+				div.querySelector(".btn-edit-stream-txt").onclick = async () => {
+					const promptTitle =
+						parseStreamPlatform(currentStream?.platform).kind === "video"
+							? "Digite a mensagem do vídeo:"
+							: "Digite a mensagem da stream:";
+					const newText = await showCustomPrompt(promptTitle, textVal);
+					if (newText !== null && newText.trim()) {
+						media.content = newText.trim();
+						renderStreamMediaList(containerId, mediaArray);
+						updateStreamPreview();
+					}
+				};
+			} else {
+				const mediaLink = `/media-direct/${media.content}?token=${token}`;
+				const captionVal = typeof media.caption === "string" ? media.caption : "";
+
+				div.innerHTML = `
                     <img src="${mediaLink}" class="inline-media-thumb" alt="${media.type}" onerror="this.src='/android-chrome-192x192.png'">
                     <div class="inline-media-info">
                         <span class="inline-media-badge">${getIcon(media.type)} ${media.type}</span>
@@ -2048,282 +2364,301 @@ document.addEventListener('DOMContentLoaded', () => {
                         <button type="button" class="btn btn-xs btn-danger btn-remove-media-item" title="Remover"><i class="fas fa-trash"></i></button>
                     </div>
                 `;
-            }
+			}
 
-            div.querySelector('.btn-remove-media-item').onclick = async () => {
-                if(await showCustomConfirm('Remover este item?')) {
-                    mediaArray.splice(index, 1);
-                    renderStreamMediaList(containerId, mediaArray);
-                    updateStreamPreview();
-                }
-            };
+			div.querySelector(".btn-remove-media-item").onclick = async () => {
+				if (await showCustomConfirm("Remover este item?")) {
+					mediaArray.splice(index, 1);
+					renderStreamMediaList(containerId, mediaArray);
+					updateStreamPreview();
+				}
+			};
 
-            container.appendChild(div);
-        });
-    }
+			container.appendChild(div);
+		});
+	}
 
-    window.addStreamMedia = async function(context, type) {
-        const isVideoKind = parseStreamPlatform(currentStream?.platform).kind === 'video';
-        let targetArray;
-        if (isVideoKind) {
-            if (!currentStream.data.videoConfig) currentStream.data.videoConfig = { media: [] };
-            targetArray = currentStream.data.videoConfig.media;
-        } else {
-            targetArray = context === 'on' ? currentStream.data.onConfig.media : currentStream.data.offConfig.media;
-        }
-        
-        if (type === 'text') {
-            const promptTitle = isVideoKind ? "Digite o texto da notificação de novo vídeo:" : "Digite o texto da notificação:";
-            const text = await showCustomPrompt(promptTitle);
-            if (text) {
-                const existingIdx = targetArray.findIndex(m => m.type === 'text');
-                if(existingIdx !== -1) targetArray.splice(existingIdx, 1);
-                
-                targetArray.push({ type: 'text', content: text });
-                renderStreamMediaList(`stream-${context}-media-list`, targetArray);
-                updateStreamPreview();
-            }
-        } else {
-            els.uploadType.value = type;
-            els.uploadContext.value = `stream-${context}`;
-            els.mediaFileInput.value = '';
-            els.mediaCaption.value = '';
+	window.addStreamMedia = async function (context, type) {
+		const isVideoKind = parseStreamPlatform(currentStream?.platform).kind === "video";
+		let targetArray;
+		if (isVideoKind) {
+			if (!currentStream.data.videoConfig) currentStream.data.videoConfig = { media: [] };
+			targetArray = currentStream.data.videoConfig.media;
+		} else {
+			targetArray =
+				context === "on" ? currentStream.data.onConfig.media : currentStream.data.offConfig.media;
+		}
 
-            els.captionGroup.classList.remove('hidden');
-            els.asStickerGroup.classList.add('hidden');
-            
-            const existingVarBtn = els.captionGroup.querySelector('.btn-insert-var');
-            if(existingVarBtn) existingVarBtn.remove();
-            
-            const varBtn = document.createElement('button');
-            varBtn.type = 'button';
-            varBtn.className = 'btn btn-xs btn-outline mt-1';
-            varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Inserir Variável';
-            varBtn.onclick = () => openVariableModal(els.mediaCaption);
-            els.captionGroup.appendChild(varBtn);
+		if (type === "text") {
+			const promptTitle = isVideoKind
+				? "Digite o texto da notificação de novo vídeo:"
+				: "Digite o texto da notificação:";
+			const text = await showCustomPrompt(promptTitle);
+			if (text) {
+				const existingIdx = targetArray.findIndex((m) => m.type === "text");
+				if (existingIdx !== -1) targetArray.splice(existingIdx, 1);
 
-            setupMediaAccept(type);
-            els.uploadModal.classList.remove('hidden');
-        }
-    };
+				targetArray.push({ type: "text", content: text });
+				renderStreamMediaList(`stream-${context}-media-list`, targetArray);
+				updateStreamPreview();
+			}
+		} else {
+			els.uploadType.value = type;
+			els.uploadContext.value = `stream-${context}`;
+			els.mediaFileInput.value = "";
+			els.mediaCaption.value = "";
 
-    window.addDirectMedia = async function(context, type) {
-        if (type === 'text') {
-            const currentText = (groupData[context] && groupData[context].text) ? groupData[context].text : '';
-            const text = await showCustomPrompt("Digite a mensagem:", currentText);
-            if(text) {
-                if(!groupData[context]) groupData[context] = {};
-                groupData[context].text = text;
-                renderMediaList(`${context}-list`, groupData[context], context);
-                setDirty(true);
-            }
-        } else {
-            els.uploadType.value = type;
-            els.uploadContext.value = context;
-            els.mediaFileInput.value = '';
-            els.mediaCaption.value = '';
-            
-            els.captionGroup.classList.remove('hidden');
-            els.asStickerGroup.classList.add('hidden');
-            if(type === 'image' || type === 'video' || type === 'gif') els.asStickerGroup.classList.remove('hidden');
-            
-            const existingVarBtn = els.captionGroup.querySelector('.btn-insert-var');
-            if(existingVarBtn) existingVarBtn.remove();
-            
-            if(type === 'image' || type === 'video' || type === 'gif') {
-                const varBtn = document.createElement('button');
-                varBtn.type = 'button';
-                varBtn.className = 'btn btn-xs btn-outline mt-1';
-                varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Inserir Variável';
-                varBtn.onclick = () => openVariableModal(els.mediaCaption);
-                els.captionGroup.appendChild(varBtn);
-            }
+			els.captionGroup.classList.remove("hidden");
+			els.asStickerGroup.classList.add("hidden");
 
-            setupMediaAccept(type);
-            els.uploadModal.classList.remove('hidden');
-        }
-    };
+			const existingVarBtn = els.captionGroup.querySelector(".btn-insert-var");
+			if (existingVarBtn) existingVarBtn.remove();
 
-    function setupMediaAccept(type) {
-        if (els.uploadModal) els.uploadModal.style.zIndex = '2500';
-        if(type === 'image') els.mediaFileInput.setAttribute('accept', 'image/*');
-        else if(type === 'video') els.mediaFileInput.setAttribute('accept', 'video/*');
-        else if(type === 'audio') els.mediaFileInput.setAttribute('accept', 'audio/*');
-        else if(type === 'sticker') els.mediaFileInput.setAttribute('accept', 'image/*,video/*,image/webp');
-        else if(type === 'gif') els.mediaFileInput.setAttribute('accept', 'image/gif,image/webp,video/mp4,video/*');
-        else els.mediaFileInput.removeAttribute('accept');
-    }
+			const varBtn = document.createElement("button");
+			varBtn.type = "button";
+			varBtn.className = "btn btn-xs btn-outline mt-1";
+			varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Inserir Variável';
+			varBtn.onclick = () => openVariableModal(els.mediaCaption);
+			els.captionGroup.appendChild(varBtn);
 
-    els.btnSaveStream.onclick = async () => {
-        let channel = els.streamChannel.value.trim();
-        if (!channel) return await showCustomAlert('Nome do canal obrigatório.');
+			setupMediaAccept(type);
+			els.uploadModal.classList.remove("hidden");
+		}
+	};
 
-        const platform = currentStream.platform;
-        const { storeKey, kind } = parseStreamPlatform(platform);
-        const isVideoKind = kind === 'video';
-        const isLiveKind = kind === 'live';
+	window.addDirectMedia = async function (context, type) {
+		if (type === "text") {
+			const currentText =
+				groupData[context] && groupData[context].text ? groupData[context].text : "";
+			const text = await showCustomPrompt("Digite a mensagem:", currentText);
+			if (text) {
+				if (!groupData[context]) groupData[context] = {};
+				groupData[context].text = text;
+				renderMediaList(`${context}-list`, groupData[context], context);
+				setDirty(true);
+			}
+		} else {
+			els.uploadType.value = type;
+			els.uploadContext.value = context;
+			els.mediaFileInput.value = "";
+			els.mediaCaption.value = "";
 
-        if (platform === 'twitch' || platform === 'kick') {
-            if (channel.includes('/') || channel.includes('http')) return await showCustomAlert('Digite apenas o usuário, não a URL.');
-            if (!/^[a-zA-Z0-9_]{2,50}$/.test(channel)) return await showCustomAlert('Nome de usuário inválido.');
-        }
+			els.captionGroup.classList.remove("hidden");
+			els.asStickerGroup.classList.add("hidden");
+			if (type === "image" || type === "video" || type === "gif")
+				els.asStickerGroup.classList.remove("hidden");
 
-        if (storeKey === 'tiktok') {
-            if (channel.includes('/') || channel.includes('http')) return await showCustomAlert('Digite apenas o usuário, não a URL.');
-            channel = channel.replace(/^@/, '').toLowerCase();
-            if (!/^[a-z0-9_.]{2,24}$/.test(channel)) return await showCustomAlert('Usuário do TikTok inválido.');
-        }
+			const existingVarBtn = els.captionGroup.querySelector(".btn-insert-var");
+			if (existingVarBtn) existingVarBtn.remove();
 
-        const d = currentStream.data;
-        d.channel = channel;
-        d.mentionAllMembers = els.streamMention.checked;
-        d.useAI = els.streamAI.checked;
-        d.useThumbnail = els.streamUseThumbnail.checked;
+			if (type === "image" || type === "video" || type === "gif") {
+				const varBtn = document.createElement("button");
+				varBtn.type = "button";
+				varBtn.className = "btn btn-xs btn-outline mt-1";
+				varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Inserir Variável';
+				varBtn.onclick = () => openVariableModal(els.mediaCaption);
+				els.captionGroup.appendChild(varBtn);
+			}
 
-        // Coleta canais do WhatsApp marcados para encaminhamento
-        const forwardCheckboxes = document.querySelectorAll('.stream-forward-ch-checkbox');
-        const forwardJids = [];
-        forwardCheckboxes.forEach(cb => {
-            if (cb.checked && cb.dataset.jid) {
-                forwardJids.push(cb.dataset.jid);
-            }
-        });
-        d.forwardToChannels = forwardJids;
+			setupMediaAccept(type);
+			els.uploadModal.classList.remove("hidden");
+		}
+	};
 
-        if (!isVideoKind) {
-            d.changeTitleOnEvent = els.streamChangeTitle.checked;
-            d.changePhotoOnEvent = els.streamChangePhoto ? els.streamChangePhoto.checked : false;
-            d.onlineTitle = els.streamTitleOn.value;
-            d.offlineTitle = els.streamTitleOff.value;
-            d.closeGroupOnLive = els.streamCloseGroup ? els.streamCloseGroup.checked : false;
-            const dur = els.streamCloseGroupDuration ? parseInt(els.streamCloseGroupDuration.value, 10) : null;
-            d.closeGroupDuration = (d.closeGroupOnLive && !isNaN(dur) && dur > 0) ? dur : null;
-        }
+	function setupMediaAccept(type) {
+		if (els.uploadModal) els.uploadModal.style.zIndex = "2500";
+		if (type === "image") els.mediaFileInput.setAttribute("accept", "image/*");
+		else if (type === "video") els.mediaFileInput.setAttribute("accept", "video/*");
+		else if (type === "audio") els.mediaFileInput.setAttribute("accept", "audio/*");
+		else if (type === "sticker")
+			els.mediaFileInput.setAttribute("accept", "image/*,video/*,image/webp");
+		else if (type === "gif")
+			els.mediaFileInput.setAttribute("accept", "image/gif,image/webp,video/mp4,video/*");
+		else els.mediaFileInput.removeAttribute("accept");
+	}
 
-        if (isVideoKind) {
-            d.notifyVideos = true;
-        } else if (isLiveKind) {
-            d.notifyLives = true;
-        }
+	els.btnSaveStream.onclick = async () => {
+		let channel = els.streamChannel.value.trim();
+		if (!channel) return await showCustomAlert("Nome do canal obrigatório.");
 
-        if (!groupData[storeKey]) groupData[storeKey] = [];
-        
-        if (currentStream.index !== null && !isNaN(currentStream.index)) {
-            groupData[storeKey][currentStream.index] = d;
-        } else {
-            if (kind) {
-                const existing = groupData[storeKey].find(
-                    s => s.channel.toLowerCase() === channel.toLowerCase()
-                );
-                if (existing) {
-                    existing.forwardToChannels = forwardJids;
-                    if (isVideoKind) {
-                        existing.notifyVideos = true;
-                        existing.videoConfig = d.videoConfig;
-                    } else {
-                        existing.notifyLives = true;
-                        existing.onConfig = d.onConfig;
-                        existing.offConfig = d.offConfig;
-                        existing.changeTitleOnEvent = d.changeTitleOnEvent;
-                        existing.changePhotoOnEvent = d.changePhotoOnEvent;
-                        existing.closeGroupOnLive = d.closeGroupOnLive;
-                        existing.closeGroupDuration = d.closeGroupDuration;
-                        existing.onlineTitle = d.onlineTitle;
-                        existing.offlineTitle = d.offlineTitle;
-                    }
-                } else {
-                    groupData[storeKey].push(d);
-                }
-            } else {
-                groupData[storeKey].push(d);
-            }
-        }
+		const platform = currentStream.platform;
+		const { storeKey, kind } = parseStreamPlatform(platform);
+		const isVideoKind = kind === "video";
+		const isLiveKind = kind === "live";
 
-        setDirty(true);
-        renderStreamSection(kind ? storeKey : platform);
-        els.streamModal.classList.add('hidden');
-    };
+		if (platform === "twitch" || platform === "kick") {
+			if (channel.includes("/") || channel.includes("http"))
+				return await showCustomAlert("Digite apenas o usuário, não a URL.");
+			if (!/^[a-zA-Z0-9_]{2,50}$/.test(channel))
+				return await showCustomAlert("Nome de usuário inválido.");
+		}
 
-    els.btnDeleteStream.onclick = async () => {
-        if(!await showCustomConfirm('Tem certeza que deseja remover este canal?')) return;
-        const { platform, index } = currentStream;
-        const { storeKey, kind } = parseStreamPlatform(platform);
+		if (storeKey === "tiktok") {
+			if (channel.includes("/") || channel.includes("http"))
+				return await showCustomAlert("Digite apenas o usuário, não a URL.");
+			channel = channel.replace(/^@/, "").toLowerCase();
+			if (!/^[a-z0-9_.]{2,24}$/.test(channel))
+				return await showCustomAlert("Usuário do TikTok inválido.");
+		}
 
-        if (kind) {
-            const stream = groupData[storeKey][index];
-            if (stream) {
-                if (kind === 'video') {
-                    stream.notifyVideos = false;
-                } else {
-                    stream.notifyLives = false;
-                }
-                if (stream.notifyVideos === false && stream.notifyLives === false) {
-                    groupData[storeKey].splice(index, 1);
-                }
-            }
-            renderStreamSection(storeKey);
-        } else {
-            groupData[platform].splice(index, 1);
-            renderStreamSection(platform);
-        }
+		const d = currentStream.data;
+		d.channel = channel;
+		d.mentionAllMembers = els.streamMention.checked;
+		d.useAI = els.streamAI.checked;
+		d.useThumbnail = els.streamUseThumbnail.checked;
 
-        setDirty(true);
-        els.streamModal.classList.add('hidden');
-    };
+		// Coleta canais do WhatsApp marcados para encaminhamento
+		const forwardCheckboxes = document.querySelectorAll(".stream-forward-ch-checkbox");
+		const forwardJids = [];
+		forwardCheckboxes.forEach((cb) => {
+			if (cb.checked && cb.dataset.jid) {
+				forwardJids.push(cb.dataset.jid);
+			}
+		});
+		d.forwardToChannels = forwardJids;
 
-    // --- Custom Commands & Live WhatsApp Simulator ---
+		if (!isVideoKind) {
+			d.changeTitleOnEvent = els.streamChangeTitle.checked;
+			d.changePhotoOnEvent = els.streamChangePhoto ? els.streamChangePhoto.checked : false;
+			d.onlineTitle = els.streamTitleOn.value;
+			d.offlineTitle = els.streamTitleOff.value;
+			d.closeGroupOnLive = els.streamCloseGroup ? els.streamCloseGroup.checked : false;
+			const dur = els.streamCloseGroupDuration
+				? parseInt(els.streamCloseGroupDuration.value, 10)
+				: null;
+			d.closeGroupDuration = d.closeGroupOnLive && !isNaN(dur) && dur > 0 ? dur : null;
+		}
 
-    async function deleteCustomCommand(trigger) {
-        if (!trigger) return;
-        if (!await showCustomConfirm(`Tem certeza que deseja apagar o comando "${escapeHtml(trigger)}"?`, 'Excluir Comando')) return;
-        try {
-            const url = `${API_BASE}/custom-commands/${groupId}/${encodeURIComponent(trigger)}?token=${token}`;
-            const res = await fetch(url, { method: 'DELETE' });
-            if (res.ok) {
-                await loadData();
-                if (els.cmdModal && !els.cmdModal.classList.contains('hidden')) {
-                    els.cmdModal.classList.add('hidden');
-                }
-            } else {
-                await showCustomAlert('Erro ao deletar comando.');
-            }
-        } catch (e) {
-            await showCustomAlert('Erro: ' + e.message);
-        }
-    }
+		if (isVideoKind) {
+			d.notifyVideos = true;
+		} else if (isLiveKind) {
+			d.notifyLives = true;
+		}
 
-    function renderCommandsTable() {
-        const tbody = document.querySelector('#commands-table tbody');
-        if (!tbody) return;
-        tbody.innerHTML = '';
-        const activeCmds = customCommands.filter(c => !c.deleted);
-        
-        const noCmdsMsg = document.getElementById('no-commands-msg');
-        if (activeCmds.length === 0) {
-            if (noCmdsMsg) noCmdsMsg.classList.remove('hidden');
-            return;
-        } else {
-            if (noCmdsMsg) noCmdsMsg.classList.add('hidden');
-        }
+		if (!groupData[storeKey]) groupData[storeKey] = [];
 
-        activeCmds.forEach(cmd => {
-            const tr = document.createElement('tr');
-            
-            const responsesCount = cmd.responses ? cmd.responses.length : 0;
-            const firstResp = responsesCount > 0 ? cmd.responses[0] : '';
-            let respPreview = firstResp;
-            if (firstResp.startsWith('{')) {
-                const end = firstResp.indexOf('}');
-                const meta = firstResp.substring(1, end).split('-');
-                let type = meta[0];
-                if (type === 'stickerGif') type = 'sticker';
-                respPreview = `${getIcon(type)} Mídia (${type})`;
-            } else {
-                if (respPreview.length > 30) respPreview = respPreview.substring(0, 30) + '...';
-            }
-            if (responsesCount > 1) respPreview += ` (+${responsesCount-1})`;
+		if (currentStream.index !== null && !isNaN(currentStream.index)) {
+			groupData[storeKey][currentStream.index] = d;
+		} else {
+			if (kind) {
+				const existing = groupData[storeKey].find(
+					(s) => s.channel.toLowerCase() === channel.toLowerCase()
+				);
+				if (existing) {
+					existing.forwardToChannels = forwardJids;
+					if (isVideoKind) {
+						existing.notifyVideos = true;
+						existing.videoConfig = d.videoConfig;
+					} else {
+						existing.notifyLives = true;
+						existing.onConfig = d.onConfig;
+						existing.offConfig = d.offConfig;
+						existing.changeTitleOnEvent = d.changeTitleOnEvent;
+						existing.changePhotoOnEvent = d.changePhotoOnEvent;
+						existing.closeGroupOnLive = d.closeGroupOnLive;
+						existing.closeGroupDuration = d.closeGroupDuration;
+						existing.onlineTitle = d.onlineTitle;
+						existing.offlineTitle = d.offlineTitle;
+					}
+				} else {
+					groupData[storeKey].push(d);
+				}
+			} else {
+				groupData[storeKey].push(d);
+			}
+		}
 
-            tr.innerHTML = `
+		setDirty(true);
+		renderStreamSection(kind ? storeKey : platform);
+		els.streamModal.classList.add("hidden");
+	};
+
+	els.btnDeleteStream.onclick = async () => {
+		if (!(await showCustomConfirm("Tem certeza que deseja remover este canal?"))) return;
+		const { platform, index } = currentStream;
+		const { storeKey, kind } = parseStreamPlatform(platform);
+
+		if (kind) {
+			const stream = groupData[storeKey][index];
+			if (stream) {
+				if (kind === "video") {
+					stream.notifyVideos = false;
+				} else {
+					stream.notifyLives = false;
+				}
+				if (stream.notifyVideos === false && stream.notifyLives === false) {
+					groupData[storeKey].splice(index, 1);
+				}
+			}
+			renderStreamSection(storeKey);
+		} else {
+			groupData[platform].splice(index, 1);
+			renderStreamSection(platform);
+		}
+
+		setDirty(true);
+		els.streamModal.classList.add("hidden");
+	};
+
+	// --- Custom Commands & Live WhatsApp Simulator ---
+
+	async function deleteCustomCommand(trigger) {
+		if (!trigger) return;
+		if (
+			!(await showCustomConfirm(
+				`Tem certeza que deseja apagar o comando "${escapeHtml(trigger)}"?`,
+				"Excluir Comando"
+			))
+		)
+			return;
+		try {
+			const url = `${API_BASE}/custom-commands/${groupId}/${encodeURIComponent(trigger)}?token=${token}`;
+			const res = await fetch(url, { method: "DELETE" });
+			if (res.ok) {
+				await loadData();
+				if (els.cmdModal && !els.cmdModal.classList.contains("hidden")) {
+					els.cmdModal.classList.add("hidden");
+				}
+			} else {
+				await showCustomAlert("Erro ao deletar comando.");
+			}
+		} catch (e) {
+			await showCustomAlert("Erro: " + e.message);
+		}
+	}
+
+	function renderCommandsTable() {
+		const tbody = document.querySelector("#commands-table tbody");
+		if (!tbody) return;
+		tbody.innerHTML = "";
+		const activeCmds = customCommands.filter((c) => !c.deleted);
+
+		const noCmdsMsg = document.getElementById("no-commands-msg");
+		if (activeCmds.length === 0) {
+			if (noCmdsMsg) noCmdsMsg.classList.remove("hidden");
+			return;
+		} else {
+			if (noCmdsMsg) noCmdsMsg.classList.add("hidden");
+		}
+
+		activeCmds.forEach((cmd) => {
+			const tr = document.createElement("tr");
+
+			const responsesCount = cmd.responses ? cmd.responses.length : 0;
+			const firstResp = responsesCount > 0 ? cmd.responses[0] : "";
+			let respPreview = firstResp;
+			if (firstResp.startsWith("{")) {
+				const end = firstResp.indexOf("}");
+				const meta = firstResp.substring(1, end).split("-");
+				let type = meta[0];
+				if (type === "stickerGif") type = "sticker";
+				respPreview = `${getIcon(type)} Mídia (${type})`;
+			} else {
+				if (respPreview.length > 30) respPreview = respPreview.substring(0, 30) + "...";
+			}
+			if (responsesCount > 1) respPreview += ` (+${responsesCount - 1})`;
+
+			tr.innerHTML = `
                 <td style="white-space: nowrap;">
                     <div class="table-actions">
                         <button type="button" class="btn btn-xs btn-primary btn-edit-cmd" title="Editar comando"><i class="fas fa-edit"></i></button>
@@ -2332,116 +2667,116 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
                 <td>
                     <strong>${cmd.startsWith}</strong>
-                    ${!cmd.active ? ' <span class="text-danger text-sm">(Desativado)</span>' : ''}
-                    ${cmd.replyInPvivate ? ' <span class="badge-soon" style="color:#04a9f0; border-color:#04a9f0;">PV</span>' : ''}
+                    ${!cmd.active ? ' <span class="text-danger text-sm">(Desativado)</span>' : ""}
+                    ${cmd.replyInPvivate ? ' <span class="badge-soon" style="color:#04a9f0; border-color:#04a9f0;">PV</span>' : ""}
                 </td>
                 <td>${respPreview}</td>
             `;
-            
-            tr.querySelector('.btn-edit-cmd').onclick = () => openCommandModal(cmd);
-            tr.querySelector('.btn-delete-cmd-row').onclick = () => deleteCustomCommand(cmd.startsWith);
-            tbody.appendChild(tr);
-        });
-    }
 
-    document.getElementById('btn-add-command').onclick = () => openCommandModal(null);
+			tr.querySelector(".btn-edit-cmd").onclick = () => openCommandModal(cmd);
+			tr.querySelector(".btn-delete-cmd-row").onclick = () => deleteCustomCommand(cmd.startsWith);
+			tbody.appendChild(tr);
+		});
+	}
 
-    function openCommandModal(cmd) {
-        currentEditingCmd = cmd;
-        els.modalTitle.textContent = cmd ? 'Editar Comando' : 'Novo Comando';
-        els.btnDeleteCmd.classList.toggle('hidden', !cmd);
-        if (els.cmdResponsesList) els.cmdResponsesList.innerHTML = '';
+	document.getElementById("btn-add-command").onclick = () => openCommandModal(null);
 
-        if (cmd) {
-            els.cmdTrigger.value = cmd.startsWith;
-            els.cmdActive.checked = cmd.active !== false;
-            els.cmdInteract.checked = !cmd.ignoreInteract;
-            els.cmdReplyQuote.checked = cmd.reply !== false; 
-            els.cmdSendAll.checked = !!cmd.sendAllResponses;
-            els.cmdAdminOnly.checked = !!cmd.adminOnly;
-            els.cmdReplyPrivate.checked = !!cmd.replyInPvivate;
-            els.cmdEmoji.value = cmd.react || '';
-            els.cmdStartEmoji.value = cmd.reactions?.before || '';
-            els.cmdCooldown.value = cmd.cooldown || 0;
-            currentCmdMentions = cmd.mentions || [];
-            
-            els.cmdTimeStart.value = cmd.allowedTimes?.start || '';
-            els.cmdTimeEnd.value = cmd.allowedTimes?.end || '';
+	function openCommandModal(cmd) {
+		currentEditingCmd = cmd;
+		els.modalTitle.textContent = cmd ? "Editar Comando" : "Novo Comando";
+		els.btnDeleteCmd.classList.toggle("hidden", !cmd);
+		if (els.cmdResponsesList) els.cmdResponsesList.innerHTML = "";
 
-            const allowedDays = cmd.allowedDays || [];
-            document.querySelectorAll('.btn-day-pill').forEach(btn => {
-                btn.classList.toggle('active', allowedDays.includes(btn.dataset.day));
-            });
+		if (cmd) {
+			els.cmdTrigger.value = cmd.startsWith;
+			els.cmdActive.checked = cmd.active !== false;
+			els.cmdInteract.checked = !cmd.ignoreInteract;
+			els.cmdReplyQuote.checked = cmd.reply !== false;
+			els.cmdSendAll.checked = !!cmd.sendAllResponses;
+			els.cmdAdminOnly.checked = !!cmd.adminOnly;
+			els.cmdReplyPrivate.checked = !!cmd.replyInPvivate;
+			els.cmdEmoji.value = cmd.react || "";
+			els.cmdStartEmoji.value = cmd.reactions?.before || "";
+			els.cmdCooldown.value = cmd.cooldown || 0;
+			currentCmdMentions = cmd.mentions || [];
 
-            if (cmd.responses && cmd.responses.length > 0) {
-                cmd.responses.forEach(r => addResponseInput('text', r));
-            } else {
-                addResponseInput('text', '');
-            }
-            
-            els.cmdMetadata.innerHTML = `Criado por: ${cmd.metadata?.createdBy || '?'} em ${new Date(cmd.metadata?.createdAt || Date.now()).toLocaleString('pt-BR')}<br>Usado ${cmd.count || 0} vezes.`;
-        } else {
-            els.cmdTrigger.value = '';
-            els.cmdActive.checked = true;
-            els.cmdInteract.checked = true;
-            els.cmdReplyQuote.checked = true;
-            els.cmdSendAll.checked = false;
-            els.cmdAdminOnly.checked = false;
-            els.cmdReplyPrivate.checked = false;
-            els.cmdEmoji.value = '';
-            els.cmdStartEmoji.value = '';
-            els.cmdCooldown.value = 0;
-            els.cmdTimeStart.value = '';
-            els.cmdTimeEnd.value = '';
-            document.querySelectorAll('.btn-day-pill').forEach(btn => btn.classList.remove('active'));
-            currentCmdMentions = [];
-            addResponseInput('text', '');
-            els.cmdMetadata.innerHTML = '';
-        }
+			els.cmdTimeStart.value = cmd.allowedTimes?.start || "";
+			els.cmdTimeEnd.value = cmd.allowedTimes?.end || "";
 
-        renderCmdTags();
-        updateWhatsAppCmdPreview();
-        els.cmdModal.classList.remove('hidden');
-    }
+			const allowedDays = cmd.allowedDays || [];
+			document.querySelectorAll(".btn-day-pill").forEach((btn) => {
+				btn.classList.toggle("active", allowedDays.includes(btn.dataset.day));
+			});
 
-    // Days pill toggles
-    document.querySelectorAll('.btn-day-pill').forEach(btn => {
-        btn.onclick = () => {
-            btn.classList.toggle('active');
-        };
-    });
+			if (cmd.responses && cmd.responses.length > 0) {
+				cmd.responses.forEach((r) => addResponseInput("text", r));
+			} else {
+				addResponseInput("text", "");
+			}
 
-    // Update WhatsApp Live Preview
-    function updateWhatsAppCmdPreview() {
-        const inputs = document.querySelectorAll('.cmd-response-input');
-        const firstVal = inputs.length > 0 ? inputs[0].value.trim() : '';
-        
-        const now = new Date();
-        const timeStr = `${now.getHours().toString().padStart(2, '0')}:${now.getMinutes().toString().padStart(2, '0')}`;
-        els.cmdWaTime.textContent = timeStr;
+			els.cmdMetadata.innerHTML = `Criado por: ${cmd.metadata?.createdBy || "?"} em ${new Date(cmd.metadata?.createdAt || Date.now()).toLocaleString("pt-BR")}<br>Usado ${cmd.count || 0} vezes.`;
+		} else {
+			els.cmdTrigger.value = "";
+			els.cmdActive.checked = true;
+			els.cmdInteract.checked = true;
+			els.cmdReplyQuote.checked = true;
+			els.cmdSendAll.checked = false;
+			els.cmdAdminOnly.checked = false;
+			els.cmdReplyPrivate.checked = false;
+			els.cmdEmoji.value = "";
+			els.cmdStartEmoji.value = "";
+			els.cmdCooldown.value = 0;
+			els.cmdTimeStart.value = "";
+			els.cmdTimeEnd.value = "";
+			document.querySelectorAll(".btn-day-pill").forEach((btn) => btn.classList.remove("active"));
+			currentCmdMentions = [];
+			addResponseInput("text", "");
+			els.cmdMetadata.innerHTML = "";
+		}
 
-        if (!firstVal) {
-            els.cmdWaMedia.classList.add('hidden');
-            els.cmdWaMedia.innerHTML = '';
-            els.cmdWaText.innerHTML = '<em>Digite uma resposta abaixo para ver a simulação...</em>';
-            return;
-        }
+		renderCmdTags();
+		updateWhatsAppCmdPreview();
+		els.cmdModal.classList.remove("hidden");
+	}
 
-        if (firstVal.startsWith('{') && firstVal.includes('}')) {
-            const end = firstVal.indexOf('}');
-            const meta = firstVal.substring(1, end).split('-');
-            const type = meta[0];
-            const filename = meta[1];
-            const caption = firstVal.substring(end + 1).trim();
+	// Days pill toggles
+	document.querySelectorAll(".btn-day-pill").forEach((btn) => {
+		btn.onclick = () => {
+			btn.classList.toggle("active");
+		};
+	});
 
-            els.cmdWaMedia.classList.remove('hidden');
-            
-            if (type === 'image' || type === 'sticker') {
-                els.cmdWaMedia.innerHTML = `<img src="/media-direct/${filename}?token=${token}" onerror="this.src='/android-chrome-192x192.png'">`;
-            } else if (type === 'video' || type === 'gif') {
-                els.cmdWaMedia.innerHTML = `<div class="wa-thumb-placeholder"><i class="fas fa-play"></i> Vídeo / GIF</div>`;
-            } else if (type === 'audio') {
-                els.cmdWaMedia.innerHTML = `
+	// Update WhatsApp Live Preview
+	function updateWhatsAppCmdPreview() {
+		const inputs = document.querySelectorAll(".cmd-response-input");
+		const firstVal = inputs.length > 0 ? inputs[0].value.trim() : "";
+
+		const now = new Date();
+		const timeStr = `${now.getHours().toString().padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
+		els.cmdWaTime.textContent = timeStr;
+
+		if (!firstVal) {
+			els.cmdWaMedia.classList.add("hidden");
+			els.cmdWaMedia.innerHTML = "";
+			els.cmdWaText.innerHTML = "<em>Digite uma resposta abaixo para ver a simulação...</em>";
+			return;
+		}
+
+		if (firstVal.startsWith("{") && firstVal.includes("}")) {
+			const end = firstVal.indexOf("}");
+			const meta = firstVal.substring(1, end).split("-");
+			const type = meta[0];
+			const filename = meta[1];
+			const caption = firstVal.substring(end + 1).trim();
+
+			els.cmdWaMedia.classList.remove("hidden");
+
+			if (type === "image" || type === "sticker") {
+				els.cmdWaMedia.innerHTML = `<img src="/media-direct/${filename}?token=${token}" onerror="this.src='/android-chrome-192x192.png'">`;
+			} else if (type === "video" || type === "gif") {
+				els.cmdWaMedia.innerHTML = `<div class="wa-thumb-placeholder"><i class="fas fa-play"></i> Vídeo / GIF</div>`;
+			} else if (type === "audio") {
+				els.cmdWaMedia.innerHTML = `
                     <div class="wa-audio-mock">
                         <div class="wa-audio-btn"><i class="fas fa-play"></i></div>
                         <div class="wa-audio-waveform-container">
@@ -2459,603 +2794,623 @@ document.addEventListener('DOMContentLoaded', () => {
                         </div>
                     </div>
                 `;
-            } else {
-                els.cmdWaMedia.innerHTML = `<div class="wa-thumb-placeholder">[Mídia ${type}]</div>`;
-            }
+			} else {
+				els.cmdWaMedia.innerHTML = `<div class="wa-thumb-placeholder">[Mídia ${type}]</div>`;
+			}
 
-            els.cmdWaText.innerHTML = caption ? formatWhatsAppMarkdown(caption) : '';
-            if (!caption) els.cmdWaText.classList.add('hidden');
-            else els.cmdWaText.classList.remove('hidden');
+			els.cmdWaText.innerHTML = caption ? formatWhatsAppMarkdown(caption) : "";
+			if (!caption) els.cmdWaText.classList.add("hidden");
+			else els.cmdWaText.classList.remove("hidden");
+		} else {
+			els.cmdWaMedia.classList.add("hidden");
+			els.cmdWaMedia.innerHTML = "";
+			els.cmdWaText.classList.remove("hidden");
+			els.cmdWaText.innerHTML = formatWhatsAppMarkdown(firstVal);
+		}
+	}
 
-        } else {
-            els.cmdWaMedia.classList.add('hidden');
-            els.cmdWaMedia.innerHTML = '';
-            els.cmdWaText.classList.remove('hidden');
-            els.cmdWaText.innerHTML = formatWhatsAppMarkdown(firstVal);
-        }
-    }
+	// Emoji Grid
+	function renderEmojiGrid() {
+		const container = document.getElementById("emoji-list");
+		if (!container) return;
+		container.innerHTML = "";
+		COMMON_EMOJIS.forEach((emoji) => {
+			const span = document.createElement("span");
+			span.textContent = emoji;
+			span.className = "emoji-item";
+			span.onclick = () => insertEmoji(emoji);
+			container.appendChild(span);
+		});
+	}
 
-    // Emoji Grid
-    function renderEmojiGrid() {
-        const container = document.getElementById('emoji-list');
-        if (!container) return;
-        container.innerHTML = '';
-        COMMON_EMOJIS.forEach(emoji => {
-            const span = document.createElement('span');
-            span.textContent = emoji;
-            span.className = 'emoji-item';
-            span.onclick = () => insertEmoji(emoji);
-            container.appendChild(span);
-        });
-    }
+	function insertEmoji(emoji) {
+		if (activeEmojiTarget === "cmd-start-emoji") {
+			els.cmdStartEmoji.value = emoji;
+		} else {
+			els.cmdEmoji.value = emoji;
+		}
+		setDirty(true);
+		els.emojiModal.classList.add("hidden");
+	}
 
-    function insertEmoji(emoji) {
-        if (activeEmojiTarget === 'cmd-start-emoji') {
-            els.cmdStartEmoji.value = emoji;
-        } else {
-            els.cmdEmoji.value = emoji;
-        }
-        setDirty(true);
-        els.emojiModal.classList.add('hidden');
-    }
+	if (els.btnEmojiPicker) {
+		els.btnEmojiPicker.onclick = () => {
+			if (els.emojiModal) els.emojiModal.style.zIndex = "2600";
+			activeEmojiTarget = "cmd-emoji";
+			renderEmojiGrid();
+			els.emojiModal.classList.remove("hidden");
+		};
+	}
 
-    if (els.btnEmojiPicker) {
-        els.btnEmojiPicker.onclick = () => {
-            if (els.emojiModal) els.emojiModal.style.zIndex = '2600';
-            activeEmojiTarget = 'cmd-emoji';
-            renderEmojiGrid();
-            els.emojiModal.classList.remove('hidden');
-        };
-    }
+	if (els.btnStartEmojiPicker) {
+		els.btnStartEmojiPicker.onclick = () => {
+			if (els.emojiModal) els.emojiModal.style.zIndex = "2600";
+			activeEmojiTarget = "cmd-start-emoji";
+			renderEmojiGrid();
+			els.emojiModal.classList.remove("hidden");
+		};
+	}
 
-    if (els.btnStartEmojiPicker) {
-        els.btnStartEmojiPicker.onclick = () => {
-            if (els.emojiModal) els.emojiModal.style.zIndex = '2600';
-            activeEmojiTarget = 'cmd-start-emoji';
-            renderEmojiGrid();
-            els.emojiModal.classList.remove('hidden');
-        };
-    }
+	// Variables Picker
+	function renderVariables(filter = "") {
+		const container = document.getElementById("variable-list");
+		if (!container) return;
+		container.innerHTML = "";
 
-    // Variables Picker
-    function renderVariables(filter = '') {
-        const container = document.getElementById('variable-list');
-        if (!container) return;
-        container.innerHTML = '';
-        
-        const filtered = AVAILABLE_VARIABLES.filter(v => 
-            v.code.toLowerCase().includes(filter.toLowerCase()) || 
-            v.desc.toLowerCase().includes(filter.toLowerCase())
-        );
+		const filtered = AVAILABLE_VARIABLES.filter(
+			(v) =>
+				v.code.toLowerCase().includes(filter.toLowerCase()) ||
+				v.desc.toLowerCase().includes(filter.toLowerCase())
+		);
 
-        filtered.forEach(v => {
-            const div = document.createElement('div');
-            div.className = 'variable-item';
-            div.innerHTML = `
+		filtered.forEach((v) => {
+			const div = document.createElement("div");
+			div.className = "variable-item";
+			div.innerHTML = `
                 <div class="variable-code">${v.code}</div>
                 <div class="variable-desc">${v.desc}</div>
             `;
-            div.onclick = () => insertVariable(v.code);
-            container.appendChild(div);
-        });
-    }
+			div.onclick = () => insertVariable(v.code);
+			container.appendChild(div);
+		});
+	}
 
-    function renderLanguages(filter = '') {
-        const container = document.getElementById('variable-list');
-        if (!container) return;
-        container.innerHTML = '';
-        
-        const filtered = AVAILABLE_LANGUAGES.filter(l =>
-            l.code.toLowerCase().includes(filter.toLowerCase()) ||
-            l.desc.toLowerCase().includes(filter.toLowerCase())
-        );
+	function renderLanguages(filter = "") {
+		const container = document.getElementById("variable-list");
+		if (!container) return;
+		container.innerHTML = "";
 
-        if (filtered.length === 0) {
-            container.innerHTML = '<div class="p-3 text-center text-muted">Nenhum idioma encontrado.</div>';
-            return;
-        }
+		const filtered = AVAILABLE_LANGUAGES.filter(
+			(l) =>
+				l.code.toLowerCase().includes(filter.toLowerCase()) ||
+				l.desc.toLowerCase().includes(filter.toLowerCase())
+		);
 
-        filtered.forEach(lang => {
-            const div = document.createElement('div');
-            div.className = 'variable-item';
-            div.innerHTML = `
+		if (filtered.length === 0) {
+			container.innerHTML =
+				'<div class="p-3 text-center text-muted">Nenhum idioma encontrado.</div>';
+			return;
+		}
+
+		filtered.forEach((lang) => {
+			const div = document.createElement("div");
+			div.className = "variable-item";
+			div.innerHTML = `
                 <div class="variable-code">${lang.code}</div>
                 <div class="variable-desc">${lang.desc}</div>
             `;
-            div.onclick = () => {
-                const translateLangInput = document.getElementById('translate-lang');
-                if (translateLangInput) {
-                    translateLangInput.value = lang.code;
-                    setDirty(true);
-                }
-                els.variableModal.classList.add('hidden');
-            };
-            container.appendChild(div);
-        });
-    }
+			div.onclick = () => {
+				const translateLangInput = document.getElementById("translate-lang");
+				if (translateLangInput) {
+					translateLangInput.value = lang.code;
+					setDirty(true);
+				}
+				els.variableModal.classList.add("hidden");
+			};
+			container.appendChild(div);
+		});
+	}
 
-    function openVariableModal(targetInput) {
-        if (els.variableModal) els.variableModal.style.zIndex = '2600';
-        lastFocusedInput = targetInput;
-        document.getElementById('variable-modal-title').textContent = 'Variáveis Disponíveis';
-        document.getElementById('variable-search').value = '';
-        document.getElementById('variable-search').placeholder = 'Buscar variável...';
-        
-        pickerMode = 'variable';
-        renderVariables();
-        els.variableModal.classList.remove('hidden');
-        document.getElementById('variable-search').focus();
-    }
+	function openVariableModal(targetInput) {
+		if (els.variableModal) els.variableModal.style.zIndex = "2600";
+		lastFocusedInput = targetInput;
+		document.getElementById("variable-modal-title").textContent = "Variáveis Disponíveis";
+		document.getElementById("variable-search").value = "";
+		document.getElementById("variable-search").placeholder = "Buscar variável...";
 
-    function insertVariable(code) {
-        if (lastFocusedInput) {
-            const start = lastFocusedInput.selectionStart;
-            const end = lastFocusedInput.selectionEnd;
-            const text = lastFocusedInput.value;
-            
-            lastFocusedInput.value = text.substring(0, start) + code + text.substring(end);
-            lastFocusedInput.selectionStart = lastFocusedInput.selectionEnd = start + code.length;
-            lastFocusedInput.focus();
-            lastFocusedInput.dispatchEvent(new Event('input')); 
-            updateWhatsAppCmdPreview();
-        }
-        els.variableModal.classList.add('hidden');
-    }
+		pickerMode = "variable";
+		renderVariables();
+		els.variableModal.classList.remove("hidden");
+		document.getElementById("variable-search").focus();
+	}
 
-    window.addResponseInput = function(type, value = '') {
-        const div = document.createElement('div');
-        div.className = 'response-item-row';
-        
-        let isMedia = value && value.startsWith && value.startsWith('{');
-        let mediaType = type;
-        let mediaContent = value;
-        let mediaCaption = '';
+	function insertVariable(code) {
+		if (lastFocusedInput) {
+			const start = lastFocusedInput.selectionStart;
+			const end = lastFocusedInput.selectionEnd;
+			const text = lastFocusedInput.value;
 
-        if (isMedia) {
-            const end = value.indexOf('}');
-            const inside = value.substring(1, end);
-            const firstDash = inside.indexOf('-');
-            mediaType = firstDash !== -1 ? inside.substring(0, firstDash) : inside;
-            mediaContent = firstDash !== -1 ? inside.substring(firstDash + 1) : '';
-            mediaCaption = value.substring(end + 1).trim();
-        }
+			lastFocusedInput.value = text.substring(0, start) + code + text.substring(end);
+			lastFocusedInput.selectionStart = lastFocusedInput.selectionEnd = start + code.length;
+			lastFocusedInput.focus();
+			lastFocusedInput.dispatchEvent(new Event("input"));
+			updateWhatsAppCmdPreview();
+		}
+		els.variableModal.classList.add("hidden");
+	}
 
-        if (mediaType === 'text') {
-             div.innerHTML = `
+	window.addResponseInput = function (type, value = "") {
+		const div = document.createElement("div");
+		div.className = "response-item-row";
+
+		const isMedia = value && value.startsWith && value.startsWith("{");
+		let mediaType = type;
+		let mediaContent = value;
+		let mediaCaption = "";
+
+		if (isMedia) {
+			const end = value.indexOf("}");
+			const inside = value.substring(1, end);
+			const firstDash = inside.indexOf("-");
+			mediaType = firstDash !== -1 ? inside.substring(0, firstDash) : inside;
+			mediaContent = firstDash !== -1 ? inside.substring(firstDash + 1) : "";
+			mediaCaption = value.substring(end + 1).trim();
+		}
+
+		if (mediaType === "text") {
+			div.innerHTML = `
                 <div style="flex: 1; display: flex; flex-direction: column;">
                     <textarea class="form-control cmd-response-input" rows="2" placeholder="Texto da resposta..."></textarea>
                     <button type="button" class="btn btn-xs btn-outline btn-insert-var mt-1"><i class="fas fa-plus-circle"></i> Inserir Variável</button>
                 </div>
                 <button type="button" class="btn btn-xs btn-danger remove-resp" style="align-self: flex-start; margin-top: 5px;"><i class="fas fa-trash"></i></button>
             `;
-            const textarea = div.querySelector('textarea');
-            textarea.value = value && !isMedia ? value : '';
-            textarea.addEventListener('input', () => updateWhatsAppCmdPreview());
-            div.querySelector('.btn-insert-var').onclick = () => openVariableModal(textarea);
-        } else {
-            const isVideo = mediaType === 'video';
-            const convertLinkHtml = isVideo ? ` | <a href="#" class="media-link btn-convert-gif">Converter pra GIF</a>` : '';
-            const mediaLink = `/media-direct/${mediaContent}?token=${token}`;
-            div.innerHTML = `
+			const textarea = div.querySelector("textarea");
+			textarea.value = value && !isMedia ? value : "";
+			textarea.addEventListener("input", () => updateWhatsAppCmdPreview());
+			div.querySelector(".btn-insert-var").onclick = () => openVariableModal(textarea);
+		} else {
+			const isVideo = mediaType === "video";
+			const convertLinkHtml = isVideo
+				? ` | <a href="#" class="media-link btn-convert-gif">Converter pra GIF</a>`
+				: "";
+			const mediaLink = `/media-direct/${mediaContent}?token=${token}`;
+			div.innerHTML = `
                 <div class="media-preview form-control" style="font-size: 0.88rem;">
                     ${getIcon(mediaType)} <span class="media-type-lbl">${mediaType}</span>: <a href="${mediaLink}" target="_blank" class="media-link">Ver Mídia</a>${convertLinkHtml} 
-                    ${mediaCaption ? ` (${mediaCaption})` : ''}
+                    ${mediaCaption ? ` (${mediaCaption})` : ""}
                 </div>
                 <input type="hidden" class="cmd-response-input" value="${value}">
                 <button type="button" class="btn btn-xs btn-danger remove-resp"><i class="fas fa-trash"></i></button>
             `;
 
-            if (isVideo) {
-                div.querySelector('.btn-convert-gif').onclick = (e) => {
-                    e.preventDefault();
-                    const newValue = value.replace(/^\{video-/, '{gif-');
-                    div.querySelector('.cmd-response-input').value = newValue;
-                    div.querySelector('.media-type-lbl').textContent = 'gif';
-                    setDirty(true);
-                    updateWhatsAppCmdPreview();
-                };
-            }
-        }
+			if (isVideo) {
+				div.querySelector(".btn-convert-gif").onclick = (e) => {
+					e.preventDefault();
+					const newValue = value.replace(/^\{video-/, "{gif-");
+					div.querySelector(".cmd-response-input").value = newValue;
+					div.querySelector(".media-type-lbl").textContent = "gif";
+					setDirty(true);
+					updateWhatsAppCmdPreview();
+				};
+			}
+		}
 
-        div.querySelector('.remove-resp').onclick = () => {
-            div.remove();
-            updateWhatsAppCmdPreview();
-        };
-        els.cmdResponsesList.appendChild(div);
-        updateWhatsAppCmdPreview();
-    };
+		div.querySelector(".remove-resp").onclick = () => {
+			div.remove();
+			updateWhatsAppCmdPreview();
+		};
+		els.cmdResponsesList.appendChild(div);
+		updateWhatsAppCmdPreview();
+	};
 
-    window.openMediaUpload = function(type) {
-        els.uploadType.value = type;
-        els.uploadContext.value = 'command';
-        els.mediaFileInput.value = '';
-        els.mediaCaption.value = '';
-        
-        els.captionGroup.classList.remove('hidden');
-        els.asStickerGroup.classList.add('hidden');
-        
-        const existingVarBtn = els.captionGroup.querySelector('.btn-insert-var');
-        if(existingVarBtn) existingVarBtn.remove();
+	window.openMediaUpload = function (type) {
+		els.uploadType.value = type;
+		els.uploadContext.value = "command";
+		els.mediaFileInput.value = "";
+		els.mediaCaption.value = "";
 
-        if(type === 'sticker') els.captionGroup.classList.add('hidden');
-        if(type === 'image' || type === 'video' || type === 'gif') {
-            els.asStickerGroup.classList.remove('hidden');
-            const varBtn = document.createElement('button');
-            varBtn.type = 'button';
-            varBtn.className = 'btn btn-xs btn-outline mt-1';
-            varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Inserir Variável';
-            varBtn.onclick = () => openVariableModal(els.mediaCaption);
-            els.captionGroup.appendChild(varBtn);
-        }
+		els.captionGroup.classList.remove("hidden");
+		els.asStickerGroup.classList.add("hidden");
 
-        setupMediaAccept(type);
-        els.uploadModal.classList.remove('hidden');
-    };
+		const existingVarBtn = els.captionGroup.querySelector(".btn-insert-var");
+		if (existingVarBtn) existingVarBtn.remove();
 
-    // Upload Execution
-    els.btnConfirmUpload.addEventListener('click', () => {
-        const file = els.mediaFileInput.files[0];
-        if (!file) return showCustomAlert('Selecione um arquivo');
+		if (type === "sticker") els.captionGroup.classList.add("hidden");
+		if (type === "image" || type === "video" || type === "gif") {
+			els.asStickerGroup.classList.remove("hidden");
+			const varBtn = document.createElement("button");
+			varBtn.type = "button";
+			varBtn.className = "btn btn-xs btn-outline mt-1";
+			varBtn.innerHTML = '<i class="fas fa-plus-circle"></i> Inserir Variável';
+			varBtn.onclick = () => openVariableModal(els.mediaCaption);
+			els.captionGroup.appendChild(varBtn);
+		}
 
-        let type = els.uploadType.value;
-        const context = els.uploadContext.value;
-        const caption = els.mediaCaption.value;
-        const convertToSticker = els.convertSticker.checked;
+		setupMediaAccept(type);
+		els.uploadModal.classList.remove("hidden");
+	};
 
-        if (convertToSticker) type = 'sticker';
+	// Upload Execution
+	els.btnConfirmUpload.addEventListener("click", () => {
+		const file = els.mediaFileInput.files[0];
+		if (!file) return showCustomAlert("Selecione um arquivo");
 
-        const formData = new FormData();
-        formData.append('token', token);
-        formData.append('groupId', groupId);
-        formData.append('type', context);
-        formData.append('name', Date.now());
-        formData.append('caption', caption);
-        formData.append('file', file);
+		let type = els.uploadType.value;
+		const context = els.uploadContext.value;
+		const caption = els.mediaCaption.value;
+		const convertToSticker = els.convertSticker.checked;
 
-        els.btnConfirmUpload.disabled = true;
-        els.btnConfirmUpload.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
-        els.uploadStatus.innerHTML = '<div class="text-sm text-muted">Processando upload...</div>';
+		if (convertToSticker) type = "sticker";
 
-        const xhr = new XMLHttpRequest();
-        xhr.open('POST', `${API_BASE}/upload-media`);
+		const formData = new FormData();
+		formData.append("token", token);
+		formData.append("groupId", groupId);
+		formData.append("type", context);
+		formData.append("name", Date.now());
+		formData.append("caption", caption);
+		formData.append("file", file);
 
-        xhr.onload = () => {
-            if (xhr.status === 200) {
-                let data = {};
-                try {
-                    data = JSON.parse(xhr.responseText);
-                } catch (e) {
-                    showCustomAlert('Resposta inválida do servidor.');
-                    cleanup();
-                    return;
-                }
-                if (data.success) {
-                    const finalType = type;
-                    const responseStr = `{${finalType}-${data.fileName}} ${caption}`.trim();
+		els.btnConfirmUpload.disabled = true;
+		els.btnConfirmUpload.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+		els.uploadStatus.innerHTML = '<div class="text-sm text-muted">Processando upload...</div>';
 
-                    if (context === 'command') {
-                        addResponseInput(finalType, responseStr);
-                    } else if (context === 'greetings' || context === 'farewells') {
-                        if (!groupData[context]) groupData[context] = {};
-                        groupData[context][finalType] = { file: data.fileName, caption: caption };
-                        renderMediaList(`${context}-list`, groupData[context], context);
-                        setDirty(true);
-                    } else if (context === 'stream-on') {
-                        currentStream.data.onConfig.media.push({ type: finalType, content: data.fileName, caption });
-                        renderStreamMediaList('stream-on-media-list', currentStream.data.onConfig.media);
-                        updateStreamPreview();
-                    } else if (context === 'stream-off') {
-                        currentStream.data.offConfig.media.push({ type: finalType, content: data.fileName, caption });
-                        renderStreamMediaList('stream-off-media-list', currentStream.data.offConfig.media);
-                    }
-                    els.uploadModal.classList.add('hidden');
-                } else {
-                    showCustomAlert('Erro: ' + (data.message || 'Falha no upload.'));
-                }
-            } else {
-                let errorMsg = 'Erro no upload.';
-                try {
-                    const errData = JSON.parse(xhr.responseText);
-                    if (errData && errData.message) {
-                        errorMsg = errData.message;
-                    }
-                } catch {}
-                console.error('[Upload] Falha:', xhr.status, xhr.responseText);
-                if (xhr.status === 401 && errorMsg.toLowerCase().includes('token')) {
-                    showCustomAlert(`Sessão expirada: ${errorMsg}`);
-                } else {
-                    showCustomAlert(`Erro no upload (${xhr.status}): ${errorMsg}`);
-                }
-            }
-            cleanup();
-        };
+		const xhr = new XMLHttpRequest();
+		xhr.open("POST", `${API_BASE}/upload-media`);
 
-        xhr.onerror = () => {
-            console.error('[Upload] Erro de rede ou conexão');
-            showCustomAlert('Erro de conexão durante o upload.');
-            cleanup();
-        };
+		xhr.onload = () => {
+			if (xhr.status === 200) {
+				let data = {};
+				try {
+					data = JSON.parse(xhr.responseText);
+				} catch (e) {
+					showCustomAlert("Resposta inválida do servidor.");
+					cleanup();
+					return;
+				}
+				if (data.success) {
+					const finalType = type;
+					const responseStr = `{${finalType}-${data.fileName}} ${caption}`.trim();
 
-        function cleanup() {
-            els.btnConfirmUpload.disabled = false;
-            els.btnConfirmUpload.innerHTML = 'Fazer Upload';
-            els.uploadStatus.innerHTML = '';
-        }
+					if (context === "command") {
+						addResponseInput(finalType, responseStr);
+					} else if (context === "greetings" || context === "farewells") {
+						if (!groupData[context]) groupData[context] = {};
+						groupData[context][finalType] = { file: data.fileName, caption };
+						renderMediaList(`${context}-list`, groupData[context], context);
+						setDirty(true);
+					} else if (context === "stream-on") {
+						currentStream.data.onConfig.media.push({
+							type: finalType,
+							content: data.fileName,
+							caption
+						});
+						renderStreamMediaList("stream-on-media-list", currentStream.data.onConfig.media);
+						updateStreamPreview();
+					} else if (context === "stream-off") {
+						currentStream.data.offConfig.media.push({
+							type: finalType,
+							content: data.fileName,
+							caption
+						});
+						renderStreamMediaList("stream-off-media-list", currentStream.data.offConfig.media);
+					}
+					els.uploadModal.classList.add("hidden");
+				} else {
+					showCustomAlert("Erro: " + (data.message || "Falha no upload."));
+				}
+			} else {
+				let errorMsg = "Erro no upload.";
+				try {
+					const errData = JSON.parse(xhr.responseText);
+					if (errData && errData.message) {
+						errorMsg = errData.message;
+					}
+				} catch {}
+				console.error("[Upload] Falha:", xhr.status, xhr.responseText);
+				if (xhr.status === 401 && errorMsg.toLowerCase().includes("token")) {
+					showCustomAlert(`Sessão expirada: ${errorMsg}`);
+				} else {
+					showCustomAlert(`Erro no upload (${xhr.status}): ${errorMsg}`);
+				}
+			}
+			cleanup();
+		};
 
-        xhr.send(formData);
-    });
+		xhr.onerror = () => {
+			console.error("[Upload] Erro de rede ou conexão");
+			showCustomAlert("Erro de conexão durante o upload.");
+			cleanup();
+		};
 
-    // Save Custom Command
-    els.btnSaveCmd.addEventListener('click', async () => {
-        let trigger = els.cmdTrigger.value.trim().toLowerCase();
-        if (!trigger) return await showCustomAlert('O comando precisa de um gatilho.');
+		function cleanup() {
+			els.btnConfirmUpload.disabled = false;
+			els.btnConfirmUpload.innerHTML = "Fazer Upload";
+			els.uploadStatus.innerHTML = "";
+		}
 
-        const prefix = (groupData.prefix || '!').trim();
-        if (trigger.startsWith(prefix)) {
-            trigger = trigger.substring(prefix.length).trim();
-        } else if (prefix !== '!' && trigger.startsWith('!')) {
-            trigger = trigger.substring(1).trim();
-        }
+		xhr.send(formData);
+	});
 
-        if (!trigger) return await showCustomAlert('O comando precisa de um gatilho válido.');
+	// Save Custom Command
+	els.btnSaveCmd.addEventListener("click", async () => {
+		let trigger = els.cmdTrigger.value.trim().toLowerCase();
+		if (!trigger) return await showCustomAlert("O comando precisa de um gatilho.");
 
-        const inputs = document.querySelectorAll('.cmd-response-input');
-        const responses = Array.from(inputs).map(i => i.value).filter(v => v.trim() !== '');
-        
-        if (responses.length === 0) return await showCustomAlert('Adicione pelo menos uma resposta ao comando.');
+		const prefix = (groupData.prefix || "!").trim();
+		if (trigger.startsWith(prefix)) {
+			trigger = trigger.substring(prefix.length).trim();
+		} else if (prefix !== "!" && trigger.startsWith("!")) {
+			trigger = trigger.substring(1).trim();
+		}
 
-        const rawCooldown = parseInt(els.cmdCooldown.value);
-        const cooldownValue = isNaN(rawCooldown) || rawCooldown < 0 ? 0 : Math.min(rawCooldown, 60000);
+		if (!trigger) return await showCustomAlert("O comando precisa de um gatilho válido.");
 
-        // Allowed days
-        const selectedDays = [];
-        document.querySelectorAll('.btn-day-pill.active').forEach(b => selectedDays.push(b.dataset.day));
+		const inputs = document.querySelectorAll(".cmd-response-input");
+		const responses = Array.from(inputs)
+			.map((i) => i.value)
+			.filter((v) => v.trim() !== "");
 
-        // Allowed times
-        let allowedTimes = null;
-        const timeStart = els.cmdTimeStart.value;
-        const timeEnd = els.cmdTimeEnd.value;
-        if (timeStart && timeEnd) {
-            allowedTimes = { start: timeStart, end: timeEnd };
-        }
+		if (responses.length === 0)
+			return await showCustomAlert("Adicione pelo menos uma resposta ao comando.");
 
-        // Reactions
-        const startEmoji = els.cmdStartEmoji.value.trim();
-        let reactions = null;
-        if (startEmoji) {
-            reactions = { before: startEmoji, error: '❌' };
-        }
+		const rawCooldown = parseInt(els.cmdCooldown.value);
+		const cooldownValue = isNaN(rawCooldown) || rawCooldown < 0 ? 0 : Math.min(rawCooldown, 60000);
 
-        const newCmd = {
-            startsWith: trigger,
-            responses: responses,
-            active: els.cmdActive.checked,
-            ignoreInteract: !els.cmdInteract.checked,
-            reply: els.cmdReplyQuote.checked,
-            sendAllResponses: els.cmdSendAll.checked,
-            adminOnly: els.cmdAdminOnly.checked,
-            replyInPvivate: els.cmdReplyPrivate.checked,
-            react: els.cmdEmoji.value.trim() || null,
-            reactions: reactions,
-            cooldown: cooldownValue,
-            allowedTimes: allowedTimes,
-            allowedDays: selectedDays.length > 0 ? selectedDays : null,
-            mentions: currentCmdMentions,
-            count: currentEditingCmd ? currentEditingCmd.count : 0,
-            metadata: currentEditingCmd ? currentEditingCmd.metadata : { createdBy: 'Painel Web', createdAt: Date.now() }
-        };
+		// Allowed days
+		const selectedDays = [];
+		document
+			.querySelectorAll(".btn-day-pill.active")
+			.forEach((b) => selectedDays.push(b.dataset.day));
 
-        els.btnSaveCmd.textContent = 'Salvando...';
-        els.btnSaveCmd.disabled = true;
+		// Allowed times
+		let allowedTimes = null;
+		const timeStart = els.cmdTimeStart.value;
+		const timeEnd = els.cmdTimeEnd.value;
+		if (timeStart && timeEnd) {
+			allowedTimes = { start: timeStart, end: timeEnd };
+		}
 
-        try {
-            let url = `${API_BASE}/custom-commands/${groupId}`;
-            let method = 'POST';
-            if (currentEditingCmd) {
-                url += `/${encodeURIComponent(currentEditingCmd.startsWith)}`;
-                method = 'PUT';
-            }
+		// Reactions
+		const startEmoji = els.cmdStartEmoji.value.trim();
+		let reactions = null;
+		if (startEmoji) {
+			reactions = { before: startEmoji, error: "❌" };
+		}
 
-            const res = await fetch(url, {
-                method: method,
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({ token, command: newCmd })
-            });
+		const newCmd = {
+			startsWith: trigger,
+			responses,
+			active: els.cmdActive.checked,
+			ignoreInteract: !els.cmdInteract.checked,
+			reply: els.cmdReplyQuote.checked,
+			sendAllResponses: els.cmdSendAll.checked,
+			adminOnly: els.cmdAdminOnly.checked,
+			replyInPvivate: els.cmdReplyPrivate.checked,
+			react: els.cmdEmoji.value.trim() || null,
+			reactions,
+			cooldown: cooldownValue,
+			allowedTimes,
+			allowedDays: selectedDays.length > 0 ? selectedDays : null,
+			mentions: currentCmdMentions,
+			count: currentEditingCmd ? currentEditingCmd.count : 0,
+			metadata: currentEditingCmd
+				? currentEditingCmd.metadata
+				: { createdBy: "Painel Web", createdAt: Date.now() }
+		};
 
-            if (res.ok) {
-                await loadData();
-                els.cmdModal.classList.add('hidden');
-            } else {
-                const err = await res.json();
-                await showCustomAlert('Erro ao salvar comando: ' + err.message);
-            }
-        } catch (e) {
-            await showCustomAlert('Erro: ' + e.message);
-        } finally {
-            els.btnSaveCmd.textContent = 'Salvar Comando';
-            els.btnSaveCmd.disabled = false;
-        }
-    });
+		els.btnSaveCmd.textContent = "Salvando...";
+		els.btnSaveCmd.disabled = true;
 
-    els.btnDeleteCmd.addEventListener('click', async () => {
-        if (!currentEditingCmd) return;
-        await deleteCustomCommand(currentEditingCmd.startsWith);
-    });
+		try {
+			let url = `${API_BASE}/custom-commands/${groupId}`;
+			let method = "POST";
+			if (currentEditingCmd) {
+				url += `/${encodeURIComponent(currentEditingCmd.startsWith)}`;
+				method = "PUT";
+			}
 
-    // --- Member Modal Logic ---
+			const res = await fetch(url, {
+				method,
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ token, command: newCmd })
+			});
 
-    let onMemberSelect = null; 
+			if (res.ok) {
+				await loadData();
+				els.cmdModal.classList.add("hidden");
+			} else {
+				const err = await res.json();
+				await showCustomAlert("Erro ao salvar comando: " + err.message);
+			}
+		} catch (e) {
+			await showCustomAlert("Erro: " + e.message);
+		} finally {
+			els.btnSaveCmd.textContent = "Salvar Comando";
+			els.btnSaveCmd.disabled = false;
+		}
+	});
 
-    function renderMembers(filter = '') {
-        const tbody = els.memberTableBody;
-        if (!tbody) return;
-        tbody.innerHTML = '';
-        
-        const actionHeader = document.getElementById('member-action-header');
-        if (actionHeader) {
-            actionHeader.textContent = onMemberSelect ? 'Ação' : 'Apelido';
-        }
+	els.btnDeleteCmd.addEventListener("click", async () => {
+		if (!currentEditingCmd) return;
+		await deleteCustomCommand(currentEditingCmd.startsWith);
+	});
 
-        const participants = groupData.participants || [];
-        const filtered = participants.filter(p => {
-            const search = filter.toLowerCase();
-            const pn = p.pn ? p.pn.split('@')[0] : '';
-            const lid = p.lid ? p.lid.split('@')[0] : '';
-            return (pn && pn.includes(search)) || (lid && lid.includes(search));
-        });
+	// --- Member Modal Logic ---
 
-        if (filtered.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="3" class="text-center text-muted p-3">Nenhum membro encontrado.</td></tr>';
-            return;
-        }
+	let onMemberSelect = null;
 
-        filtered.forEach(p => {
-            const tr = document.createElement('tr');
-            
-            let actionBtn = '';
-            if (onMemberSelect) {
-                actionBtn = `<button class="btn btn-xs btn-success btn-select-member"><i class="fas fa-check"></i> Selecionar</button>`;
-            } else {
-                const existingNick = (groupData.nicks || []).find(n => n.numero === p.pn);
-                const currentApelido = existingNick ? existingNick.apelido : '';
-                actionBtn = `<input type="text" class="form-control text-sm input-nickname" value="${currentApelido}" data-pn="${p.pn}" placeholder="Apelido..." style="min-width: 100px;">`;
-            }
+	function renderMembers(filter = "") {
+		const tbody = els.memberTableBody;
+		if (!tbody) return;
+		tbody.innerHTML = "";
 
-            const pn = p.pn ? p.pn.split('@')[0] : '-';
-            const lid = p.lid ? p.lid.split('@')[0] : '-';
+		const actionHeader = document.getElementById("member-action-header");
+		if (actionHeader) {
+			actionHeader.textContent = onMemberSelect ? "Ação" : "Apelido";
+		}
 
-            tr.innerHTML = `
-                <td>${pn} ${p.admin ? '<span class="status-pill status-pill-active text-xs">Admin</span>' : ''}</td>
+		const participants = groupData.participants || [];
+		const filtered = participants.filter((p) => {
+			const search = filter.toLowerCase();
+			const pn = p.pn ? p.pn.split("@")[0] : "";
+			const lid = p.lid ? p.lid.split("@")[0] : "";
+			return (pn && pn.includes(search)) || (lid && lid.includes(search));
+		});
+
+		if (filtered.length === 0) {
+			tbody.innerHTML =
+				'<tr><td colspan="3" class="text-center text-muted p-3">Nenhum membro encontrado.</td></tr>';
+			return;
+		}
+
+		filtered.forEach((p) => {
+			const tr = document.createElement("tr");
+
+			let actionBtn = "";
+			if (onMemberSelect) {
+				actionBtn = `<button class="btn btn-xs btn-success btn-select-member"><i class="fas fa-check"></i> Selecionar</button>`;
+			} else {
+				const existingNick = (groupData.nicks || []).find((n) => n.numero === p.pn);
+				const currentApelido = existingNick ? existingNick.apelido : "";
+				actionBtn = `<input type="text" class="form-control text-sm input-nickname" value="${currentApelido}" data-pn="${p.pn}" placeholder="Apelido..." style="min-width: 100px;">`;
+			}
+
+			const pn = p.pn ? p.pn.split("@")[0] : "-";
+			const lid = p.lid ? p.lid.split("@")[0] : "-";
+
+			tr.innerHTML = `
+                <td>${pn} ${p.admin ? '<span class="status-pill status-pill-active text-xs">Admin</span>' : ""}</td>
                 <td style="font-family: monospace; font-size: 0.78rem;">${lid}</td>
                 <td>${actionBtn}</td>
             `;
 
-            if (onMemberSelect) {
-                tr.querySelector('.btn-select-member').onclick = () => {
-                    onMemberSelect(p);
-                    els.memberModal.classList.add('hidden');
-                };
-            } else {
-                const input = tr.querySelector('.input-nickname');
-                if (input) {
-                    input.onchange = (e) => {
-                        const newNick = e.target.value.trim();
-                        const pnVal = e.target.dataset.pn;
-                        
-                        if (!groupData.nicks) groupData.nicks = [];
-                        
-                        const idx = groupData.nicks.findIndex(n => n.numero === pnVal);
-                        if (idx !== -1) {
-                            if (newNick) {
-                                groupData.nicks[idx].apelido = newNick.substring(0, 20);
-                            } else {
-                                groupData.nicks.splice(idx, 1);
-                            }
-                        } else if (newNick) {
-                            groupData.nicks.push({
-                                numero: pnVal,
-                                apelido: newNick.substring(0, 20)
-                            });
-                        }
-                        setDirty(true);
-                    };
-                }
-            }
+			if (onMemberSelect) {
+				tr.querySelector(".btn-select-member").onclick = () => {
+					onMemberSelect(p);
+					els.memberModal.classList.add("hidden");
+				};
+			} else {
+				const input = tr.querySelector(".input-nickname");
+				if (input) {
+					input.onchange = (e) => {
+						const newNick = e.target.value.trim();
+						const pnVal = e.target.dataset.pn;
 
-            tbody.appendChild(tr);
-        });
-    }
+						if (!groupData.nicks) groupData.nicks = [];
 
-    if (els.btnViewMembers) {
-        els.btnViewMembers.onclick = () => {
-            onMemberSelect = null;
-            els.memberModalTitle.textContent = 'Membros do Grupo & Apelidos';
-            els.memberSearch.value = '';
-            renderMembers();
-            els.memberModal.classList.remove('hidden');
-        };
-    }
+						const idx = groupData.nicks.findIndex((n) => n.numero === pnVal);
+						if (idx !== -1) {
+							if (newNick) {
+								groupData.nicks[idx].apelido = newNick.substring(0, 20);
+							} else {
+								groupData.nicks.splice(idx, 1);
+							}
+						} else if (newNick) {
+							groupData.nicks.push({
+								numero: pnVal,
+								apelido: newNick.substring(0, 20)
+							});
+						}
+						setDirty(true);
+					};
+				}
+			}
 
-    // --- Command Mentions ---
+			tbody.appendChild(tr);
+		});
+	}
 
-    if (els.btnAddTag) {
-        els.btnAddTag.onclick = () => {
-            onMemberSelect = (member) => {
-                const targetNumber = member.pn || member.lid;
-                if (!targetNumber) return;
-                
-                const cleanNumber = targetNumber.split('@')[0];
-                const displayName = cleanNumber;
-                
-                if (!currentCmdMentions.includes(targetNumber)) {
-                    currentCmdMentions.push(targetNumber);
-                    renderCmdTags();
-                    
-                    const inputs = document.querySelectorAll('.cmd-response-input');
-                    if (inputs.length > 0) {
-                        const firstInput = inputs[0];
-                        const mentionTag = `{mention-${cleanNumber}}`;
-                        if (!firstInput.value.includes(mentionTag)) {
-                            firstInput.value = (firstInput.value + ' ' + mentionTag).trim();
-                            firstInput.dispatchEvent(new Event('input'));
-                        }
-                    }
-                    updateWhatsAppCmdPreview();
-                }
-            };
-            
-            els.memberModalTitle.textContent = 'Selecionar Membro para Marcar';
-            els.memberSearch.value = '';
-            renderMembers();
-            els.memberModal.classList.remove('hidden');
-        };
-    }
+	if (els.btnViewMembers) {
+		els.btnViewMembers.onclick = () => {
+			onMemberSelect = null;
+			els.memberModalTitle.textContent = "Membros do Grupo & Apelidos";
+			els.memberSearch.value = "";
+			renderMembers();
+			els.memberModal.classList.remove("hidden");
+		};
+	}
 
-    function renderCmdTags() {
-        if (!els.cmdTagsList) return;
-        els.cmdTagsList.innerHTML = '';
-        currentCmdMentions.forEach(m => {
-            const clean = m.split('@')[0];
-            const tag = document.createElement('span');
-            tag.className = 'tag';
-            tag.innerHTML = `
+	// --- Command Mentions ---
+
+	if (els.btnAddTag) {
+		els.btnAddTag.onclick = () => {
+			onMemberSelect = (member) => {
+				const targetNumber = member.pn || member.lid;
+				if (!targetNumber) return;
+
+				const cleanNumber = targetNumber.split("@")[0];
+				const displayName = cleanNumber;
+
+				if (!currentCmdMentions.includes(targetNumber)) {
+					currentCmdMentions.push(targetNumber);
+					renderCmdTags();
+
+					const inputs = document.querySelectorAll(".cmd-response-input");
+					if (inputs.length > 0) {
+						const firstInput = inputs[0];
+						const mentionTag = `{mention-${cleanNumber}}`;
+						if (!firstInput.value.includes(mentionTag)) {
+							firstInput.value = (firstInput.value + " " + mentionTag).trim();
+							firstInput.dispatchEvent(new Event("input"));
+						}
+					}
+					updateWhatsAppCmdPreview();
+				}
+			};
+
+			els.memberModalTitle.textContent = "Selecionar Membro para Marcar";
+			els.memberSearch.value = "";
+			renderMembers();
+			els.memberModal.classList.remove("hidden");
+		};
+	}
+
+	function renderCmdTags() {
+		if (!els.cmdTagsList) return;
+		els.cmdTagsList.innerHTML = "";
+		currentCmdMentions.forEach((m) => {
+			const clean = m.split("@")[0];
+			const tag = document.createElement("span");
+			tag.className = "tag";
+			tag.innerHTML = `
                 <span>${clean}</span>
                 <span class="remove" title="Remover">&times;</span>
             `;
-            tag.querySelector('.remove').onclick = () => {
-                currentCmdMentions = currentCmdMentions.filter(x => x !== m);
-                renderCmdTags();
-                updateWhatsAppCmdPreview();
-            };
-            els.cmdTagsList.appendChild(tag);
-        });
-    }
+			tag.querySelector(".remove").onclick = () => {
+				currentCmdMentions = currentCmdMentions.filter((x) => x !== m);
+				renderCmdTags();
+				updateWhatsAppCmdPreview();
+			};
+			els.cmdTagsList.appendChild(tag);
+		});
+	}
 
-    // --- Warnings (Advertências) Section ---
+	// --- Warnings (Advertências) Section ---
 
-    function getWarningEmojis(count) {
-        if (count <= 1) return '⚠️';
-        if (count === 2) return '🚨';
-        return '🚨🚔';
-    }
+	function getWarningEmojis(count) {
+		if (count <= 1) return "⚠️";
+		if (count === 2) return "🚨";
+		return "🚨🚔";
+	}
 
-    function renderWarnings() {
-        if (!els.warningsTableBody) return;
-        els.warningsTableBody.innerHTML = '';
-        
-        const warnings = groupData.warnings || [];
-        if (warnings.length === 0) {
-            els.noWarningsMsg.classList.remove('hidden');
-            return;
-        }
-        els.noWarningsMsg.classList.add('hidden');
+	function renderWarnings() {
+		if (!els.warningsTableBody) return;
+		els.warningsTableBody.innerHTML = "";
 
-        warnings.forEach((w, index) => {
-            const tr = document.createElement('tr');
-            const cleanNum = w.numero || (w.jid ? w.jid.split('@')[0] : 'Desconhecido');
-            const emojis = getWarningEmojis(w.count);
+		const warnings = groupData.warnings || [];
+		if (warnings.length === 0) {
+			els.noWarningsMsg.classList.remove("hidden");
+			return;
+		}
+		els.noWarningsMsg.classList.add("hidden");
 
-            tr.innerHTML = `
+		warnings.forEach((w, index) => {
+			const tr = document.createElement("tr");
+			const cleanNum = w.numero || (w.jid ? w.jid.split("@")[0] : "Desconhecido");
+			const emojis = getWarningEmojis(w.count);
+
+			tr.innerHTML = `
                 <td><strong>${cleanNum}</strong></td>
                 <td><span class="status-pill status-pill-paused">${emojis} ${w.count} aviso(s)</span></td>
                 <td>
@@ -3063,335 +3418,363 @@ document.addEventListener('DOMContentLoaded', () => {
                 </td>
             `;
 
-            tr.querySelector('.btn-del-warn').onclick = async () => {
-                if (await showCustomConfirm(`Remover advertência de ${cleanNum}?`)) {
-                    groupData.warnings.splice(index, 1);
-                    setDirty(true);
-                    renderWarnings();
-                }
-            };
+			tr.querySelector(".btn-del-warn").onclick = async () => {
+				if (await showCustomConfirm(`Remover advertência de ${cleanNum}?`)) {
+					groupData.warnings.splice(index, 1);
+					setDirty(true);
+					renderWarnings();
+				}
+			};
 
-            els.warningsTableBody.appendChild(tr);
-        });
-    }
+			els.warningsTableBody.appendChild(tr);
+		});
+	}
 
-    if (els.btnClearAllWarnings) {
-        els.btnClearAllWarnings.onclick = async () => {
-            if (!groupData.warnings || groupData.warnings.length === 0) return;
-            if (await showCustomConfirm('Tem certeza que deseja zerar TODAS as advertências deste grupo?')) {
-                groupData.warnings = [];
-                setDirty(true);
-                renderWarnings();
-            }
-        };
-    }
+	if (els.btnClearAllWarnings) {
+		els.btnClearAllWarnings.onclick = async () => {
+			if (!groupData.warnings || groupData.warnings.length === 0) return;
+			if (
+				await showCustomConfirm("Tem certeza que deseja zerar TODAS as advertências deste grupo?")
+			) {
+				groupData.warnings = [];
+				setDirty(true);
+				renderWarnings();
+			}
+		};
+	}
 
-    // --- Webhooks Section ---
+	// --- Webhooks Section ---
 
-    function renderWebhooks() {
-        if (!els.webhooksTableBody) return;
-        els.webhooksTableBody.innerHTML = '';
+	function renderWebhooks() {
+		if (!els.webhooksTableBody) return;
+		els.webhooksTableBody.innerHTML = "";
 
-        const webhooksUrl = `${window.location.origin}/webhook/${tokenData?.botId || 'bot'}/${groupId.split('@')[0]}`;
-        if (els.webhooksEndpointUrl) els.webhooksEndpointUrl.value = webhooksUrl;
+		const webhooksUrl = `${window.location.origin}/webhook/${tokenData?.botId || "bot"}/${groupId.split("@")[0]}`;
+		if (els.webhooksEndpointUrl) els.webhooksEndpointUrl.value = webhooksUrl;
 
-        const webhooks = groupData.webhooks || [];
-        if (webhooks.length === 0) {
-            els.noWebhooksMsg.classList.remove('hidden');
-            return;
-        }
-        els.noWebhooksMsg.classList.add('hidden');
+		const webhooks = groupData.webhooks || [];
+		if (webhooks.length === 0) {
+			els.noWebhooksMsg.classList.remove("hidden");
+			return;
+		}
+		els.noWebhooksMsg.classList.add("hidden");
 
-        webhooks.forEach((wh, index) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
+		webhooks.forEach((wh, index) => {
+			const tr = document.createElement("tr");
+			tr.innerHTML = `
                 <td><strong>${wh.name}</strong></td>
-                <td><code class="text-xs">${wh.header?.name}: ${wh.header?.value} (${wh.headerValue || 'match'})</code></td>
-                <td><span class="text-sm">${(wh.template || '').substring(0, 30)}...</span></td>
+                <td><code class="text-xs">${wh.header?.name}: ${wh.header?.value} (${wh.headerValue || "match"})</code></td>
+                <td><span class="text-sm">${(wh.template || "").substring(0, 30)}...</span></td>
                 <td>
                     <button type="button" class="btn btn-xs btn-danger btn-del-webhook"><i class="fas fa-trash"></i></button>
                 </td>
             `;
 
-            tr.querySelector('.btn-del-webhook').onclick = async () => {
-                if (await showCustomConfirm(`Apagar o webhook "${wh.name}"?`)) {
-                    groupData.webhooks.splice(index, 1);
-                    setDirty(true);
-                    renderWebhooks();
-                }
-            };
+			tr.querySelector(".btn-del-webhook").onclick = async () => {
+				if (await showCustomConfirm(`Apagar o webhook "${wh.name}"?`)) {
+					groupData.webhooks.splice(index, 1);
+					setDirty(true);
+					renderWebhooks();
+				}
+			};
 
-            els.webhooksTableBody.appendChild(tr);
-        });
-    }
+			els.webhooksTableBody.appendChild(tr);
+		});
+	}
 
-    if (els.btnCopyWebhookUrl) {
-        els.btnCopyWebhookUrl.onclick = async () => {
-            try {
-                await navigator.clipboard.writeText(els.webhooksEndpointUrl.value);
-                await showCustomAlert('URL copiada para a área de transferência!', 'Copiado');
-            } catch {
-                els.webhooksEndpointUrl.select();
-                document.execCommand('copy');
-                await showCustomAlert('URL copiada!', 'Copiado');
-            }
-        };
-    }
+	if (els.btnCopyWebhookUrl) {
+		els.btnCopyWebhookUrl.onclick = async () => {
+			try {
+				await navigator.clipboard.writeText(els.webhooksEndpointUrl.value);
+				await showCustomAlert("URL copiada para a área de transferência!", "Copiado");
+			} catch {
+				els.webhooksEndpointUrl.select();
+				document.execCommand("copy");
+				await showCustomAlert("URL copiada!", "Copiado");
+			}
+		};
+	}
 
-    if (els.btnAddWebhook) {
-        els.btnAddWebhook.onclick = () => {
-            document.getElementById('webhook-name').value = '';
-            document.getElementById('webhook-header-name').value = 'x-token';
-            document.getElementById('webhook-header-value').value = '';
-            document.getElementById('webhook-header-mode').value = 'match';
-            document.getElementById('webhook-template').value = '';
-            els.webhookModal.classList.remove('hidden');
-        };
-    }
+	if (els.btnAddWebhook) {
+		els.btnAddWebhook.onclick = () => {
+			document.getElementById("webhook-name").value = "";
+			document.getElementById("webhook-header-name").value = "x-token";
+			document.getElementById("webhook-header-value").value = "";
+			document.getElementById("webhook-header-mode").value = "match";
+			document.getElementById("webhook-template").value = "";
+			els.webhookModal.classList.remove("hidden");
+		};
+	}
 
-    if (els.btnSaveWebhookConfirm) {
-        els.btnSaveWebhookConfirm.onclick = async () => {
-            const name = document.getElementById('webhook-name').value.trim();
-            const headerName = document.getElementById('webhook-header-name').value.trim();
-            const headerValue = document.getElementById('webhook-header-value').value.trim();
-            const mode = document.getElementById('webhook-header-mode').value;
-            const template = document.getElementById('webhook-template').value.trim();
+	if (els.btnSaveWebhookConfirm) {
+		els.btnSaveWebhookConfirm.onclick = async () => {
+			const name = document.getElementById("webhook-name").value.trim();
+			const headerName = document.getElementById("webhook-header-name").value.trim();
+			const headerValue = document.getElementById("webhook-header-value").value.trim();
+			const mode = document.getElementById("webhook-header-mode").value;
+			const template = document.getElementById("webhook-template").value.trim();
 
-            if (!name || !headerName || !headerValue || !template) {
-                return await showCustomAlert('Preencha todos os campos do webhook.');
-            }
+			if (!name || !headerName || !headerValue || !template) {
+				return await showCustomAlert("Preencha todos os campos do webhook.");
+			}
 
-            if (!groupData.webhooks) groupData.webhooks = [];
+			if (!groupData.webhooks) groupData.webhooks = [];
 
-            const existingIndex = groupData.webhooks.findIndex(w => w.name === name);
-            if (existingIndex === -1 && groupData.webhooks.length >= 10) {
-                return await showCustomAlert('Limite máximo de 10 webhooks atingido.');
-            }
+			const existingIndex = groupData.webhooks.findIndex((w) => w.name === name);
+			if (existingIndex === -1 && groupData.webhooks.length >= 10) {
+				return await showCustomAlert("Limite máximo de 10 webhooks atingido.");
+			}
 
-            const whData = {
-                name,
-                header: { name: headerName, value: headerValue },
-                headerValue: mode,
-                template,
-                createdAt: Date.now()
-            };
+			const whData = {
+				name,
+				header: { name: headerName, value: headerValue },
+				headerValue: mode,
+				template,
+				createdAt: Date.now()
+			};
 
-            if (existingIndex !== -1) {
-                groupData.webhooks[existingIndex] = whData;
-            } else {
-                groupData.webhooks.push(whData);
-            }
+			if (existingIndex !== -1) {
+				groupData.webhooks[existingIndex] = whData;
+			} else {
+				groupData.webhooks.push(whData);
+			}
 
-            setDirty(true);
-            renderWebhooks();
-            els.webhookModal.classList.add('hidden');
-        };
-    }
+			setDirty(true);
+			renderWebhooks();
+			els.webhookModal.classList.add("hidden");
+		};
+	}
 
-    // --- Frequência de Comandos (limites por intervalo) ---
+	// --- Frequência de Comandos (limites por intervalo) ---
 
-    const COMMAND_LIMIT_DEFAULT_HOURS = 24;
-    const COMMAND_LIMIT_MAX_HOURS = 720;
-    const COMMAND_LIMIT_MAX_USES = 1000;
-    const COMMAND_LIMIT_MAX_RULES = 50;
+	const COMMAND_LIMIT_DEFAULT_HOURS = 24;
+	const COMMAND_LIMIT_MAX_HOURS = 720;
+	const COMMAND_LIMIT_MAX_USES = 1000;
+	const COMMAND_LIMIT_MAX_RULES = 50;
 
-    function normalizeLimitCommandName(name) {
-        return String(name || '').trim().toLowerCase().replace(/^!+/, '');
-    }
+	function normalizeLimitCommandName(name) {
+		return String(name || "")
+			.trim()
+			.toLowerCase()
+			.replace(/^!+/, "");
+	}
 
-    function describeCommandLimitScope(scope) {
-        return scope === 'user' ? 'Por pessoa' : 'Global';
-    }
+	function describeCommandLimitScope(scope) {
+		return scope === "user" ? "Por pessoa" : "Global";
+	}
 
-    function updateCommandLimitScopeHint() {
-        const perUser = document.getElementById('new-command-limit-per-user').checked;
-        document.getElementById('command-limit-scope-hint').textContent = perUser
-            ? 'Por pessoa: cada membro pode usar o comando até o limite dentro do intervalo.'
-            : 'Global: o limite é compartilhado por todos os membros do grupo.';
-    }
+	function updateCommandLimitScopeHint() {
+		const perUser = document.getElementById("new-command-limit-per-user").checked;
+		document.getElementById("command-limit-scope-hint").textContent = perUser
+			? "Por pessoa: cada membro pode usar o comando até o limite dentro do intervalo."
+			: "Global: o limite é compartilhado por todos os membros do grupo.";
+	}
 
-    function openCommandLimitModal(index = null) {
-        const limit = index !== null ? (groupData.commandLimits || [])[index] : null;
-        document.getElementById('command-limit-modal-title').textContent = limit ? 'Editar Frequência' : 'Nova Frequência';
-        document.getElementById('command-limit-edit-index').value = index !== null ? String(index) : '';
-        document.getElementById('new-command-limit-command').value = limit?.command || '';
-        document.getElementById('new-command-limit-uses').value = limit?.maxUses ?? '';
-        document.getElementById('new-command-limit-hours').value = limit?.hours ?? COMMAND_LIMIT_DEFAULT_HOURS;
-        document.getElementById('new-command-limit-per-user').checked = limit?.scope === 'user';
-        document.getElementById('new-command-limit-ignore-admins').checked = limit?.ignoreAdmins === true;
-        updateCommandLimitScopeHint();
-        els.commandLimitModal.classList.remove('hidden');
-    }
+	function openCommandLimitModal(index = null) {
+		const limit = index !== null ? (groupData.commandLimits || [])[index] : null;
+		document.getElementById("command-limit-modal-title").textContent = limit
+			? "Editar Frequência"
+			: "Nova Frequência";
+		document.getElementById("command-limit-edit-index").value = index !== null ? String(index) : "";
+		document.getElementById("new-command-limit-command").value = limit?.command || "";
+		document.getElementById("new-command-limit-uses").value = limit?.maxUses ?? "";
+		document.getElementById("new-command-limit-hours").value =
+			limit?.hours ?? COMMAND_LIMIT_DEFAULT_HOURS;
+		document.getElementById("new-command-limit-per-user").checked = limit?.scope === "user";
+		document.getElementById("new-command-limit-ignore-admins").checked =
+			limit?.ignoreAdmins === true;
+		updateCommandLimitScopeHint();
+		els.commandLimitModal.classList.remove("hidden");
+	}
 
-    function renderCommandLimits() {
-        const tbody = document.getElementById('command-limits-table-body');
-        const emptyMsg = document.getElementById('no-command-limits-msg');
-        if (!tbody) return;
-        tbody.innerHTML = '';
+	function renderCommandLimits() {
+		const tbody = document.getElementById("command-limits-table-body");
+		const emptyMsg = document.getElementById("no-command-limits-msg");
+		if (!tbody) return;
+		tbody.innerHTML = "";
 
-        const limits = groupData.commandLimits || [];
-        emptyMsg.classList.toggle('hidden', limits.length > 0);
+		const limits = groupData.commandLimits || [];
+		emptyMsg.classList.toggle("hidden", limits.length > 0);
 
-        limits.forEach((limit, index) => {
-            const tr = document.createElement('tr');
-            tr.innerHTML = `
+		limits.forEach((limit, index) => {
+			const tr = document.createElement("tr");
+			tr.innerHTML = `
                 <td><strong>${escapeHtml(limit.command)}</strong></td>
                 <td>${limit.maxUses}x a cada ${limit.hours}h</td>
                 <td>${describeCommandLimitScope(limit.scope)}</td>
-                <td>${limit.ignoreAdmins ? 'Fora do limite' : 'Limitados'}</td>
+                <td>${limit.ignoreAdmins ? "Fora do limite" : "Limitados"}</td>
                 <td>
                     <button type="button" class="btn btn-xs btn-outline btn-edit-command-limit" title="Editar"><i class="fas fa-pen"></i></button>
                     <button type="button" class="btn btn-xs btn-danger btn-del-command-limit" title="Remover"><i class="fas fa-trash"></i></button>
                 </td>
             `;
 
-            tr.querySelector('.btn-edit-command-limit').onclick = () => openCommandLimitModal(index);
-            tr.querySelector('.btn-del-command-limit').onclick = async () => {
-                if (await showCustomConfirm(`Remover o limite do comando "${escapeHtml(limit.command)}"?`)) {
-                    groupData.commandLimits.splice(index, 1);
-                    setDirty(true);
-                    renderCommandLimits();
-                }
-            };
+			tr.querySelector(".btn-edit-command-limit").onclick = () => openCommandLimitModal(index);
+			tr.querySelector(".btn-del-command-limit").onclick = async () => {
+				if (
+					await showCustomConfirm(`Remover o limite do comando "${escapeHtml(limit.command)}"?`)
+				) {
+					groupData.commandLimits.splice(index, 1);
+					setDirty(true);
+					renderCommandLimits();
+				}
+			};
 
-            tbody.appendChild(tr);
-        });
-    }
+			tbody.appendChild(tr);
+		});
+	}
 
-    const btnAddCommandLimit = document.getElementById('btn-add-command-limit');
-    if (btnAddCommandLimit) {
-        btnAddCommandLimit.onclick = () => openCommandLimitModal();
-    }
+	const btnAddCommandLimit = document.getElementById("btn-add-command-limit");
+	if (btnAddCommandLimit) {
+		btnAddCommandLimit.onclick = () => openCommandLimitModal();
+	}
 
-    const commandLimitPerUserToggle = document.getElementById('new-command-limit-per-user');
-    if (commandLimitPerUserToggle) {
-        commandLimitPerUserToggle.addEventListener('change', updateCommandLimitScopeHint);
-    }
+	const commandLimitPerUserToggle = document.getElementById("new-command-limit-per-user");
+	if (commandLimitPerUserToggle) {
+		commandLimitPerUserToggle.addEventListener("change", updateCommandLimitScopeHint);
+	}
 
-    const btnSaveCommandLimit = document.getElementById('btn-save-command-limit-confirm');
-    if (btnSaveCommandLimit) {
-        btnSaveCommandLimit.onclick = async () => {
-            const editIndexValue = document.getElementById('command-limit-edit-index').value;
-            const editIndex = editIndexValue === '' ? null : Number(editIndexValue);
-            const command = normalizeLimitCommandName(document.getElementById('new-command-limit-command').value);
-            const maxUses = Number(document.getElementById('new-command-limit-uses').value);
-            const hoursValue = document.getElementById('new-command-limit-hours').value;
-            const hours = hoursValue === '' ? COMMAND_LIMIT_DEFAULT_HOURS : Number(hoursValue);
-            const scope = document.getElementById('new-command-limit-per-user').checked ? 'user' : 'global';
-            const ignoreAdmins = document.getElementById('new-command-limit-ignore-admins').checked;
+	const btnSaveCommandLimit = document.getElementById("btn-save-command-limit-confirm");
+	if (btnSaveCommandLimit) {
+		btnSaveCommandLimit.onclick = async () => {
+			const editIndexValue = document.getElementById("command-limit-edit-index").value;
+			const editIndex = editIndexValue === "" ? null : Number(editIndexValue);
+			const command = normalizeLimitCommandName(
+				document.getElementById("new-command-limit-command").value
+			);
+			const maxUses = Number(document.getElementById("new-command-limit-uses").value);
+			const hoursValue = document.getElementById("new-command-limit-hours").value;
+			const hours = hoursValue === "" ? COMMAND_LIMIT_DEFAULT_HOURS : Number(hoursValue);
+			const scope = document.getElementById("new-command-limit-per-user").checked
+				? "user"
+				: "global";
+			const ignoreAdmins = document.getElementById("new-command-limit-ignore-admins").checked;
 
-            if (!command || /\s/.test(command)) {
-                return await showCustomAlert('Informe o nome do comando, sem espaços.');
-            }
-            if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > COMMAND_LIMIT_MAX_USES) {
-                return await showCustomAlert(`O limite de vezes deve ser um número inteiro entre 1 e ${COMMAND_LIMIT_MAX_USES}.`);
-            }
-            if (!Number.isInteger(hours) || hours < 1 || hours > COMMAND_LIMIT_MAX_HOURS) {
-                return await showCustomAlert(`O intervalo deve ser um número inteiro de horas entre 1 e ${COMMAND_LIMIT_MAX_HOURS}.`);
-            }
+			if (!command || /\s/.test(command)) {
+				return await showCustomAlert("Informe o nome do comando, sem espaços.");
+			}
+			if (!Number.isInteger(maxUses) || maxUses < 1 || maxUses > COMMAND_LIMIT_MAX_USES) {
+				return await showCustomAlert(
+					`O limite de vezes deve ser um número inteiro entre 1 e ${COMMAND_LIMIT_MAX_USES}.`
+				);
+			}
+			if (!Number.isInteger(hours) || hours < 1 || hours > COMMAND_LIMIT_MAX_HOURS) {
+				return await showCustomAlert(
+					`O intervalo deve ser um número inteiro de horas entre 1 e ${COMMAND_LIMIT_MAX_HOURS}.`
+				);
+			}
 
-            if (!groupData.commandLimits) groupData.commandLimits = [];
-            const duplicateIndex = groupData.commandLimits.findIndex(l => l.command === command);
-            if (duplicateIndex !== -1 && duplicateIndex !== editIndex) {
-                return await showCustomAlert(`O comando "${escapeHtml(command)}" já tem um limite. Edite o existente.`);
-            }
-            if (editIndex === null && groupData.commandLimits.length >= COMMAND_LIMIT_MAX_RULES) {
-                return await showCustomAlert(`Limite máximo de ${COMMAND_LIMIT_MAX_RULES} comandos com frequência atingido.`);
-            }
+			if (!groupData.commandLimits) groupData.commandLimits = [];
+			const duplicateIndex = groupData.commandLimits.findIndex((l) => l.command === command);
+			if (duplicateIndex !== -1 && duplicateIndex !== editIndex) {
+				return await showCustomAlert(
+					`O comando "${escapeHtml(command)}" já tem um limite. Edite o existente.`
+				);
+			}
+			if (editIndex === null && groupData.commandLimits.length >= COMMAND_LIMIT_MAX_RULES) {
+				return await showCustomAlert(
+					`Limite máximo de ${COMMAND_LIMIT_MAX_RULES} comandos com frequência atingido.`
+				);
+			}
 
-            const limitData = { command, maxUses, hours, scope, ignoreAdmins };
-            if (editIndex !== null) {
-                groupData.commandLimits[editIndex] = limitData;
-            } else {
-                groupData.commandLimits.push(limitData);
-            }
+			const limitData = { command, maxUses, hours, scope, ignoreAdmins };
+			if (editIndex !== null) {
+				groupData.commandLimits[editIndex] = limitData;
+			} else {
+				groupData.commandLimits.push(limitData);
+			}
 
-            setDirty(true);
-            renderCommandLimits();
-            els.commandLimitModal.classList.add('hidden');
-        };
-    }
+			setDirty(true);
+			renderCommandLimits();
+			els.commandLimitModal.classList.add("hidden");
+		};
+	}
 
-    // --- Group Schedules (Abrir/Fechar) ---
+	// --- Group Schedules (Abrir/Fechar) ---
 
-    const DIAS_SEMANA_NOMES = [
-        'Domingo', 'Segunda-feira', 'Terça-feira', 'Quarta-feira',
-        'Quinta-feira', 'Sexta-feira', 'Sábado'
-    ];
+	const DIAS_SEMANA_NOMES = [
+		"Domingo",
+		"Segunda-feira",
+		"Terça-feira",
+		"Quarta-feira",
+		"Quinta-feira",
+		"Sexta-feira",
+		"Sábado"
+	];
 
-    function escapeHtml(str) {
-        if (!str) return '';
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
+	function escapeHtml(str) {
+		if (!str) return "";
+		return String(str)
+			.replace(/&/g, "&amp;")
+			.replace(/</g, "&lt;")
+			.replace(/>/g, "&gt;")
+			.replace(/"/g, "&quot;")
+			.replace(/'/g, "&#039;");
+	}
 
-    async function loadSchedules() {
-        try {
-            const res = await fetch(`${API_BASE}/group-schedules/${groupId}?token=${token}`);
-            if (res.ok) {
-                schedules = await res.json();
-                renderSchedules();
-            }
-        } catch (e) {
-            console.error('Erro ao carregar agendamentos:', e);
-        }
-    }
+	async function loadSchedules() {
+		try {
+			const res = await fetch(`${API_BASE}/group-schedules/${groupId}?token=${token}`);
+			if (res.ok) {
+				schedules = await res.json();
+				renderSchedules();
+			}
+		} catch (e) {
+			console.error("Erro ao carregar agendamentos:", e);
+		}
+	}
 
-    function renderSchedules() {
-        if (!els.schedulesOnetimeContainer || !els.schedulesWeeklyContainer) return;
+	function renderSchedules() {
+		if (!els.schedulesOnetimeContainer || !els.schedulesWeeklyContainer) return;
 
-        els.schedulesOnetimeContainer.innerHTML = '';
-        els.schedulesWeeklyContainer.innerHTML = '';
+		els.schedulesOnetimeContainer.innerHTML = "";
+		els.schedulesWeeklyContainer.innerHTML = "";
 
-        const unicos = schedules.filter(s => s.dia_semana === null || s.dia_semana === undefined);
-        const semanais = schedules.filter(s => s.dia_semana !== null && s.dia_semana !== undefined);
+		const unicos = schedules.filter((s) => s.dia_semana === null || s.dia_semana === undefined);
+		const semanais = schedules.filter((s) => s.dia_semana !== null && s.dia_semana !== undefined);
 
-        if (unicos.length === 0) {
-            els.noSchedulesOnetimeMsg.classList.remove('hidden');
-            els.schedulesOnetimeContainer.appendChild(els.noSchedulesOnetimeMsg);
-        } else {
-            els.noSchedulesOnetimeMsg.classList.add('hidden');
-            unicos.forEach(s => {
-                const card = createScheduleCardElement(s);
-                els.schedulesOnetimeContainer.appendChild(card);
-            });
-        }
+		if (unicos.length === 0) {
+			els.noSchedulesOnetimeMsg.classList.remove("hidden");
+			els.schedulesOnetimeContainer.appendChild(els.noSchedulesOnetimeMsg);
+		} else {
+			els.noSchedulesOnetimeMsg.classList.add("hidden");
+			unicos.forEach((s) => {
+				const card = createScheduleCardElement(s);
+				els.schedulesOnetimeContainer.appendChild(card);
+			});
+		}
 
-        if (semanais.length === 0) {
-            els.noSchedulesWeeklyMsg.classList.remove('hidden');
-            els.schedulesWeeklyContainer.appendChild(els.noSchedulesWeeklyMsg);
-        } else {
-            els.noSchedulesWeeklyMsg.classList.add('hidden');
-            semanais.forEach(s => {
-                const card = createScheduleCardElement(s);
-                els.schedulesWeeklyContainer.appendChild(card);
-            });
-        }
-    }
+		if (semanais.length === 0) {
+			els.noSchedulesWeeklyMsg.classList.remove("hidden");
+			els.schedulesWeeklyContainer.appendChild(els.noSchedulesWeeklyMsg);
+		} else {
+			els.noSchedulesWeeklyMsg.classList.add("hidden");
+			semanais.forEach((s) => {
+				const card = createScheduleCardElement(s);
+				els.schedulesWeeklyContainer.appendChild(card);
+			});
+		}
+	}
 
-    function createScheduleCardElement(s) {
-        const div = document.createElement('div');
-        const isFechar = s.tipo === 'fechar';
-        div.className = `schedule-card ${isFechar ? 'schedule-fechar' : 'schedule-abrir'}`;
+	function createScheduleCardElement(s) {
+		const div = document.createElement("div");
+		const isFechar = s.tipo === "fechar";
+		div.className = `schedule-card ${isFechar ? "schedule-fechar" : "schedule-abrir"}`;
 
-        const emoji = isFechar ? '🔒' : '🔓';
-        const acaoText = isFechar ? 'Fechar Grupo' : 'Abrir Grupo';
-        const horaStr = `${String(s.hora).padStart(2, '0')}:${String(s.minuto).padStart(2, '0')}`;
+		const emoji = isFechar ? "🔒" : "🔓";
+		const acaoText = isFechar ? "Fechar Grupo" : "Abrir Grupo";
+		const horaStr = `${String(s.hora).padStart(2, "0")}:${String(s.minuto).padStart(2, "0")}`;
 
-        let recorrenciaStr = '';
-        if (s.dia_semana !== null && s.dia_semana !== undefined) {
-            recorrenciaStr = `Toda(o) ${DIAS_SEMANA_NOMES[s.dia_semana]}`;
-        } else {
-            recorrenciaStr = 'Execução única';
-        }
+		let recorrenciaStr = "";
+		if (s.dia_semana !== null && s.dia_semana !== undefined) {
+			recorrenciaStr = `Toda(o) ${DIAS_SEMANA_NOMES[s.dia_semana]}`;
+		} else {
+			recorrenciaStr = "Execução única";
+		}
 
-        const fraseHtml = s.frase ? `<div class="schedule-phrase">"${escapeHtml(s.frase)}"</div>` : '';
+		const fraseHtml = s.frase ? `<div class="schedule-phrase">"${escapeHtml(s.frase)}"</div>` : "";
 
-        div.innerHTML = `
+		div.innerHTML = `
             <div class="schedule-info">
                 <div class="schedule-header">
                     <span>${emoji}</span>
@@ -3411,633 +3794,659 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        div.querySelector('.btn-edit-sched').onclick = () => openScheduleModal(s);
-        div.querySelector('.btn-del-sched').onclick = () => deleteSchedule(s.id);
-
-        return div;
-    }
-
-    function openScheduleModal(schedule = null) {
-        if (schedule) {
-            els.scheduleModalTitle.textContent = `Editar Agendamento [${schedule.id}]`;
-            els.scheduleEditId.value = schedule.id;
-            els.scheduleTipo.value = schedule.tipo;
-            els.scheduleHora.value = `${String(schedule.hora).padStart(2, '0')}:${String(schedule.minuto).padStart(2, '0')}`;
-            els.scheduleDia.value = schedule.dia_semana !== null && schedule.dia_semana !== undefined ? schedule.dia_semana : '';
-            els.scheduleFrase.value = schedule.frase || '';
-        } else {
-            els.scheduleModalTitle.textContent = 'Novo Agendamento';
-            els.scheduleEditId.value = '';
-            els.scheduleTipo.value = 'fechar';
-            els.scheduleHora.value = '22:00';
-            els.scheduleDia.value = '';
-            els.scheduleFrase.value = '';
-        }
-        els.scheduleModal.classList.remove('hidden');
-    }
-
-    async function saveSchedule() {
-        const editId = els.scheduleEditId.value;
-        const tipo = els.scheduleTipo.value;
-        const horaRaw = els.scheduleHora.value;
-        const diaSemanaRaw = els.scheduleDia.value;
-        const frase = els.scheduleFrase.value.trim();
-
-        if (!horaRaw) {
-            return await showCustomAlert('Por favor, informe o horário.');
-        }
-
-        const [hStr, mStr] = horaRaw.split(':');
-        const hora = parseInt(hStr, 10);
-        const minuto = parseInt(mStr, 10);
-
-        if (isNaN(hora) || isNaN(minuto)) {
-            return await showCustomAlert('Horário inválido.');
-        }
-
-        if (frase && frase.length > 0 && frase.length < 5) {
-            return await showCustomAlert('A frase personalizada deve ter no mínimo 5 caracteres.');
-        }
-
-        const diaSemana = diaSemanaRaw === '' ? null : parseInt(diaSemanaRaw, 10);
-
-        try {
-            if (editId) {
-                await fetch(`${API_BASE}/group-schedules/${groupId}/${editId}?token=${token}`, {
-                    method: 'DELETE'
-                });
-            }
-
-            const res = await fetch(`${API_BASE}/group-schedules/${groupId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    token,
-                    tipo,
-                    hora,
-                    minuto,
-                    diaSemana,
-                    frase: frase || null
-                })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || 'Falha ao salvar agendamento.');
-            }
-
-            els.scheduleModal.classList.add('hidden');
-            await loadSchedules();
-            await showCustomAlert('Agendamento salvo com sucesso!', 'Sucesso');
-        } catch (e) {
-            await showCustomAlert('Erro ao salvar agendamento: ' + e.message, 'Erro');
-        }
-    }
-
-    async function deleteSchedule(id) {
-        const confirmed = await showCustomConfirm(
-            `Deseja realmente remover o agendamento <b>[${id}]</b>?`,
-            'Excluir Agendamento'
-        );
-        if (!confirmed) return;
-
-        try {
-            const res = await fetch(`${API_BASE}/group-schedules/${groupId}/${id}?token=${token}`, {
-                method: 'DELETE'
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || 'Falha ao excluir agendamento.');
-            }
-
-            await loadSchedules();
-            await showCustomAlert(`Agendamento [${id}] removido com sucesso!`, 'Sucesso');
-        } catch (e) {
-            await showCustomAlert('Erro ao remover agendamento: ' + e.message, 'Erro');
-        }
-    }
-
-    // --- Backups Section ---
-
-    // Export Commands as .ZIP
-    if (els.btnExportCmdsZip) {
-        els.btnExportCmdsZip.onclick = () => {
-            window.location.href = `${API_BASE}/custom-commands/${groupId}/export-zip?token=${token}`;
-        };
-    }
-
-    // Import Commands from .ZIP
-    if (els.fileImportCmdsZip) {
-        els.fileImportCmdsZip.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const confirmed = await showCustomConfirm(
-                `Deseja importar os comandos do arquivo "${file.name}"?<br>Comandos existentes com o mesmo gatilho serão atualizados.`,
-                'Importar Comandos (.zip)'
-            );
-            if (!confirmed) {
-                els.fileImportCmdsZip.value = '';
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('token', token);
-            formData.append('file', file);
-
-            els.loading.classList.remove('hidden');
-            try {
-                const res = await fetch(`${API_BASE}/custom-commands/${groupId}/import-zip`, {
-                    method: 'POST',
-                    body: formData
-                });
-                const result = await res.json();
-                if (result.success) {
-                    await loadData();
-                    await showCustomAlert(`Importação concluída!<br><b>${result.importedCount}</b> comando(s) e <b>${result.mediaCount}</b> mídia(s) restauradas.`, 'Sucesso');
-                } else {
-                    throw new Error(result.message || 'Erro na importação');
-                }
-            } catch (err) {
-                await showCustomAlert('Erro ao importar comandos: ' + err.message, 'Erro');
-            } finally {
-                els.loading.classList.add('hidden');
-                els.fileImportCmdsZip.value = '';
-            }
-        };
-    }
-
-    // Export Configs as .JSON
-    if (els.btnExportConfigJson) {
-        els.btnExportConfigJson.onclick = () => {
-            const backupData = {
-                version: 1,
-                exportedAt: new Date().toISOString(),
-                groupId: groupId,
-                groupName: groupData.name || 'grupo',
-                config: JSON.parse(JSON.stringify(groupData))
-            };
-
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
-            const downloadAnchor = document.createElement('a');
-            downloadAnchor.setAttribute("href", dataStr);
-            downloadAnchor.setAttribute("download", `${groupData.name || 'grupo'}_config_backup.json`);
-            document.body.appendChild(downloadAnchor);
-            downloadAnchor.click();
-            downloadAnchor.remove();
-        };
-    }
-
-    // Import Configs from .JSON with ID and Name check
-    if (els.fileImportConfigJson) {
-        els.fileImportConfigJson.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-
-            const reader = new FileReader();
-            reader.onload = async (event) => {
-                try {
-                    const parsed = JSON.parse(event.target.result);
-                    const backupConfig = parsed.config || parsed;
-                    const backupGroupId = parsed.groupId || backupConfig.id;
-
-                    // 1. Check Group ID
-                    if (backupGroupId && backupGroupId !== groupId) {
-                        const allowCrossGroup = await showCustomConfirm(
-                            `⚠️ <b>Atenção:</b> Este arquivo de backup foi gerado a partir de outro grupo (<code class="text-xs">${backupGroupId}</code>).<br><br>Aplicar estas configurações sobrescreverá as preferências do grupo atual (<code class="text-xs">${groupId}</code>). Deseja continuar?`,
-                            'Grupo Diferente Detectado'
-                        );
-                        if (!allowCrossGroup) return;
-                    }
-
-                    // 2. Check Name Uniqueness
-                    let targetName = (backupConfig.name || groupData.name || '').trim().toLowerCase();
-                    if (targetName) {
-                        const checkRes = await fetch(`${API_BASE}/group/check-import-name`, {
-                            method: 'POST',
-                            headers: {'Content-Type': 'application/json'},
-                            body: JSON.stringify({ token, groupId, name: targetName })
-                        }).then(r => r.json());
-
-                        if (!checkRes.available) {
-                            const newName = await showCustomPrompt(
-                                `O nome "<b>${targetName}</b>" já está em uso por outro grupo no sistema.<br>Por favor, defina um nome único para este grupo:`,
-                                targetName + '_novo',
-                                'Nome Duplicado'
-                            );
-                            if (!newName || !newName.trim()) return;
-                            targetName = newName.trim().toLowerCase();
-                        }
-                    }
-
-                    // Apply settings
-                    const protectedFields = ['id', 'createdAt', 'participants'];
-                    for (let key in backupConfig) {
-                        if (!protectedFields.includes(key)) {
-                            groupData[key] = backupConfig[key];
-                        }
-                    }
-                    if (targetName) groupData.name = targetName;
-
-                    populateFields();
-                    renderWarnings();
-                    renderWebhooks();
-                    renderCommandLimits();
-                    setDirty(true);
-
-                    await showCustomAlert('Configurações importadas com sucesso! Clique em "Salvar Tudo" para consolidar as alterações.', 'Importação Concluída');
-
-                } catch (err) {
-                    await showCustomAlert('Erro ao ler arquivo de backup: ' + err.message, 'Arquivo Inválido');
-                } finally {
-                    els.fileImportConfigJson.value = '';
-                }
-            };
-            reader.readAsText(file);
-        };
-    }
-
-    // --- Setup Listeners & Modals ---
-
-    function setupEventListeners() {
-        els.retryBtn.addEventListener('click', () => window.location.reload());
-        
-        // Hero Status Switch
-        if (els.groupPausedToggle) {
-            els.groupPausedToggle.addEventListener('change', (e) => {
-                const isPaused = !e.target.checked;
-                groupData.paused = isPaused;
-                updateHeroStatusVisuals(isPaused);
-                document.getElementById('bot-enabled').checked = !isPaused;
-                setDirty(true);
-            });
-        }
-
-        const botEnabledCheckbox = document.getElementById('bot-enabled');
-        if (botEnabledCheckbox) {
-            botEnabledCheckbox.addEventListener('change', (e) => {
-                const isEnabled = e.target.checked;
-                groupData.paused = !isEnabled;
-                updateHeroStatusVisuals(!isEnabled);
-                setDirty(true);
-            });
-        }
-
-        const interactUseCmdsCheckbox = document.getElementById('interact-use-cmds');
-        if (interactUseCmdsCheckbox) {
-            interactUseCmdsCheckbox.addEventListener('change', (e) => {
-                if (!groupData.interact) groupData.interact = {};
-                groupData.interact.useCmds = e.target.checked;
-                setDirty(true);
-            });
-        }
-
-        const interactVotePollsCheckbox = document.getElementById('interact-vote-polls');
-        if (interactVotePollsCheckbox) {
-            interactVotePollsCheckbox.addEventListener('change', (e) => {
-                if (!groupData.interact) groupData.interact = {};
-                groupData.interact.voteInPolls = e.target.checked;
-                setDirty(true);
-            });
-        }
-
-        if (document.getElementById('btn-lang-picker')) {
-            document.getElementById('btn-lang-picker').addEventListener('click', () => {
-                document.getElementById('variable-modal-title').textContent = 'Idiomas Disponíveis';
-                document.getElementById('variable-search').value = '';
-                document.getElementById('variable-search').placeholder = 'Buscar idioma...';
-                pickerMode = 'language';
-                renderLanguages();
-                els.variableModal.classList.remove('hidden');
-                document.getElementById('variable-search').focus();
-            });
-        }
-
-        document.getElementById('variable-search').addEventListener('input', (e) => {
-            if (pickerMode === 'variable') {
-                renderVariables(e.target.value);
-            } else {
-                renderLanguages(e.target.value);
-            }
-        });
-
-        els.closeModalBtns.forEach(b => {
-            b.onclick = () => {
-                els.cmdModal.classList.add('hidden');
-                els.streamModal.classList.add('hidden');
-                els.variableModal.classList.add('hidden');
-                els.emojiModal.classList.add('hidden');
-                els.customDialogModal.classList.add('hidden');
-                els.memberModal.classList.add('hidden');
-                els.webhookModal.classList.add('hidden');
-                els.scheduleModal.classList.add('hidden');
-                els.commandLimitModal.classList.add('hidden');
-            };
-        });
-        els.closeUploadBtns.forEach(b => b.onclick = () => els.uploadModal.classList.add('hidden'));
-
-        if (els.btnAddSchedule) {
-            els.btnAddSchedule.onclick = () => openScheduleModal();
-        }
-        if (els.btnSaveScheduleConfirm) {
-            els.btnSaveScheduleConfirm.onclick = saveSchedule;
-        }
-
-        // Tag inputs
-        setupListAdder('add-ignored-number', 'new-ignored-number', 'ignoredNumbers');
-        setupListAdder('add-forbidden-word', 'new-forbidden-word', 'filters.words');
-        setupRegexAdder('add-forbidden-regex', 'new-forbidden-regex', 'regex-error-msg', 'forbidden-regexes-list');
-        setupListAdder('add-forbidden-user', 'new-forbidden-user', 'filters.people');
-        setupListAdder('add-muted-command', 'new-muted-command', 'mutedCommands');
-        setupListAdder('add-additional-admin', 'new-additional-admin', 'additionalAdmins');
-        setupListAdder('add-allowed-link', 'new-allowed-link', 'filters.allowedLinks');
-
-        // Monitoramento
-        const btnAddMonWord = document.getElementById('add-monitored-word');
-        const inputMonWord = document.getElementById('new-monitored-word');
-        const errMonWord = document.getElementById('monitored-word-error');
-        if (btnAddMonWord && inputMonWord) {
-            const handleAddWord = () => {
-                const val = inputMonWord.value.trim();
-                if (!val) return;
-                if (errMonWord) errMonWord.style.display = 'none';
-                if (val.length < 5) {
-                    if (errMonWord) {
-                        errMonWord.textContent = 'A palavra ou frase deve ter no mínimo 5 caracteres.';
-                        errMonWord.style.display = 'block';
-                    }
-                    return;
-                }
-                const totalRules = (groupData.monitoring?.rules || []).length;
-                if (totalRules >= 15) {
-                    if (errMonWord) {
-                        errMonWord.textContent = 'Limite atingido: máximo de 15 regras por grupo.';
-                        errMonWord.style.display = 'block';
-                    }
-                    return;
-                }
-                inputMonWord.value = '';
-                addMonitoringRule('word', val);
-            };
-            btnAddMonWord.onclick = handleAddWord;
-            inputMonWord.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddWord();
-                }
-            });
-        }
-
-        const btnAddMonRegex = document.getElementById('add-monitored-regex');
-        const inputMonRegex = document.getElementById('new-monitored-regex');
-        const errMonRegex = document.getElementById('monitored-regex-error');
-        if (btnAddMonRegex && inputMonRegex) {
-            const handleAddRegex = () => {
-                const val = inputMonRegex.value.trim();
-                if (!val) return;
-                if (errMonRegex) errMonRegex.style.display = 'none';
-                const validation = validateRegexClient(val);
-                if (!validation.valid) {
-                    if (errMonRegex) {
-                        errMonRegex.textContent = validation.error;
-                        errMonRegex.style.display = 'block';
-                    }
-                    return;
-                }
-                const totalRules = (groupData.monitoring?.rules || []).length;
-                if (totalRules >= 15) {
-                    if (errMonRegex) {
-                        errMonRegex.textContent = 'Limite atingido: máximo de 15 regras por grupo.';
-                        errMonRegex.style.display = 'block';
-                    }
-                    return;
-                }
-                inputMonRegex.value = '';
-                addMonitoringRule('regex', val);
-            };
-            btnAddMonRegex.onclick = handleAddRegex;
-            inputMonRegex.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    handleAddRegex();
-                }
-            });
-        }
-
-        const btnMarkAllOccs = document.getElementById('btn-mark-all-seen');
-        if (btnMarkAllOccs) {
-            btnMarkAllOccs.onclick = markAllOccurrencesSeen;
-        }
-
-        const btnAddTrustedLinks = document.getElementById('btn-add-trusted-links');
-        if (btnAddTrustedLinks) {
-            btnAddTrustedLinks.addEventListener('click', () => {
-                if (!groupData.filters) groupData.filters = {};
-                if (!Array.isArray(groupData.filters.allowedLinks)) groupData.filters.allowedLinks = [];
-                let addedCount = 0;
-                for (const domain of TRUSTED_DOMAINS) {
-                    if (!groupData.filters.allowedLinks.includes(domain)) {
-                        groupData.filters.allowedLinks.push(domain);
-                        addedCount++;
-                    }
-                }
-                if (addedCount > 0) {
-                    setDirty(true);
-                    renderTags('allowed-links-list', groupData.filters.allowedLinks, (newList) => {
-                        groupData.filters.allowedLinks = newList;
-                        setDirty(true);
-                    });
-                }
-            });
-        }
-
-        const botPersonalityInput = document.getElementById('bot-personality');
-        if (botPersonalityInput) {
-            botPersonalityInput.addEventListener('input', (e) => {
-                document.getElementById('personality-count').textContent = e.target.value.length;
-                const dynEl = document.getElementById('dinamic-personality');
-                if (dynEl) dynEl.checked = false;
-            });
-        }
-
-        const groupRulesInput = document.getElementById('group-rules');
-        if (groupRulesInput) {
-            groupRulesInput.addEventListener('input', (e) => {
-                const countEl = document.getElementById('rules-count');
-                if (countEl) countEl.textContent = e.target.value.length;
-            });
-        }
-
-        const deleteNsfwCheckbox = document.getElementById('delete-nsfw');
-        if (deleteNsfwCheckbox) {
-            deleteNsfwCheckbox.addEventListener('change', (e) => {
-                toggleNsfwSettings(e.target.checked);
-            });
-        }
-
-        const nsfwSlider = document.getElementById('nsfw-intensity');
-        if (nsfwSlider) {
-            nsfwSlider.addEventListener('input', (e) => {
-                document.getElementById('nsfw-intensity-val').textContent = e.target.value;
-                setDirty(true);
-            });
-        }
-
-        const autoInteractionCheckbox = document.getElementById('auto-interaction');
-        if (autoInteractionCheckbox) {
-            autoInteractionCheckbox.addEventListener('change', (e) => {
-                toggleInteractionSettings(e.target.checked);
-            });
-        }
-
-        const autoTranslateCheckbox = document.getElementById('auto-translate');
-        if (autoTranslateCheckbox) {
-            autoTranslateCheckbox.addEventListener('change', (e) => {
-                toggleTranslateSettings(e.target.checked);
-            });
-        }
-
-        const chanceSlider = document.getElementById('interaction-chance');
-        if (chanceSlider) {
-            chanceSlider.addEventListener('input', (e) => {
-                document.getElementById('chance-val').textContent = e.target.value;
-                const descEl = document.getElementById('chance-desc-val');
-                if (descEl) descEl.textContent = e.target.value + '%';
-                setDirty(true);
-            });
-        }
-
-        const cooldownSlider = document.getElementById('interaction-cooldown');
-        if (cooldownSlider) {
-            cooldownSlider.addEventListener('input', (e) => {
-                document.getElementById('cooldown-val').textContent = formatCooldownText(e.target.value);
-                setDirty(true);
-            });
-        }
-
-        const proporcaoSlider = document.getElementById('interaction-proporcao');
-        if (proporcaoSlider) {
-            proporcaoSlider.addEventListener('input', (e) => {
-                const val = parseInt(e.target.value);
-                document.getElementById('proporcao-val').textContent = val;
-                const iaChance = val;
-                const cmdChance = 100 - val;
-                const descEl = document.getElementById('proporcao-desc');
-                if (descEl) {
-                    if (iaChance === 100) {
-                        descEl.innerHTML = "Usando apenas <b>IA</b> para interagir";
-                    } else if (iaChance === 0) {
-                        descEl.innerHTML = "Usando apenas <b>comandos</b> para interagir";
-                    } else {
-                        descEl.textContent = `${cmdChance}% de chance de usar comandos, ${iaChance}% de chance de usar IA`;
-                    }
-                }
-                setDirty(true);
-            });
-        }
-
-        const mcServerInput = document.getElementById('minecraft-server');
-        if (mcServerInput) {
-            mcServerInput.addEventListener('input', () => setDirty(true));
-            mcServerInput.addEventListener('change', () => setDirty(true));
-        }
-
-        const roletaTempoInput = document.getElementById('roleta-tempo');
-        if (roletaTempoInput) {
-            roletaTempoInput.addEventListener('input', () => setDirty(true));
-            roletaTempoInput.addEventListener('change', () => setDirty(true));
-        }
-
-        const roletaSilenciarInput = document.getElementById('roleta-silenciar');
-        if (roletaSilenciarInput) {
-            roletaSilenciarInput.addEventListener('change', () => setDirty(true));
-        }
-
-        // Saída amigável do bot
-        const btnRemoverBot = document.getElementById('btn-remover-bot-grupo');
-        const modalSaida = document.getElementById('modal-confirmar-saida');
-        const btnConfirmarSaida = document.getElementById('btn-confirmar-saida-grupo');
-        const closeSaidaBtns = document.querySelectorAll('.close-saida-modal');
-
-        if (btnRemoverBot && modalSaida) {
-            btnRemoverBot.addEventListener('click', () => {
-                modalSaida.classList.remove('hidden');
-            });
-        }
-
-        closeSaidaBtns.forEach((btn) => {
-            btn.addEventListener('click', () => {
-                if (modalSaida) modalSaida.classList.add('hidden');
-            });
-        });
-
-        if (btnConfirmarSaida) {
-            btnConfirmarSaida.addEventListener('click', async () => {
-                btnConfirmarSaida.disabled = true;
-                btnConfirmarSaida.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saindo do grupo...';
-
-                try {
-                    const res = await fetch(`${API_BASE}/group/leave-friendly`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ token, groupId })
-                    });
-                    const data = await res.json();
-                    if (!res.ok || !data.success) {
-                        throw new Error(data.message || 'Erro ao solicitar remoção do bot');
-                    }
-
-                    if (modalSaida) modalSaida.classList.add('hidden');
-                    await customAlert(
-                        'A Ravena saiu do grupo amigavelmente. As portas ficam abertas para nos reencontrarmos no futuro! Agradecemos o tempo juntos.',
-                        'Saída Concluída'
-                    );
-                    document.body.innerHTML = `
+		div.querySelector(".btn-edit-sched").onclick = () => openScheduleModal(s);
+		div.querySelector(".btn-del-sched").onclick = () => deleteSchedule(s.id);
+
+		return div;
+	}
+
+	function openScheduleModal(schedule = null) {
+		if (schedule) {
+			els.scheduleModalTitle.textContent = `Editar Agendamento [${schedule.id}]`;
+			els.scheduleEditId.value = schedule.id;
+			els.scheduleTipo.value = schedule.tipo;
+			els.scheduleHora.value = `${String(schedule.hora).padStart(2, "0")}:${String(schedule.minuto).padStart(2, "0")}`;
+			els.scheduleDia.value =
+				schedule.dia_semana !== null && schedule.dia_semana !== undefined
+					? schedule.dia_semana
+					: "";
+			els.scheduleFrase.value = schedule.frase || "";
+		} else {
+			els.scheduleModalTitle.textContent = "Novo Agendamento";
+			els.scheduleEditId.value = "";
+			els.scheduleTipo.value = "fechar";
+			els.scheduleHora.value = "22:00";
+			els.scheduleDia.value = "";
+			els.scheduleFrase.value = "";
+		}
+		els.scheduleModal.classList.remove("hidden");
+	}
+
+	async function saveSchedule() {
+		const editId = els.scheduleEditId.value;
+		const tipo = els.scheduleTipo.value;
+		const horaRaw = els.scheduleHora.value;
+		const diaSemanaRaw = els.scheduleDia.value;
+		const frase = els.scheduleFrase.value.trim();
+
+		if (!horaRaw) {
+			return await showCustomAlert("Por favor, informe o horário.");
+		}
+
+		const [hStr, mStr] = horaRaw.split(":");
+		const hora = parseInt(hStr, 10);
+		const minuto = parseInt(mStr, 10);
+
+		if (isNaN(hora) || isNaN(minuto)) {
+			return await showCustomAlert("Horário inválido.");
+		}
+
+		if (frase && frase.length > 0 && frase.length < 5) {
+			return await showCustomAlert("A frase personalizada deve ter no mínimo 5 caracteres.");
+		}
+
+		const diaSemana = diaSemanaRaw === "" ? null : parseInt(diaSemanaRaw, 10);
+
+		try {
+			if (editId) {
+				await fetch(`${API_BASE}/group-schedules/${groupId}/${editId}?token=${token}`, {
+					method: "DELETE"
+				});
+			}
+
+			const res = await fetch(`${API_BASE}/group-schedules/${groupId}`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					token,
+					tipo,
+					hora,
+					minuto,
+					diaSemana,
+					frase: frase || null
+				})
+			});
+
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.message || "Falha ao salvar agendamento.");
+			}
+
+			els.scheduleModal.classList.add("hidden");
+			await loadSchedules();
+			await showCustomAlert("Agendamento salvo com sucesso!", "Sucesso");
+		} catch (e) {
+			await showCustomAlert("Erro ao salvar agendamento: " + e.message, "Erro");
+		}
+	}
+
+	async function deleteSchedule(id) {
+		const confirmed = await showCustomConfirm(
+			`Deseja realmente remover o agendamento <b>[${id}]</b>?`,
+			"Excluir Agendamento"
+		);
+		if (!confirmed) return;
+
+		try {
+			const res = await fetch(`${API_BASE}/group-schedules/${groupId}/${id}?token=${token}`, {
+				method: "DELETE"
+			});
+
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.message || "Falha ao excluir agendamento.");
+			}
+
+			await loadSchedules();
+			await showCustomAlert(`Agendamento [${id}] removido com sucesso!`, "Sucesso");
+		} catch (e) {
+			await showCustomAlert("Erro ao remover agendamento: " + e.message, "Erro");
+		}
+	}
+
+	// --- Backups Section ---
+
+	// Export Commands as .ZIP
+	if (els.btnExportCmdsZip) {
+		els.btnExportCmdsZip.onclick = () => {
+			window.location.href = `${API_BASE}/custom-commands/${groupId}/export-zip?token=${token}`;
+		};
+	}
+
+	// Import Commands from .ZIP
+	if (els.fileImportCmdsZip) {
+		els.fileImportCmdsZip.onchange = async (e) => {
+			const file = e.target.files[0];
+			if (!file) return;
+
+			const confirmed = await showCustomConfirm(
+				`Deseja importar os comandos do arquivo "${file.name}"?<br>Comandos existentes com o mesmo gatilho serão atualizados.`,
+				"Importar Comandos (.zip)"
+			);
+			if (!confirmed) {
+				els.fileImportCmdsZip.value = "";
+				return;
+			}
+
+			const formData = new FormData();
+			formData.append("token", token);
+			formData.append("file", file);
+
+			els.loading.classList.remove("hidden");
+			try {
+				const res = await fetch(`${API_BASE}/custom-commands/${groupId}/import-zip`, {
+					method: "POST",
+					body: formData
+				});
+				const result = await res.json();
+				if (result.success) {
+					await loadData();
+					await showCustomAlert(
+						`Importação concluída!<br><b>${result.importedCount}</b> comando(s) e <b>${result.mediaCount}</b> mídia(s) restauradas.`,
+						"Sucesso"
+					);
+				} else {
+					throw new Error(result.message || "Erro na importação");
+				}
+			} catch (err) {
+				await showCustomAlert("Erro ao importar comandos: " + err.message, "Erro");
+			} finally {
+				els.loading.classList.add("hidden");
+				els.fileImportCmdsZip.value = "";
+			}
+		};
+	}
+
+	// Export Configs as .JSON
+	if (els.btnExportConfigJson) {
+		els.btnExportConfigJson.onclick = () => {
+			const backupData = {
+				version: 1,
+				exportedAt: new Date().toISOString(),
+				groupId,
+				groupName: groupData.name || "grupo",
+				config: JSON.parse(JSON.stringify(groupData))
+			};
+
+			const dataStr =
+				"data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(backupData, null, 2));
+			const downloadAnchor = document.createElement("a");
+			downloadAnchor.setAttribute("href", dataStr);
+			downloadAnchor.setAttribute("download", `${groupData.name || "grupo"}_config_backup.json`);
+			document.body.appendChild(downloadAnchor);
+			downloadAnchor.click();
+			downloadAnchor.remove();
+		};
+	}
+
+	// Import Configs from .JSON with ID and Name check
+	if (els.fileImportConfigJson) {
+		els.fileImportConfigJson.onchange = async (e) => {
+			const file = e.target.files[0];
+			if (!file) return;
+
+			const reader = new FileReader();
+			reader.onload = async (event) => {
+				try {
+					const parsed = JSON.parse(event.target.result);
+					const backupConfig = parsed.config || parsed;
+					const backupGroupId = parsed.groupId || backupConfig.id;
+
+					// 1. Check Group ID
+					if (backupGroupId && backupGroupId !== groupId) {
+						const allowCrossGroup = await showCustomConfirm(
+							`⚠️ <b>Atenção:</b> Este arquivo de backup foi gerado a partir de outro grupo (<code class="text-xs">${backupGroupId}</code>).<br><br>Aplicar estas configurações sobrescreverá as preferências do grupo atual (<code class="text-xs">${groupId}</code>). Deseja continuar?`,
+							"Grupo Diferente Detectado"
+						);
+						if (!allowCrossGroup) return;
+					}
+
+					// 2. Check Name Uniqueness
+					let targetName = (backupConfig.name || groupData.name || "").trim().toLowerCase();
+					if (targetName) {
+						const checkRes = await fetch(`${API_BASE}/group/check-import-name`, {
+							method: "POST",
+							headers: { "Content-Type": "application/json" },
+							body: JSON.stringify({ token, groupId, name: targetName })
+						}).then((r) => r.json());
+
+						if (!checkRes.available) {
+							const newName = await showCustomPrompt(
+								`O nome "<b>${targetName}</b>" já está em uso por outro grupo no sistema.<br>Por favor, defina um nome único para este grupo:`,
+								targetName + "_novo",
+								"Nome Duplicado"
+							);
+							if (!newName || !newName.trim()) return;
+							targetName = newName.trim().toLowerCase();
+						}
+					}
+
+					// Apply settings
+					const protectedFields = ["id", "createdAt", "participants"];
+					for (const key in backupConfig) {
+						if (!protectedFields.includes(key)) {
+							groupData[key] = backupConfig[key];
+						}
+					}
+					if (targetName) groupData.name = targetName;
+
+					populateFields();
+					renderWarnings();
+					renderWebhooks();
+					renderCommandLimits();
+					setDirty(true);
+
+					await showCustomAlert(
+						'Configurações importadas com sucesso! Clique em "Salvar Tudo" para consolidar as alterações.',
+						"Importação Concluída"
+					);
+				} catch (err) {
+					await showCustomAlert(
+						"Erro ao ler arquivo de backup: " + err.message,
+						"Arquivo Inválido"
+					);
+				} finally {
+					els.fileImportConfigJson.value = "";
+				}
+			};
+			reader.readAsText(file);
+		};
+	}
+
+	// --- Setup Listeners & Modals ---
+
+	function setupEventListeners() {
+		els.retryBtn.addEventListener("click", () => window.location.reload());
+
+		// Hero Status Switch
+		if (els.groupPausedToggle) {
+			els.groupPausedToggle.addEventListener("change", (e) => {
+				const isPaused = !e.target.checked;
+				groupData.paused = isPaused;
+				updateHeroStatusVisuals(isPaused);
+				document.getElementById("bot-enabled").checked = !isPaused;
+				setDirty(true);
+			});
+		}
+
+		const botEnabledCheckbox = document.getElementById("bot-enabled");
+		if (botEnabledCheckbox) {
+			botEnabledCheckbox.addEventListener("change", (e) => {
+				const isEnabled = e.target.checked;
+				groupData.paused = !isEnabled;
+				updateHeroStatusVisuals(!isEnabled);
+				setDirty(true);
+			});
+		}
+
+		const interactUseCmdsCheckbox = document.getElementById("interact-use-cmds");
+		if (interactUseCmdsCheckbox) {
+			interactUseCmdsCheckbox.addEventListener("change", (e) => {
+				if (!groupData.interact) groupData.interact = {};
+				groupData.interact.useCmds = e.target.checked;
+				setDirty(true);
+			});
+		}
+
+		const interactVotePollsCheckbox = document.getElementById("interact-vote-polls");
+		if (interactVotePollsCheckbox) {
+			interactVotePollsCheckbox.addEventListener("change", (e) => {
+				if (!groupData.interact) groupData.interact = {};
+				groupData.interact.voteInPolls = e.target.checked;
+				setDirty(true);
+			});
+		}
+
+		if (document.getElementById("btn-lang-picker")) {
+			document.getElementById("btn-lang-picker").addEventListener("click", () => {
+				document.getElementById("variable-modal-title").textContent = "Idiomas Disponíveis";
+				document.getElementById("variable-search").value = "";
+				document.getElementById("variable-search").placeholder = "Buscar idioma...";
+				pickerMode = "language";
+				renderLanguages();
+				els.variableModal.classList.remove("hidden");
+				document.getElementById("variable-search").focus();
+			});
+		}
+
+		document.getElementById("variable-search").addEventListener("input", (e) => {
+			if (pickerMode === "variable") {
+				renderVariables(e.target.value);
+			} else {
+				renderLanguages(e.target.value);
+			}
+		});
+
+		els.closeModalBtns.forEach((b) => {
+			b.onclick = () => {
+				els.cmdModal.classList.add("hidden");
+				els.streamModal.classList.add("hidden");
+				els.variableModal.classList.add("hidden");
+				els.emojiModal.classList.add("hidden");
+				els.customDialogModal.classList.add("hidden");
+				els.memberModal.classList.add("hidden");
+				els.webhookModal.classList.add("hidden");
+				els.scheduleModal.classList.add("hidden");
+				els.commandLimitModal.classList.add("hidden");
+			};
+		});
+		els.closeUploadBtns.forEach((b) => (b.onclick = () => els.uploadModal.classList.add("hidden")));
+
+		if (els.btnAddSchedule) {
+			els.btnAddSchedule.onclick = () => openScheduleModal();
+		}
+		if (els.btnSaveScheduleConfirm) {
+			els.btnSaveScheduleConfirm.onclick = saveSchedule;
+		}
+
+		// Tag inputs
+		setupListAdder("add-ignored-number", "new-ignored-number", "ignoredNumbers");
+		setupListAdder("add-forbidden-word", "new-forbidden-word", "filters.words");
+		setupRegexAdder(
+			"add-forbidden-regex",
+			"new-forbidden-regex",
+			"regex-error-msg",
+			"forbidden-regexes-list"
+		);
+		setupListAdder("add-forbidden-user", "new-forbidden-user", "filters.people");
+		setupListAdder("add-muted-command", "new-muted-command", "mutedCommands");
+		setupListAdder("add-additional-admin", "new-additional-admin", "additionalAdmins");
+		setupListAdder("add-allowed-link", "new-allowed-link", "filters.allowedLinks");
+
+		// Monitoramento
+		const btnAddMonWord = document.getElementById("add-monitored-word");
+		const inputMonWord = document.getElementById("new-monitored-word");
+		const errMonWord = document.getElementById("monitored-word-error");
+		if (btnAddMonWord && inputMonWord) {
+			const handleAddWord = () => {
+				const val = inputMonWord.value.trim();
+				if (!val) return;
+				if (errMonWord) errMonWord.style.display = "none";
+				if (val.length < 5) {
+					if (errMonWord) {
+						errMonWord.textContent = "A palavra ou frase deve ter no mínimo 5 caracteres.";
+						errMonWord.style.display = "block";
+					}
+					return;
+				}
+				const totalRules = (groupData.monitoring?.rules || []).length;
+				if (totalRules >= 15) {
+					if (errMonWord) {
+						errMonWord.textContent = "Limite atingido: máximo de 15 regras por grupo.";
+						errMonWord.style.display = "block";
+					}
+					return;
+				}
+				inputMonWord.value = "";
+				addMonitoringRule("word", val);
+			};
+			btnAddMonWord.onclick = handleAddWord;
+			inputMonWord.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					handleAddWord();
+				}
+			});
+		}
+
+		const btnAddMonRegex = document.getElementById("add-monitored-regex");
+		const inputMonRegex = document.getElementById("new-monitored-regex");
+		const errMonRegex = document.getElementById("monitored-regex-error");
+		if (btnAddMonRegex && inputMonRegex) {
+			const handleAddRegex = () => {
+				const val = inputMonRegex.value.trim();
+				if (!val) return;
+				if (errMonRegex) errMonRegex.style.display = "none";
+				const validation = validateRegexClient(val);
+				if (!validation.valid) {
+					if (errMonRegex) {
+						errMonRegex.textContent = validation.error;
+						errMonRegex.style.display = "block";
+					}
+					return;
+				}
+				const totalRules = (groupData.monitoring?.rules || []).length;
+				if (totalRules >= 15) {
+					if (errMonRegex) {
+						errMonRegex.textContent = "Limite atingido: máximo de 15 regras por grupo.";
+						errMonRegex.style.display = "block";
+					}
+					return;
+				}
+				inputMonRegex.value = "";
+				addMonitoringRule("regex", val);
+			};
+			btnAddMonRegex.onclick = handleAddRegex;
+			inputMonRegex.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					handleAddRegex();
+				}
+			});
+		}
+
+		const btnMarkAllOccs = document.getElementById("btn-mark-all-seen");
+		if (btnMarkAllOccs) {
+			btnMarkAllOccs.onclick = markAllOccurrencesSeen;
+		}
+
+		const btnAddTrustedLinks = document.getElementById("btn-add-trusted-links");
+		if (btnAddTrustedLinks) {
+			btnAddTrustedLinks.addEventListener("click", () => {
+				if (!groupData.filters) groupData.filters = {};
+				if (!Array.isArray(groupData.filters.allowedLinks)) groupData.filters.allowedLinks = [];
+				let addedCount = 0;
+				for (const domain of TRUSTED_DOMAINS) {
+					if (!groupData.filters.allowedLinks.includes(domain)) {
+						groupData.filters.allowedLinks.push(domain);
+						addedCount++;
+					}
+				}
+				if (addedCount > 0) {
+					setDirty(true);
+					renderTags("allowed-links-list", groupData.filters.allowedLinks, (newList) => {
+						groupData.filters.allowedLinks = newList;
+						setDirty(true);
+					});
+				}
+			});
+		}
+
+		const botPersonalityInput = document.getElementById("bot-personality");
+		if (botPersonalityInput) {
+			botPersonalityInput.addEventListener("input", (e) => {
+				document.getElementById("personality-count").textContent = e.target.value.length;
+				const dynEl = document.getElementById("dinamic-personality");
+				if (dynEl) dynEl.checked = false;
+			});
+		}
+
+		const groupRulesInput = document.getElementById("group-rules");
+		if (groupRulesInput) {
+			groupRulesInput.addEventListener("input", (e) => {
+				const countEl = document.getElementById("rules-count");
+				if (countEl) countEl.textContent = e.target.value.length;
+			});
+		}
+
+		const deleteNsfwCheckbox = document.getElementById("delete-nsfw");
+		if (deleteNsfwCheckbox) {
+			deleteNsfwCheckbox.addEventListener("change", (e) => {
+				toggleNsfwSettings(e.target.checked);
+			});
+		}
+
+		const nsfwSlider = document.getElementById("nsfw-intensity");
+		if (nsfwSlider) {
+			nsfwSlider.addEventListener("input", (e) => {
+				document.getElementById("nsfw-intensity-val").textContent = e.target.value;
+				setDirty(true);
+			});
+		}
+
+		const autoInteractionCheckbox = document.getElementById("auto-interaction");
+		if (autoInteractionCheckbox) {
+			autoInteractionCheckbox.addEventListener("change", (e) => {
+				toggleInteractionSettings(e.target.checked);
+			});
+		}
+
+		const autoTranslateCheckbox = document.getElementById("auto-translate");
+		if (autoTranslateCheckbox) {
+			autoTranslateCheckbox.addEventListener("change", (e) => {
+				toggleTranslateSettings(e.target.checked);
+			});
+		}
+
+		const chanceSlider = document.getElementById("interaction-chance");
+		if (chanceSlider) {
+			chanceSlider.addEventListener("input", (e) => {
+				document.getElementById("chance-val").textContent = e.target.value;
+				const descEl = document.getElementById("chance-desc-val");
+				if (descEl) descEl.textContent = e.target.value + "%";
+				setDirty(true);
+			});
+		}
+
+		const cooldownSlider = document.getElementById("interaction-cooldown");
+		if (cooldownSlider) {
+			cooldownSlider.addEventListener("input", (e) => {
+				document.getElementById("cooldown-val").textContent = formatCooldownText(e.target.value);
+				setDirty(true);
+			});
+		}
+
+		const proporcaoSlider = document.getElementById("interaction-proporcao");
+		if (proporcaoSlider) {
+			proporcaoSlider.addEventListener("input", (e) => {
+				const val = parseInt(e.target.value);
+				document.getElementById("proporcao-val").textContent = val;
+				const iaChance = val;
+				const cmdChance = 100 - val;
+				const descEl = document.getElementById("proporcao-desc");
+				if (descEl) {
+					if (iaChance === 100) {
+						descEl.innerHTML = "Usando apenas <b>IA</b> para interagir";
+					} else if (iaChance === 0) {
+						descEl.innerHTML = "Usando apenas <b>comandos</b> para interagir";
+					} else {
+						descEl.textContent = `${cmdChance}% de chance de usar comandos, ${iaChance}% de chance de usar IA`;
+					}
+				}
+				setDirty(true);
+			});
+		}
+
+		const mcServerInput = document.getElementById("minecraft-server");
+		if (mcServerInput) {
+			mcServerInput.addEventListener("input", () => setDirty(true));
+			mcServerInput.addEventListener("change", () => setDirty(true));
+		}
+
+		const roletaTempoInput = document.getElementById("roleta-tempo");
+		if (roletaTempoInput) {
+			roletaTempoInput.addEventListener("input", () => setDirty(true));
+			roletaTempoInput.addEventListener("change", () => setDirty(true));
+		}
+
+		const roletaSilenciarInput = document.getElementById("roleta-silenciar");
+		if (roletaSilenciarInput) {
+			roletaSilenciarInput.addEventListener("change", () => setDirty(true));
+		}
+
+		// Saída amigável do bot
+		const btnRemoverBot = document.getElementById("btn-remover-bot-grupo");
+		const modalSaida = document.getElementById("modal-confirmar-saida");
+		const btnConfirmarSaida = document.getElementById("btn-confirmar-saida-grupo");
+		const closeSaidaBtns = document.querySelectorAll(".close-saida-modal");
+
+		if (btnRemoverBot && modalSaida) {
+			btnRemoverBot.addEventListener("click", () => {
+				modalSaida.classList.remove("hidden");
+			});
+		}
+
+		closeSaidaBtns.forEach((btn) => {
+			btn.addEventListener("click", () => {
+				if (modalSaida) modalSaida.classList.add("hidden");
+			});
+		});
+
+		if (btnConfirmarSaida) {
+			btnConfirmarSaida.addEventListener("click", async () => {
+				btnConfirmarSaida.disabled = true;
+				btnConfirmarSaida.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saindo do grupo...';
+
+				try {
+					const res = await fetch(`${API_BASE}/group/leave-friendly`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ token, groupId })
+					});
+					const data = await res.json();
+					if (!res.ok || !data.success) {
+						throw new Error(data.message || "Erro ao solicitar remoção do bot");
+					}
+
+					if (modalSaida) modalSaida.classList.add("hidden");
+					await customAlert(
+						"A Ravena saiu do grupo amigavelmente. As portas ficam abertas para nos reencontrarmos no futuro! Agradecemos o tempo juntos.",
+						"Saída Concluída"
+					);
+					document.body.innerHTML = `
                         <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;text-align:center;font-family:sans-serif;background:#0d1117;color:#fff;padding:20px;">
                             <h1 style="color:#a78bfa;margin-bottom:12px;">💜 Até a próxima!</h1>
                             <p style="color:#9ca3af;max-width:500px;line-height:1.6;">O bot saiu amigavelmente deste grupo. Se precisar de ajuda ou suporte com meu criador moothz, você pode nos encontrar no !grupao.</p>
                         </div>
                     `;
-                } catch (err) {
-                    console.error(err);
-                    await customAlert(`Falha ao remover o bot: ${err.message}`, 'Erro');
-                    btnConfirmarSaida.disabled = false;
-                    btnConfirmarSaida.innerHTML = '<i class="fas fa-sign-out-alt"></i> Confirmar Saída do Bot';
-                }
-            });
-        }
-    }
+				} catch (err) {
+					console.error(err);
+					await customAlert(`Falha ao remover o bot: ${err.message}`, "Erro");
+					btnConfirmarSaida.disabled = false;
+					btnConfirmarSaida.innerHTML =
+						'<i class="fas fa-sign-out-alt"></i> Confirmar Saída do Bot';
+				}
+			});
+		}
+	}
 
-    async function loadDossierHistory() {
-        if (!els.dossiesHistoryList) return;
-        try {
-            const res = await fetch(`${API_BASE}/group-dossier-history?groupId=${groupId}&token=${token}`);
-            if (!res.ok) throw new Error('Falha ao carregar histórico de dossiês');
-            const history = await res.json();
-            renderDossierHistory(history);
-        } catch (e) {
-            console.error(e);
-            els.dossiesHistoryList.innerHTML = `<p class="text-danger">Erro ao carregar histórico: ${e.message}</p>`;
-        }
-    }
+	async function loadDossierHistory() {
+		if (!els.dossiesHistoryList) return;
+		try {
+			const res = await fetch(
+				`${API_BASE}/group-dossier-history?groupId=${groupId}&token=${token}`
+			);
+			if (!res.ok) throw new Error("Falha ao carregar histórico de dossiês");
+			const history = await res.json();
+			renderDossierHistory(history);
+		} catch (e) {
+			console.error(e);
+			els.dossiesHistoryList.innerHTML = `<p class="text-danger">Erro ao carregar histórico: ${e.message}</p>`;
+		}
+	}
 
-    function renderDossierHistory(history) {
-        if (!history || history.length === 0) {
-            els.dossiesHistoryList.innerHTML = '<p class="text-muted text-center p-4">Nenhum dossiê gerado ainda para este grupo.</p>';
-            return;
-        }
+	function renderDossierHistory(history) {
+		if (!history || history.length === 0) {
+			els.dossiesHistoryList.innerHTML =
+				'<p class="text-muted text-center p-4">Nenhum dossiê gerado ainda para este grupo.</p>';
+			return;
+		}
 
-        els.dossiesHistoryList.innerHTML = '';
-        history.forEach((item, index) => {
-            const div = document.createElement('div');
-            div.className = 'dossie-item';
-            if (index === 0) div.classList.add('latest');
+		els.dossiesHistoryList.innerHTML = "";
+		history.forEach((item, index) => {
+			const div = document.createElement("div");
+			div.className = "dossie-item";
+			if (index === 0) div.classList.add("latest");
 
-            const date = new Date(item.created_at).toLocaleString('pt-BR');
-            const scoreClass = item.problematic_score >= 7 ? 'score-high' : (item.problematic_score >= 4 ? 'score-medium' : 'score-low');
+			const date = new Date(item.created_at).toLocaleString("pt-BR");
+			const scoreClass =
+				item.problematic_score >= 7
+					? "score-high"
+					: item.problematic_score >= 4
+						? "score-medium"
+						: "score-low";
 
-            div.innerHTML = `
+			div.innerHTML = `
                 <div class="dossie-header">
                     <span class="dossie-date">${date}</span>
                     <span class="dossie-score ${scoreClass}">Nota: ${item.problematic_score}/10</span>
@@ -4045,9 +4454,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <div class="dossie-type">${item.type}</div>
                 <div class="dossie-summary">${item.summary}</div>
             `;
-            els.dossiesHistoryList.appendChild(div);
-        });
-    }
+			els.dossiesHistoryList.appendChild(div);
+		});
+	}
 
-    init();
+	init();
 });
