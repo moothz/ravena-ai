@@ -43,15 +43,36 @@ const STORE_LIMITS = {
 	dailyFishingBaits: 200 // Limite diário de 200 iscas compradas
 };
 
+// Configurações e limites padrão do Jogo do Bicho em Runas
+const BICHO_MULTIPLIERS = {
+	grupo: 18, // 18x na Cabeça (1º prêmio)
+	dezena: 60, // 60x na Cabeça
+	centena: 600, // 600x na Cabeça
+	milhar: 4000, // 4000x na Cabeça
+	cercadoDivisor: 5 // Divisor para apostas no Cercado (1º ao 5º prêmio)
+};
+
+const BICHO_LIMITS = {
+	minBet: 1000, // Aposta mínima de 1.000 ᚱ
+	maxBet: 500000, // Aposta máxima de 500.000 ᚱ
+	maxPayoutMultiplier: 10, // Teto de prêmio por bilhete = 10x a aposta máxima (5.000.000 ᚱ)
+	maxBetsPerDraw: 10, // Máximo de bilhetes por usuário por extração
+	drawHour: 19, // Horário do sorteio diário (19:00 BRT)
+	drawMinute: 0,
+	cutoffHour: 18, // Horário de corte das apostas (18:45 BRT)
+	cutoffMinute: 45
+};
+
 /**
  * Parâmetros no formato lido pela carga (as chaves achatadas, ex. cambio.BASE_RUNAS_PER_ZINTHOS,
- * cotas.DAILY_LIMITS.venda_runas, loja.STORE_PRICES.moeda, são as que aparecem nas anotações).
+ * cotas.DAILY_LIMITS.venda_runas, loja.STORE_PRICES.moeda, bicho.BICHO_MULTIPLIERS.grupo, são as que aparecem nas anotações).
  */
 function economyParams() {
 	return {
-		cambio: { BASE_RUNAS_PER_KG_FISH, BASE_RUNAS_PER_ZINTHOS, BASE_RUNAS_PER_JARDIM },
+		cambio: { BASE_RUNAS_PER_ZINTHOS, BASE_RUNAS_PER_JARDIM, BASE_RUNAS_PER_KG_FISH },
 		cotas: { DAILY_LIMITS },
-		loja: { STORE_PRICES, STORE_LIMITS }
+		loja: { STORE_PRICES, STORE_LIMITS },
+		bicho: { BICHO_MULTIPLIERS, BICHO_LIMITS }
 	};
 }
 
@@ -65,6 +86,8 @@ module.exports = {
 	DAILY_LIMITS,
 	STORE_PRICES,
 	STORE_LIMITS,
+	BICHO_MULTIPLIERS,
+	BICHO_LIMITS,
 	economyParams,
 	ALL_CURRENCIES_GROUPS
 };

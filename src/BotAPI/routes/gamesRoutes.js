@@ -604,6 +604,76 @@ function registerGamesRoutes(api) {
 			}
 		}
 	);
+
+	// ==========================================
+	// JOGO DO BICHO — ROTAS ADMINISTRATIVAS
+	// ==========================================
+	const BichoService = require("../../services/BichoService");
+	const bichoService = BichoService.getInstance();
+
+	// GET /api/admin/bicho — Retorna configurações atuais, cálculos e status
+	app.get("/api/admin/bicho", api.authenticateBasic, async (req, res) => {
+		try {
+			const config = await bichoService.getConfig();
+			const lastDraw = await bichoService.getLastDraw();
+			const { drawDate, isToday } = bichoService.calculateTargetDrawDate(config);
+
+			// Estatísticas gerais de bicho.db
+			const stats = await database.dbGet(
+				"bicho",
+				`SELECT 
+					COUNT(*) as total_bets,
+					COALESCE(SUM(amount), 0) as total_amount,
+					COALESCE(SUM(payout), 0) as total_payout,
+					SUM(CASE WHEN status = 'WON' THEN 1 ELSE 0 END) as total_wins
+				 FROM bicho_bets`
+			);
+
+			// Apostas abertas para a próxima extração
+			const pendingBets = await database.dbAll(
+				"bicho",
+				"SELECT * FROM bicho_bets WHERE draw_date = ? AND status = 'OPEN' ORDER BY created_at DESC",
+				[drawDate]
+			);
+
+			return res.json({
+				ok: true,
+				data: {
+					config,
+					nextDrawDate: drawDate,
+					isToday,
+					lastDraw,
+					stats: {
+						totalBets: stats?.total_bets || 0,
+						totalAmount: stats?.total_amount || 0,
+						totalPayout: stats?.total_payout || 0,
+						totalWins: stats?.total_wins || 0,
+						houseProfit: (stats?.total_amount || 0) - (stats?.total_payout || 0)
+					},
+					pendingBets
+				}
+			});
+		} catch (error) {
+			api.logger.error("[gamesRoutes] Erro ao buscar dados do bicho para admin:", error);
+			return res
+				.status(500)
+				.json({ ok: false, error: "Falha ao carregar dados do Jogo do Bicho." });
+		}
+	});
+
+	// PUT /api/admin/bicho/config — Atualiza variáveis de configuração e recalcula cron
+	app.put("/api/admin/bicho/config", api.authenticateBasic, api.strictLimiter, async (req, res) => {
+		try {
+			const patch = req.body || {};
+			const adminUser =
+				req.user?.username || (req.headers.authorization ? "basic_admin" : "session_admin");
+			const updated = await bichoService.updateConfig(patch, adminUser);
+			return res.json({ ok: true, data: updated });
+		} catch (error) {
+			api.logger.error("[gamesRoutes] Erro ao atualizar configurações do bicho:", error);
+			return res.status(400).json({ ok: false, error: error.message });
+		}
+	});
 }
 
 module.exports = { registerGamesRoutes, sendGameNotice };
