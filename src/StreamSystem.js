@@ -222,6 +222,40 @@ class StreamSystem {
 	}
 
 	/**
+	 * Verifica se o resultado ou erro indica que o bot não participa do grupo
+	 * @param {any} res
+	 * @returns {boolean}
+	 * @private
+	 */
+	_isNotInGroupResult(res) {
+		if (!res) return false;
+		if (res.notInGroup) return true;
+		if (res.error?.notInGroup) return true;
+		const err = res.error || res;
+		const errorDetails = [
+			err.message,
+			err.data?.error,
+			err.data?.message,
+			err.response?.data?.error,
+			err.response?.data?.message,
+			typeof err === "string" ? err : null
+		]
+			.filter((s) => typeof s === "string")
+			.join(" ")
+			.toLowerCase();
+
+		return (
+			errorDetails.includes("not participating") ||
+			errorDetails.includes("not_participating") ||
+			errorDetails.includes("no longer a participant") ||
+			errorDetails.includes("not in group") ||
+			errorDetails.includes("that group does not exist") ||
+			errorDetails.includes("não participa") ||
+			errorDetails.includes("fora do grupo")
+		);
+	}
+
+	/**
 	 * Encontra o primeiro bot adequado para enviar mensagem em um grupo
 	 * @param {string} groupId
 	 * @returns {Promise<Object|null>}
@@ -293,6 +327,26 @@ class StreamSystem {
 				// Ignora erro
 			}
 		}
+
+		// Prioriza bots conhecidos que já estão participando do grupo (group.botsInGroup)
+		const knownBotsInGroup = new Set(
+			Array.isArray(groupObj?.botsInGroup) ? groupObj.botsInGroup : []
+		);
+
+		if (knownBotsInGroup.size > 0 && candidates.length > 1) {
+			candidates.sort((a, b) => {
+				const aIn =
+					knownBotsInGroup.has(a.id) || knownBotsInGroup.has(a.name) || knownBotsInGroup.has(a.nome)
+						? 1
+						: 0;
+				const bIn =
+					knownBotsInGroup.has(b.id) || knownBotsInGroup.has(b.name) || knownBotsInGroup.has(b.nome)
+						? 1
+						: 0;
+				return bIn - aIn;
+			});
+		}
+
 		return candidates;
 	}
 
@@ -604,29 +658,18 @@ class StreamSystem {
 						let botNotInGroupError = false;
 
 						for (const res of resultados) {
-							if (res && res.error) {
-								const err = res.error;
-								// Coleta todas as possíveis strings de erro (mensagem, data.error, response.data.error)
-								const errorDetails = [
-									err.message,
-									err.data?.error,
-									err.response?.data?.error,
-									typeof err === "string" ? err : null
-								]
-									.filter((s) => typeof s === "string")
-									.join(" ")
-									.toLowerCase();
-
-								if (
-									errorDetails.includes("not participating") ||
-									errorDetails.includes("not_participating") ||
-									errorDetails.includes("no longer a participant") ||
-									errorDetails.includes("not in group")
-								) {
-									botNotInGroupError = true;
-									break;
-								}
+							if (this._isNotInGroupResult(res)) {
+								botNotInGroupError = true;
+								break;
 							}
+						}
+
+						if (
+							!botNotInGroupError &&
+							typeof bot.isParticipating === "function" &&
+							!bot.isParticipating(group.id)
+						) {
+							botNotInGroupError = true;
 						}
 
 						if (botNotInGroupError) {
@@ -637,6 +680,17 @@ class StreamSystem {
 								await bot.addSkipGroup(group.id);
 							}
 							notInGroupErrors.push(bot.id);
+							continue; // Tenta próximo bot
+						}
+
+						const sentAny =
+							Array.isArray(resultados) &&
+							resultados.some((res) => res && !res.error && !res.skipped);
+
+						if (!sentAny) {
+							this.logger.warn(
+								`Bot ${bot.id} não conseguiu entregar mensagens para ${group.name} (${group.id}), tentando próximo bot.`
+							);
 							continue; // Tenta próximo bot
 						}
 
@@ -702,22 +756,7 @@ class StreamSystem {
 					}
 				} catch (err) {
 					this.logger.error(`Erro ao tentar enviar com bot ${bot.id} para grupo ${group.id}:`, err);
-					const errorDetails = [
-						err.message,
-						err.data?.error,
-						err.response?.data?.error,
-						typeof err === "string" ? err : null
-					]
-						.filter((s) => typeof s === "string")
-						.join(" ")
-						.toLowerCase();
-
-					if (
-						errorDetails.includes("not participating") ||
-						errorDetails.includes("not_participating") ||
-						errorDetails.includes("no longer a participant") ||
-						errorDetails.includes("not in group")
-					) {
+					if (this._isNotInGroupResult(err)) {
 						if (bot.markNotInGroup) await bot.markNotInGroup(group.id);
 						else if (bot.addSkipGroup) await bot.addSkipGroup(group.id);
 						notInGroupErrors.push(bot.id);
