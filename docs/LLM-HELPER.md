@@ -538,6 +538,26 @@ Estes comandos e utilitários são carregados dinamicamente e podem ser usados p
 
 ---
 
+### 📁 Módulo: `FortniteCommands.js`
+**Sobre:** Consulta de jogadores, loja de itens e temporada do Fortnite
+
+**Tags:** `fortnite,epic,battle royale,loja,vbucks,skins,estatisticas,games,jogos`
+
+**Detalhes Técnicos:** Consome a API api-fortnite.com: conta Epic pelo nome, estatísticas de Battle Royale, loja do dia e temporada atual, com cache em memória
+
+#### Comandos:
+- **`!fortnite`**: Vitórias, partidas, abates e K/D de um jogador do Fortnite, no geral e por modo
+  - *Categoria:* jogos
+  - *Uso/Exemplos:* `!fortnite NomeEpic`, `!fn NomeEpic`
+- **`!fortnite-loja`**: Lista a loja de itens do dia ou procura um item nela, com a imagem
+  - *Categoria:* jogos
+  - *Uso/Exemplos:* `!fortnite-loja`, `!fortnite-loja Peely`
+- **`!fortnite-temporada`**: Mostra a temporada atual do Fortnite e quantos dias faltam para acabar
+  - *Categoria:* jogos
+  - *Uso/Exemplos:* `!fortnite-temporada`
+
+---
+
 ### 📁 Módulo: `GameCommands.js`
 **Sobre:** Busca de informações e avaliações de jogos eletrônicos no IGDB
 
