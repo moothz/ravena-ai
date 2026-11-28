@@ -385,6 +385,7 @@ document.addEventListener("DOMContentLoaded", () => {
 		cmdInteract: document.getElementById("cmd-interact"),
 		cmdReplyQuote: document.getElementById("cmd-reply-quote"),
 		cmdSendAll: document.getElementById("cmd-send-all"),
+		cmdArgPick: document.getElementById("cmd-arg-pick"),
 		cmdAdminOnly: document.getElementById("cmd-admin-only"),
 		cmdReplyPrivate: document.getElementById("cmd-reply-private"),
 		cmdEmoji: document.getElementById("cmd-emoji"),
@@ -2693,6 +2694,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			els.cmdInteract.checked = !cmd.ignoreInteract;
 			els.cmdReplyQuote.checked = cmd.reply !== false;
 			els.cmdSendAll.checked = !!cmd.sendAllResponses;
+			els.cmdArgPick.checked = !!cmd.argPick;
 			els.cmdAdminOnly.checked = !!cmd.adminOnly;
 			els.cmdReplyPrivate.checked = !!cmd.replyInPvivate;
 			els.cmdEmoji.value = cmd.react || "";
@@ -2721,6 +2723,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			els.cmdInteract.checked = true;
 			els.cmdReplyQuote.checked = true;
 			els.cmdSendAll.checked = false;
+			els.cmdArgPick.checked = false;
 			els.cmdAdminOnly.checked = false;
 			els.cmdReplyPrivate.checked = false;
 			els.cmdEmoji.value = "";
@@ -2734,6 +2737,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			els.cmdMetadata.innerHTML = "";
 		}
 
+		argPickTipRow.classList.remove("tip-open");
 		renderCmdTags();
 		updateWhatsAppCmdPreview();
 		els.cmdModal.classList.remove("hidden");
@@ -2957,13 +2961,21 @@ document.addEventListener("DOMContentLoaded", () => {
 			mediaCaption = value.substring(end + 1).trim();
 		}
 
+		const orderHtml = `
+                <div class="resp-order">
+                    <span class="resp-pos"></span>
+                    <button type="button" class="btn btn-xs btn-outline resp-up" aria-label="Subir resposta"><i class="fas fa-arrow-up"></i></button>
+                    <button type="button" class="btn btn-xs btn-outline resp-down" aria-label="Descer resposta"><i class="fas fa-arrow-down"></i></button>
+                </div>`;
+		const removeHtml = `<button type="button" class="btn btn-xs btn-danger remove-resp" aria-label="Remover resposta"><i class="fas fa-trash"></i></button>`;
+
 		if (mediaType === "text") {
-			div.innerHTML = `
-                <div style="flex: 1; display: flex; flex-direction: column;">
+			div.innerHTML = `${orderHtml}
+                <div class="resp-body">
                     <textarea class="form-control cmd-response-input" rows="2" placeholder="Texto da resposta..."></textarea>
                     <button type="button" class="btn btn-xs btn-outline btn-insert-var mt-1"><i class="fas fa-plus-circle"></i> Inserir Variável</button>
                 </div>
-                <button type="button" class="btn btn-xs btn-danger remove-resp" style="align-self: flex-start; margin-top: 5px;"><i class="fas fa-trash"></i></button>
+                ${removeHtml}
             `;
 			const textarea = div.querySelector("textarea");
 			textarea.value = value && !isMedia ? value : "";
@@ -2975,13 +2987,15 @@ document.addEventListener("DOMContentLoaded", () => {
 				? ` | <a href="#" class="media-link btn-convert-gif">Converter pra GIF</a>`
 				: "";
 			const mediaLink = `/media-direct/${mediaContent}?token=${token}`;
-			div.innerHTML = `
-                <div class="media-preview form-control" style="font-size: 0.88rem;">
-                    ${getIcon(mediaType)} <span class="media-type-lbl">${mediaType}</span>: <a href="${mediaLink}" target="_blank" class="media-link">Ver Mídia</a>${convertLinkHtml} 
-                    ${mediaCaption ? ` (${mediaCaption})` : ""}
+			div.innerHTML = `${orderHtml}
+                <div class="resp-body">
+                    <div class="media-preview form-control" style="font-size: 0.88rem;">
+                        ${getIcon(mediaType)} <span class="media-type-lbl">${mediaType}</span>: <a href="${mediaLink}" target="_blank" class="media-link">Ver Mídia</a>${convertLinkHtml} 
+                        ${mediaCaption ? ` (${mediaCaption})` : ""}
+                    </div>
+                    <input type="hidden" class="cmd-response-input" value="${value}">
                 </div>
-                <input type="hidden" class="cmd-response-input" value="${value}">
-                <button type="button" class="btn btn-xs btn-danger remove-resp"><i class="fas fa-trash"></i></button>
+                ${removeHtml}
             `;
 
 			if (isVideo) {
@@ -2998,10 +3012,39 @@ document.addEventListener("DOMContentLoaded", () => {
 
 		div.querySelector(".remove-resp").onclick = () => {
 			div.remove();
+			renumberResponses();
 			updateWhatsAppCmdPreview();
 		};
+		div.querySelector(".resp-up").onclick = (e) => moveResponse(div, -1, e.currentTarget);
+		div.querySelector(".resp-down").onclick = (e) => moveResponse(div, 1, e.currentTarget);
 		els.cmdResponsesList.appendChild(div);
+		renumberResponses();
 		updateWhatsAppCmdPreview();
+	};
+
+	function moveResponse(row, direction, button) {
+		const sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+		if (!sibling) return;
+		if (direction < 0) sibling.before(row);
+		else sibling.after(row);
+		renumberResponses();
+		updateWhatsAppCmdPreview();
+		if (!button.disabled) button.focus();
+	}
+
+	function renumberResponses() {
+		const rows = Array.from(els.cmdResponsesList.querySelectorAll(".response-item-row"));
+		rows.forEach((row, i) => {
+			row.querySelector(".resp-pos").textContent = `#${i + 1}`;
+			row.querySelector(".resp-up").disabled = i === 0;
+			row.querySelector(".resp-down").disabled = i === rows.length - 1;
+		});
+	}
+
+	const argPickTipRow = document.querySelector(".cmd-tip-row");
+	argPickTipRow.querySelector(".cmd-tip-btn").onclick = (e) => {
+		const open = argPickTipRow.classList.toggle("tip-open");
+		e.currentTarget.setAttribute("aria-expanded", String(open));
 	};
 
 	window.openMediaUpload = function (type) {
@@ -3185,6 +3228,7 @@ document.addEventListener("DOMContentLoaded", () => {
 			ignoreInteract: !els.cmdInteract.checked,
 			reply: els.cmdReplyQuote.checked,
 			sendAllResponses: els.cmdSendAll.checked,
+			argPick: els.cmdArgPick.checked,
 			adminOnly: els.cmdAdminOnly.checked,
 			replyInPvivate: els.cmdReplyPrivate.checked,
 			react: els.cmdEmoji.value.trim() || null,

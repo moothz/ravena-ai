@@ -1188,6 +1188,9 @@ async function sendGroupCommandList(bot, message, args, group) {
 				if (cmd.sendAllResponses) {
 					cmdText += " (envia todas)";
 				}
+				if (cmd.argPick) {
+					cmdText += " (escolha por número)";
+				}
 			}
 
 			menuText += `${cmdText}\n`;
