@@ -121,6 +121,11 @@ class Management {
 				method: "toggleSendAllResponses",
 				description: "Envia todas as respostas do comando (se houver mais de uma)"
 			},
+			"cmd-argPick": {
+				method: "toggleArgPick",
+				description:
+					"Permite escolher a resposta com argumento (ex.: !comando 3 envia a 3ª resposta)"
+			},
 			"cmd-responder": {
 				method: "toggleReply",
 				description: "Ativa/Desativa se o comando deve responder citando a mensagem"
@@ -1457,6 +1462,59 @@ class Management {
 		return new ReturnMessage({
 			chatId: group.id,
 			content: `Comando personalizado '${commandTrigger}' agora ${command.sendAllResponses ? "envia TODAS as respostas" : "envia UMA resposta aleatória"}.`
+		});
+	}
+
+	async toggleArgPick(bot, message, args, group) {
+		if (!group) {
+			return new ReturnMessage({
+				chatId: message.author,
+				content: "Este comando só pode ser usado em grupos."
+			});
+		}
+
+		if (args.length === 0) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: "Por favor, forneça o comando personalizado. Exemplo: !g-cmd-argPick frases"
+			});
+		}
+
+		const commandTrigger = args.join(" ").trim().toLowerCase();
+		const commands = await this.database.getCustomCommands(group.id);
+		const command = commands.find(
+			(cmd) => cmd.startsWith?.trim()?.toLowerCase() === commandTrigger && !cmd.deleted
+		);
+
+		if (!command) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Comando personalizado '${commandTrigger}' não encontrado.`
+			});
+		}
+
+		command.argPick = !command.argPick;
+
+		await this.database.updateCustomCommand(group.id, command);
+		this.database.clearCache(`commands:${group.id}`);
+		await bot.eventHandler.commandHandler.loadCustomCommandsForGroup(group.id);
+
+		if (!command.argPick) {
+			return new ReturnMessage({
+				chatId: group.id,
+				content: `Comando personalizado '${commandTrigger}' não escolhe mais a resposta por número.`
+			});
+		}
+
+		const prefix = group.prefix ?? "!";
+		const total = command.responses?.length ?? 0;
+		return new ReturnMessage({
+			chatId: group.id,
+			content:
+				`Comando personalizado '${commandTrigger}' agora permite escolher a resposta com um número.\n\n` +
+				`Exemplo: *${prefix}${command.startsWith} 3* envia a 3ª resposta (este comando tem ${total}).\n` +
+				`Sem número, ou com um número fora de 1 a ${total}, ele continua como antes.\n` +
+				"A ordem das respostas pode ser mudada no `!g-painel`."
 		});
 	}
 
@@ -9735,6 +9793,7 @@ class Management {
 				if (cmdA.react !== cmdB.react) return true;
 				if (cmdA.reply !== cmdB.reply) return true;
 				if (cmdA.sendAllResponses !== cmdB.sendAllResponses) return true;
+				if (!!cmdA.argPick !== !!cmdB.argPick) return true;
 				if (cmdA.ignoreInteract !== cmdB.ignoreInteract) return true;
 
 				// Compara respostas
@@ -10645,6 +10704,12 @@ const helper = {
 			cmd: "!g-cmd-enviarTudo",
 			desc: "Envia todas as respostas do comando (se houver mais de uma)",
 			usage: ["!g-cmd-enviarTudo"],
+			category: "custom-cmds"
+		},
+		{
+			cmd: "!g-cmd-argPick",
+			desc: "Permite escolher a resposta com argumento (ex.: !comando 3 envia a 3ª resposta)",
+			usage: ["!g-cmd-argPick"],
 			category: "custom-cmds"
 		},
 		{

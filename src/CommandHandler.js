@@ -2041,6 +2041,14 @@ class CommandHandler {
 		return null;
 	}
 
+	pickCustomCommandResponse(command, args = []) {
+		if (!command?.argPick || !/^\d+$/.test(args[0] ?? "")) return null;
+		const position = Number(args[0]);
+		const total = command.responses?.length ?? 0;
+		if (position < 1 || position > total) return null;
+		return { index: position - 1, args: args.slice(1) };
+	}
+
 	/**
 	 * Executa um comando personalizado
 	 * @param {WhatsAppBot} bot - A instância do bot
@@ -2257,8 +2265,18 @@ class CommandHandler {
 
 			let finalResult = null;
 
-			// Envia todas as respostas ou seleciona uma aleatória
-			if (command.sendAllResponses) {
+			const pick = this.pickCustomCommandResponse(command, args);
+			if (pick) {
+				args = pick.args;
+				telemetry.setAttrs({
+					"ravena.custom.arg_pick": true,
+					"ravena.custom.response_index": pick.index + 1,
+					"ravena.custom.response_count": responses.length
+				});
+			}
+
+			// Envia todas as respostas ou seleciona uma (escolhida pelo número ou aleatória)
+			if (command.sendAllResponses && !pick) {
 				this.logger.debug(
 					`Enviando todas as ${responses.length} respostas para o comando *${command.startsWith}*`
 				);
@@ -2310,15 +2328,15 @@ class CommandHandler {
 				}
 				finalResult = returnMessages;
 			} else {
-				const randomIndex = Math.floor(Math.random() * responses.length);
+				const responseIndex = pick?.index ?? Math.floor(Math.random() * responses.length);
 				this.logger.debug(
-					`Enviando resposta aleatória (${randomIndex + 1}/${responses.length}) para o comando *${command.startsWith}*`
+					`Enviando resposta ${pick ? "escolhida" : "aleatória"} (${responseIndex + 1}/${responses.length}) para o comando *${command.startsWith}*`
 				);
 
 				const rawReturn = await this.processCustomCommandResponse(
 					bot,
 					message,
-					responses[randomIndex],
+					responses[responseIndex],
 					command,
 					group,
 					args,

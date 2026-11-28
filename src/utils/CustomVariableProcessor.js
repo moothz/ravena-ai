@@ -1285,15 +1285,17 @@ class CustomVariableProcessor {
 							const { customCommand, newArgs } = matchResult;
 							const responses = customCommand.responses ?? [];
 							if (responses.length > 0) {
-								const rawResponse = customCommand.sendAllResponses
-									? responses.join("\n")
-									: responses[Math.floor(Math.random() * responses.length)];
+								const pick = commandHandler.pickCustomCommandResponse(customCommand, newArgs);
+								let rawResponse;
+								if (pick) rawResponse = responses[pick.index];
+								else if (customCommand.sendAllResponses) rawResponse = responses.join("\n");
+								else rawResponse = responses[Math.floor(Math.random() * responses.length)];
 
 								const childContext = {
 									...context,
 									isEmbedded: true,
 									embeddingDepth: (context.embeddingDepth || 0) + 1,
-									command: { ...customCommand, args: newArgs }
+									command: { ...customCommand, args: pick?.args ?? newArgs }
 								};
 								const processedChild = await this.process(rawResponse, childContext);
 								replacement =
