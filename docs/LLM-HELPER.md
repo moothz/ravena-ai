@@ -1810,6 +1810,15 @@ Comandos restritos aos administradores de grupos para moderação, customizaçã
 
 ---
 
+#### `!g-cmd-argPick`
+**Descrição:** Liga/desliga a escolha da resposta por número. Com a opção ligada, `!comando 3` envia a 3ª resposta em vez de uma aleatória. Sem número, com 0, negativo, decimal ou número maior que o total de respostas, o comando segue como antes (sorteia, ou envia todas se `!g-cmd-enviarTudo` estiver ligado). O número escolhido sai dos argumentos: em `!comando 3 João`, o `arg1` das respostas com API vale `João`. A ordem das respostas pode ser mudada no painel web (`!g-painel`), em "Permite Escolher Resposta com argumento".
+
+**Categoria:** custom-cmds
+
+**Exemplo de uso:** `!g-cmd-argPick frases`
+
+---
+
 #### `!g-cmd-responder`
 **Descrição:** Ativa/Desativa se o comando deve responder citando a mensagem
 
