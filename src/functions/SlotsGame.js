@@ -868,14 +868,20 @@ async function slotsCommand(bot, message, args, group) {
 			await savePrize(userId, `${totalCoinsWon} Moedinhas`, "bom");
 		}
 
-		// Credita iscas de pesca
+		// Credita iscas de pesca (se estourar o teto, soma as Runas ao totalRunasWon para extrato único)
 		let baitResult = null;
 		if (totalBaitsWon > 0) {
 			const baitMult = GameEventService.getMultiplier("slots", "iscas");
 			if (baitMult > 1) {
 				totalBaitsWon = Math.max(1, Math.round(totalBaitsWon * baitMult));
 			}
-			baitResult = await FishingGame.addBaits(userId, totalBaitsWon, { source: "slots_prize" });
+			baitResult = await FishingGame.addBaits(userId, totalBaitsWon, {
+				source: "slots_prize",
+				deferBankCredit: true
+			});
+			if (baitResult?.runas > 0) {
+				totalRunasWon += baitResult.runas;
+			}
 			if (baitResult?.overflow > 0 && baitResult.added === 0) {
 				await savePrize(
 					userId,
@@ -887,9 +893,18 @@ async function slotsCommand(bot, message, args, group) {
 			}
 		}
 
-		// Credita buffs de pesca
+		// Credita buffs de pesca (se estourar o teto de capacidade, soma as Runas ao totalRunasWon usando o valor do item)
+		let buffOverflowRunas = 0;
 		for (const buff of totalBuffsWon) {
-			await FishingGame.addBuff(userId, buff, false);
+			const buffResult = await FishingGame.addBuff(userId, buff, false, {
+				source: "slots_prize",
+				deferBankCredit: true,
+				valueByItem: true
+			});
+			if (buffResult?.runas > 0) {
+				buffOverflowRunas += buffResult.runas;
+				totalRunasWon += buffResult.runas;
+			}
 			await savePrize(userId, buff.originalName || "Buff de Pesca", "bom");
 		}
 
@@ -1005,6 +1020,9 @@ async function slotsCommand(bot, message, args, group) {
 			for (const group of buffGroups) {
 				const buff = group.item;
 				resultMessage += `  - ${group.count}x ${buff.emoji} *${buff.originalName}:* _${buff.description || "Aprimoramento de Pesca"}_\n`;
+			}
+			if (buffOverflowRunas > 0) {
+				resultMessage += `  _Teto de capacidade atingido: +${buffOverflowRunas.toLocaleString("pt-BR")} ᚱ somadas ao prêmio em Runas._\n`;
 			}
 		}
 		if (totalJardimCoinsWon > 0 || totalJardimBagsWon > 0) {

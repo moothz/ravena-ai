@@ -989,15 +989,22 @@ async function addBuff(userId, buff, isDebuff, options = {}) {
 		result.overflow = overflow;
 
 		if (overflow > 0) {
-			const credit = await creditOverflowRunas(
-				userId,
-				buff.type,
-				overflow,
-				options.valueByItem ? buff.originalName : null,
-				options.source || `fishing_cap_${buff.type}`
-			);
-			result.runas = credit.runas;
-			result.balance = credit.balance;
+			if (options.deferBankCredit) {
+				result.runas = Math.round(
+					getOverflowRunasPerUnit(buff.type, options.valueByItem ? buff.originalName : null) *
+						overflow
+				);
+			} else {
+				const credit = await creditOverflowRunas(
+					userId,
+					buff.type,
+					overflow,
+					options.valueByItem ? buff.originalName : null,
+					options.source || `fishing_cap_${buff.type}`
+				);
+				result.runas = credit.runas;
+				result.balance = credit.balance;
+			}
 		}
 		if (applied <= 0) return result;
 		buff = { ...buff, value: applied };
@@ -1435,15 +1442,21 @@ async function addBaits(userId, baitsNum, options = {}) {
 		added = Math.min(baitsNum, room);
 		overflow = baitsNum - added;
 		if (overflow > 0 && options.convertOverflow !== false) {
-			const credit = await creditOverflowRunas(
-				userId,
-				"extra_baits",
-				overflow,
-				options.itemName ?? null,
-				options.source ?? "fishing_cap_baits"
-			);
-			runas = credit.runas;
-			balance = credit.balance;
+			if (options.deferBankCredit) {
+				runas = Math.round(
+					getOverflowRunasPerUnit("extra_baits", options.itemName ?? null) * overflow
+				);
+			} else {
+				const credit = await creditOverflowRunas(
+					userId,
+					"extra_baits",
+					overflow,
+					options.itemName ?? null,
+					options.source ?? "fishing_cap_baits"
+				);
+				runas = credit.runas;
+				balance = credit.balance;
+			}
 		}
 	}
 
