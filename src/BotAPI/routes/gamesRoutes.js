@@ -57,8 +57,8 @@ function requirePartnerKey(api, req, res) {
 }
 
 /**
- * Envia um aviso no privado do jogador, tentando os bots de WhatsApp conectados e
- * caindo para Telegram/Discord quando o identificador não parece um número de WhatsApp.
+ * Envia um aviso no privado do jogador só por Telegram ou Discord. Identificador de
+ * WhatsApp (JID ou número) não recebe aviso proativo e volta false.
  * Nunca lança: a entrega da mensagem é consequência, o crédito já foi feito.
  * @returns {Promise<boolean>} true quando algum bot conseguiu enviar
  */
