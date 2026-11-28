@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Painel de Gerenciamento - RavenaBot</title>
-    <link rel="stylesheet" href="/management.css?v=30">
+    <link rel="stylesheet" href="/management.css?v=31">
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
@@ -1155,6 +1155,16 @@
                             <span class="slider-round"></span>
                         </label>
                     </div>
+                    <div class="form-group toggle-row-compact cmd-tip-row">
+                        <span class="toggle-label" id="lbl-cmd-arg-pick">Permite Escolher Resposta com argumento
+                            <button type="button" class="cmd-tip-btn" aria-label="Como funciona" aria-expanded="false" aria-controls="cmd-arg-pick-tip"><i class="fas fa-circle-question"></i></button>
+                        </span>
+                        <label class="switch-toggle">
+                            <input type="checkbox" id="cmd-arg-pick" aria-labelledby="lbl-cmd-arg-pick">
+                            <span class="slider-round"></span>
+                        </label>
+                        <div id="cmd-arg-pick-tip" class="cmd-tip-bubble" role="tooltip"><code>!comando 3</code> → envia a 3ª resposta em vez de uma aleatória. Sem número, ou com número fora da lista, continua sorteando. Use as setas nas respostas para mudar a ordem.</div>
+                    </div>
                     <div class="form-group toggle-row-compact">
                         <span class="toggle-label" id="lbl-cmd-admin-only">Apenas Administradores</span>
                         <label class="switch-toggle">
@@ -1252,7 +1262,7 @@
 
                 <div class="responses-section">
                     <label id="lbl-cmd-responses">Respostas do Comando</label>
-                    <div class="field-hint">Se houver mais de uma resposta cadastrada, a Ravena sorteará uma delas (ou enviará todas se a opção estiver ativada).</div>
+                    <div class="field-hint">Se houver mais de uma resposta cadastrada, a Ravena sorteará uma delas (ou enviará todas se a opção estiver ativada). Com "Permite Escolher Resposta com argumento", o número ao lado de cada resposta é o usado em <code>!comando N</code>; use as setas para reordenar.</div>
                     <div id="cmd-responses-list" class="mt-2"></div>
                     <div class="add-response-buttons mt-2">
                         <button type="button" class="btn btn-xs btn-outline" onclick="addResponseInput('text')"><i class="fas fa-font"></i> + Texto</button>
@@ -1741,6 +1751,6 @@
         </div>
     </div>
 
-    <script src="/management.js?v=32"></script>
+    <script src="/management.js?v=33"></script>
 </body>
 </html>
