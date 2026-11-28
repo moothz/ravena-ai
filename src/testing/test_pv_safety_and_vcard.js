@@ -436,7 +436,7 @@ async function runTests() {
 		"!anonimo no grupo deve responder no grupo"
 	);
 	assert.ok(
-		botA.capturedMessages[0].content.includes("O comando deve ser usado no meu privado!"),
+		botA.capturedMessages[0].content.includes("Mensagem anônima só pelo meu privado!"),
 		"!anonimo deve instruir a usar no privado"
 	);
 	assert.ok(
